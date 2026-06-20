@@ -1,0 +1,6 @@
+# Dipendenze di SVILUPPO (solo test). Non installare in produzione:
+# requirements.txt resta la lista runtime, questo file e' aggiuntivo.
+#
+# Uso: pip install -r requirements-dev.txt   poi   pytest
+
+pytest>=7.4

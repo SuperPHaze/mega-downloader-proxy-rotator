@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mega Downloader Proxy Rotator (MDPR)</title>
+<meta name="description" content="A desktop downloader that splits large files into chunks and routes each one through a different proxy, in parallel. My first open source project. Python + PyQt6, MIT license.">
+<link rel="icon" type="image/png" href="assets/favicon.png">
+<link rel="icon" type="image/x-icon" href="assets/favicon.ico">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700;12..96,800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+
+<style>
+  :root{
+    --paper:#FCFAF6; --paper2:#F4EEE4; --card:#FFFFFF;
+    --ink:#23201C; --muted:#7C7268; --line:#EBE3D7;
+    --coral:#E5484D; --coral-deep:#C53A3F; --petrol:#157A72; --amber:#E2912B;
+    --maxw:1080px; --radius:18px;
+    --shadow:0 22px 55px rgba(70,45,25,.10);
+    --shadow-sm:0 3px 14px rgba(70,45,25,.06);
+    --display:'Bricolage Grotesque', system-ui, sans-serif;
+    --body:'Inter', system-ui, -apple-system, sans-serif;
+    --mono:'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{background:var(--paper);color:var(--ink);font-family:var(--body);line-height:1.65;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+  a{color:inherit;text-decoration:none}
+  img{max-width:100%}
+  .wrap{max-width:var(--maxw);margin:0 auto;padding:0 24px}
+  .block{padding:96px 0;position:relative}
+  .tint{background:var(--paper2)}
+  h1,h2,h3{font-family:var(--display);line-height:1.08;font-weight:700;letter-spacing:-.02em}
+  h2{font-size:clamp(1.9rem,4vw,2.7rem);margin-bottom:16px}
+  .lead{color:var(--muted);font-size:1.12rem;max-width:660px}
+  .eyebrow{display:inline-flex;align-items:center;gap:8px;color:var(--petrol);font-family:var(--mono);font-weight:500;font-size:.74rem;text-transform:uppercase;letter-spacing:.14em;margin-bottom:18px}
+  .eyebrow::before{content:"";width:18px;height:1.5px;background:var(--petrol);display:inline-block}
+
+  /* focus */
+  a:focus-visible,button:focus-visible{outline:2.5px solid var(--petrol);outline-offset:3px;border-radius:6px}
+
+  /* ---------- NAV ---------- */
+  nav{position:sticky;top:0;z-index:60;background:color-mix(in srgb, var(--paper) 86%, transparent);backdrop-filter:blur(14px);border-bottom:1px solid var(--line)}
+  nav .wrap{display:flex;align-items:center;justify-content:space-between;height:66px}
+  .brand{display:flex;align-items:center;gap:11px;font-family:var(--display);font-weight:700;letter-spacing:-.02em;font-size:1.02rem}
+  .brand img{width:26px;height:26px;border-radius:8px}
+  .brand .sub{color:var(--muted);font-weight:500;font-family:var(--mono);font-size:.7rem;letter-spacing:.04em}
+  .navlinks{display:flex;gap:28px;font-size:.92rem;color:var(--muted)}
+  .navlinks a{transition:color .15s}
+  .navlinks a:hover{color:var(--ink)}
+  .navbtn{font-family:var(--display);font-weight:600;background:var(--ink);color:var(--paper);padding:9px 17px;border-radius:11px;font-size:.9rem;transition:transform .15s, background .15s}
+  .navbtn:hover{background:#000;transform:translateY(-1px)}
+  .navgroup{display:flex;align-items:center;gap:10px}
+  .navlang{font-family:var(--mono);font-size:.78rem;color:var(--muted);border:1px solid var(--line);padding:6px 11px;border-radius:999px;transition:color .15s, border-color .15s}
+  .navlang:hover{color:var(--ink);border-color:var(--ink)}
+  @media(max-width:760px){.navlinks{display:none}}
+
+  /* ---------- HERO ---------- */
+  .hero{padding:84px 0 72px}
+  .hero-grid{display:grid;grid-template-columns:1.05fr .95fr;gap:56px;align-items:center}
+  @media(max-width:900px){.hero-grid{grid-template-columns:1fr;gap:40px}}
+  .lockup{display:flex;align-items:center;gap:16px;margin-bottom:22px}
+  .lockup h1{margin-bottom:0}
+  .hero-logo{width:clamp(54px,7vw,72px);height:auto;flex-shrink:0;border-radius:22%;display:block;filter:drop-shadow(0 12px 22px rgba(229,72,77,.30));animation:floaty 5.5s ease-in-out infinite;transition:filter .3s ease}
+  .lockup:hover .hero-logo{filter:drop-shadow(0 18px 32px rgba(229,72,77,.46))}
+  @keyframes floaty{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
+  .hero h1{font-size:clamp(2rem,4.6vw,3.4rem);font-weight:800;line-height:1.08;margin-bottom:22px}
+  .hero h1 .ini{color:var(--coral)}
+  .hero h1 em{font-style:normal;color:var(--coral);position:relative;white-space:nowrap}
+  .hero h1 em::after{content:"";position:absolute;left:0;right:0;bottom:.06em;height:.14em;background:var(--coral);opacity:.22;border-radius:2px}
+  .hero .lead{font-size:1.18rem;margin-bottom:30px}
+  .badges{display:flex;gap:9px;flex-wrap:wrap;margin-bottom:32px}
+  .badge{font-family:var(--mono);font-size:.74rem;letter-spacing:.02em;color:var(--muted);background:var(--card);border:1px solid var(--line);padding:6px 11px;border-radius:999px;box-shadow:var(--shadow-sm)}
+  .badge b{color:var(--ink);font-weight:500}
+  .cta{display:flex;gap:13px;flex-wrap:wrap}
+  .btn{font-family:var(--display);font-weight:600;padding:14px 25px;border-radius:13px;font-size:1rem;transition:transform .16s, background .16s, border-color .16s, box-shadow .16s;display:inline-flex;align-items:center;gap:9px;border:1.5px solid transparent;cursor:pointer}
+  .btn-primary{background:var(--coral);color:#fff;box-shadow:0 12px 26px rgba(229,72,77,.26)}
+  .btn-primary:hover{background:var(--coral-deep);transform:translateY(-2px)}
+  .btn-ghost{background:var(--card);border-color:var(--line);color:var(--ink);box-shadow:var(--shadow-sm)}
+  .btn-ghost:hover{border-color:var(--ink);transform:translateY(-2px)}
+
+  /* ---------- SIGNATURE ILLUSTRATION ---------- */
+  .stage{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:22px 22px 18px;position:relative}
+  .stage-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;font-size:.8rem}
+  .stage-file{display:flex;align-items:center;gap:8px;font-weight:500;color:var(--ink)}
+  .stage-file .dotfile{width:9px;height:9px;border-radius:2px;background:var(--coral)}
+  .stage-file .mono{font-family:var(--mono);color:var(--muted);font-size:.74rem}
+  .stage-state{font-family:var(--mono);font-size:.72rem;color:var(--petrol);display:flex;align-items:center;gap:7px}
+  .stage-state .pulse{width:7px;height:7px;border-radius:50%;background:var(--petrol);animation:pulse 1.6s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:.35;transform:scale(.85)}50%{opacity:1;transform:scale(1.15)}}
+  .stage svg{width:100%;height:auto;display:block}
+  .stage-cap{font-family:var(--mono);font-size:.72rem;color:var(--muted);text-align:center;margin-top:6px;letter-spacing:.01em}
+
+  .route{fill:none;stroke:var(--petrol);stroke-width:1.4;stroke-linecap:round;opacity:.34;stroke-dasharray:5 9;animation:flow 2.6s linear infinite}
+  .route.r2{animation-duration:3.1s;opacity:.28}
+  .route.r3{animation-duration:2.2s;opacity:.4}
+  .route.r4{animation-duration:3.4s;opacity:.26}
+  .route.r5{animation-duration:2.9s;opacity:.3}
+  @keyframes flow{to{stroke-dashoffset:-140}}
+  .frag{offset-rotate:0deg;animation:travel 3.2s cubic-bezier(.45,.05,.55,.95) infinite}
+  .frag.f1{offset-path:path("M132 150 C 300 56, 470 56, 628 150");animation-duration:3.2s;animation-delay:0s}
+  .frag.f2{offset-path:path("M132 150 C 300 104, 470 104, 628 150");animation-duration:3.7s;animation-delay:.5s}
+  .frag.f3{offset-path:path("M132 150 C 300 150, 470 150, 628 150");animation-duration:2.8s;animation-delay:1s}
+  .frag.f4{offset-path:path("M132 150 C 300 196, 470 196, 628 150");animation-duration:3.5s;animation-delay:.3s}
+  .frag.f5{offset-path:path("M132 150 C 300 244, 470 244, 628 150");animation-duration:3.0s;animation-delay:1.4s}
+  @keyframes travel{0%{offset-distance:0%;opacity:0}8%{opacity:1}88%{opacity:1}100%{offset-distance:100%;opacity:0}}
+  .collector-fill{transform-box:fill-box;transform-origin:bottom;animation:fillup 9s ease-in-out infinite}
+  @keyframes fillup{0%{transform:scaleY(0)}55%{transform:scaleY(1)}80%{transform:scaleY(1)}100%{transform:scaleY(0)}}
+
+  /* ---------- MAKER NOTE ---------- */
+  .note .wrap{max-width:760px}
+  .note-card{background:var(--paper2);border:1px solid var(--line);border-radius:var(--radius);padding:40px 44px}
+  @media(max-width:560px){.note-card{padding:30px 26px}}
+  .note-card .eyebrow{margin-bottom:20px}
+  .note-card p{font-size:1.13rem;color:var(--ink);margin-bottom:16px}
+  .note-card p:last-of-type{margin-bottom:0}
+  .note-card .soft{color:var(--muted)}
+  .sign{display:flex;align-items:center;gap:12px;margin-top:26px}
+  .sign .avatar{width:38px;height:38px;border-radius:10px;background:linear-gradient(135deg,var(--coral),var(--amber));display:flex;align-items:center;justify-content:center;color:#fff;font-family:var(--display);font-weight:700;font-size:1rem}
+  .sign .who{font-family:var(--display);font-weight:600}
+  .sign .who small{display:block;color:var(--muted);font-family:var(--body);font-weight:400;font-size:.82rem}
+
+  /* ---------- PROBLEM ---------- */
+  .problem{background:var(--paper2)}
+  .problem .split{display:grid;grid-template-columns:.9fr 1.1fr;gap:48px;align-items:start}
+  @media(max-width:860px){.problem .split{grid-template-columns:1fr;gap:30px}}
+  .problem p.body{color:var(--muted);font-size:1.04rem;margin-top:4px}
+  .timeline{list-style:none;display:flex;flex-direction:column;gap:0;border-left:2px solid var(--line);margin-top:4px}
+  .timeline li{position:relative;padding:0 0 26px 26px}
+  .timeline li:last-child{padding-bottom:0}
+  .timeline li::before{content:"";position:absolute;left:-7px;top:5px;width:12px;height:12px;border-radius:50%;background:var(--paper2);border:2px solid var(--coral)}
+  .timeline li b{font-family:var(--display);font-weight:600;display:block;margin-bottom:2px}
+  .timeline li span{color:var(--muted);font-size:.96rem}
+
+  /* ---------- FEATURES ---------- */
+  .grid{display:grid;gap:20px}
+  .g3{grid-template-columns:repeat(3,1fr)}
+  @media(max-width:860px){.g3{grid-template-columns:1fr}}
+  .feat{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:28px;transition:transform .18s, box-shadow .18s;box-shadow:var(--shadow-sm)}
+  .feat:hover{transform:translateY(-3px);box-shadow:var(--shadow)}
+  .feat .ic{width:42px;height:42px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:1.25rem;margin-bottom:18px;background:color-mix(in srgb, var(--coral) 12%, transparent)}
+  .feat h3{font-size:1.16rem;margin-bottom:9px;font-weight:600}
+  .feat p{color:var(--muted);font-size:.97rem}
+  .feat p .aside{color:var(--muted);opacity:.85;font-style:italic}
+
+  /* ---------- STEPS ---------- */
+  .steps{background:var(--paper2)}
+  .steprow{display:grid;grid-template-columns:repeat(3,1fr);gap:24px;margin-top:46px}
+  @media(max-width:860px){.steprow{grid-template-columns:1fr;gap:30px}}
+  .step{position:relative;padding-top:8px;transition:transform .22s ease}
+  .step:hover{transform:translateY(-4px)}
+  .step .num{font-family:var(--display);font-weight:800;font-size:2.6rem;color:var(--coral);line-height:1;letter-spacing:-.04em;margin-bottom:14px}
+  .step .num small{font-size:1rem;color:var(--muted);font-weight:600;margin-left:6px;letter-spacing:.05em}
+  .step h3{font-size:1.16rem;margin-bottom:8px;font-weight:600}
+  .step p{color:var(--muted);font-size:.98rem}
+  .step code{font-family:var(--mono);font-size:.85rem;color:var(--petrol);background:var(--card);border:1px solid var(--line);padding:2px 7px;border-radius:6px}
+
+  /* ---------- SCREENSHOT ---------- */
+  .shotwrap{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow);margin-top:40px}
+  .shotwrap img{width:100%;display:block}
+  .shot-cap{padding:15px 20px;font-size:.86rem;color:var(--muted);border-top:1px solid var(--line);font-family:var(--mono);letter-spacing:.01em}
+
+  /* ---------- UNDER THE HOOD ---------- */
+  .hood{background:var(--ink);color:var(--paper)}
+  .hood h2{color:var(--paper)}
+  .hood .eyebrow{color:var(--amber)}
+  .hood .eyebrow::before{background:var(--amber)}
+  .hood .lead{color:rgba(252,250,246,.66)}
+  .hoodgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:18px;margin-top:34px}
+  @media(max-width:860px){.hoodgrid{grid-template-columns:1fr}}
+  .hcard{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.10);border-left:3px solid var(--petrol);border-radius:14px;padding:24px}
+  .hcard h3{font-size:1.06rem;margin-bottom:9px;font-weight:600;color:var(--paper);display:flex;gap:10px;align-items:center}
+  .hcard p{color:rgba(252,250,246,.62);font-size:.95rem}
+  .hcard code{font-family:var(--mono);background:rgba(255,255,255,.08);padding:2px 7px;border-radius:5px;font-size:.82rem;color:var(--amber)}
+  .pills{display:flex;gap:9px;flex-wrap:wrap;margin-top:32px;justify-content:center}
+  .pill{font-family:var(--mono);background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);padding:7px 14px;border-radius:999px;font-size:.78rem;color:rgba(252,250,246,.7);letter-spacing:.01em}
+
+  /* ---------- OPEN SOURCE ---------- */
+  .open{text-align:center}
+  .open .heart{font-size:2.4rem;margin-bottom:14px}
+  .open .quote{font-family:var(--display);max-width:720px;margin:0 auto 30px;font-size:clamp(1.3rem,2.6vw,1.7rem);font-weight:500;line-height:1.35;letter-spacing:-.01em}
+  .open .quote em{font-style:normal;color:var(--coral)}
+  .open .cta{justify-content:center}
+  .disclaimer{max-width:740px;margin:42px auto 0;background:var(--paper2);border:1px solid var(--line);border-radius:14px;padding:24px 26px;font-size:.92rem;color:var(--muted);text-align:left}
+  .disclaimer b{color:var(--ink);font-weight:600}
+  .disclaimer .tag{font-family:var(--mono);font-size:.72rem;text-transform:uppercase;letter-spacing:.12em;color:var(--petrol);display:block;margin-bottom:9px}
+
+  /* ---------- FOOTER ---------- */
+  footer{border-top:1px solid var(--line);padding:42px 0;color:var(--muted);font-size:.9rem;background:var(--card)}
+  footer .wrap{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:14px}
+  footer b{color:var(--ink);font-weight:600}
+  footer a{color:var(--petrol);font-weight:500}
+  footer a:hover{text-decoration:underline}
+
+  /* ---------- REVEAL ---------- */
+  .reveal{opacity:0;transform:translateY(22px);transition:opacity .7s cubic-bezier(.2,.7,.2,1), transform .7s cubic-bezier(.2,.7,.2,1)}
+  .reveal.in{opacity:1;transform:none}
+
+  @media (prefers-reduced-motion: reduce){
+    html{scroll-behavior:auto}
+    .reveal{opacity:1;transform:none;transition:none}
+    .route,.frag,.collector-fill,.stage-state .pulse,.hero-logo{animation:none}
+    .frag{opacity:.9}
+    .collector-fill{transform:scaleY(.62)}
+  }
+</style>
+</head>
+<body>
+
+<!-- ============ NAV ============ -->
+<nav>
+  <div class="wrap">
+    <a class="brand" href="#top"><img src="assets/icon.png" alt="">Mega Downloader <span class="sub">Proxy Rotator · MDPR</span></a>
+    <div class="navlinks">
+      <a href="#cosa">What it does</a>
+      <a href="#cofano">Under the hood</a>
+      <a href="#come">How to use it</a>
+      <a href="#open">Open source</a>
+    </div>
+    <div class="navgroup">
+      <a class="navlang" href="index.it.html">IT</a>
+      <a class="navbtn" href="https://github.com/SuperPHaze/mega-downloader-proxy-rotator/releases/latest">Download</a>
+    </div>
+  </div>
+</nav>
+
+<!-- ============ HERO ============ -->
+<header id="top" class="hero block">
+  <div class="wrap hero-grid">
+    <div>
+      <span class="eyebrow">Open source </span>
+      <div class="lockup">
+        <img class="hero-logo" src="assets/app-icon.gif" alt="Mega Downloader Proxy Rotator icon">
+        <h1><span class="ini">M</span>ega <span class="ini">D</span>ownloader <span class="ini">P</span>roxy <span class="ini">R</span>otator</h1>
+      </div>
+      <p class="lead">A desktop app that splits the download into many small chunks and routes each one through a different proxy, in parallel. So the daily per-IP limit that blocks multi-GB files no longer stops you halfway through.</p>
+      <div class="badges">
+        <span class="badge">version <b>1.8.2</b></span>
+        <span class="badge">license <b>MIT</b></span>
+        <span class="badge"><b>Python</b> + PyQt6</span>
+        <span class="badge"><b>Windows</b> 10/11</span>
+      </div>
+      <div class="cta">
+        <a class="btn btn-primary" href="https://github.com/SuperPHaze/mega-downloader-proxy-rotator/releases/latest">Download the app</a>
+        <a class="btn btn-ghost" href="https://github.com/SuperPHaze/mega-downloader-proxy-rotator">View the code</a>
+      </div>
+    </div>
+
+    <!-- signature animation -->
+    <div class="stage reveal">
+      <div class="stage-top">
+        <span class="stage-file"><span class="dotfile"></span>File.zip <span class="mono">· 5 GB</span></span>
+        <span class="stage-state"><span class="pulse"></span>incoming</span>
+      </div>
+      <svg viewBox="0 0 760 300" role="img" aria-label="A file splits into chunks, each one travels through a different proxy and then comes back together">
+        <!-- source file -->
+        <g>
+          <rect x="44" y="118" width="76" height="64" rx="9" fill="none" stroke="var(--line)" stroke-width="1.5"/>
+          <rect x="44" y="118" width="76" height="64" rx="9" fill="color-mix(in srgb, var(--coral) 8%, transparent)"/>
+          <line x1="58" y1="138" x2="106" y2="138" stroke="var(--coral)" stroke-width="2.4" stroke-linecap="round"/>
+          <line x1="58" y1="150" x2="98" y2="150" stroke="var(--muted)" stroke-width="2" stroke-linecap="round" opacity=".5"/>
+          <line x1="58" y1="162" x2="102" y2="162" stroke="var(--muted)" stroke-width="2" stroke-linecap="round" opacity=".5"/>
+        </g>
+        <!-- routes -->
+        <path class="route r1" d="M132 150 C 300 56, 470 56, 628 150"/>
+        <path class="route r2" d="M132 150 C 300 104, 470 104, 628 150"/>
+        <path class="route r3" d="M132 150 C 300 150, 470 150, 628 150"/>
+        <path class="route r4" d="M132 150 C 300 196, 470 196, 628 150"/>
+        <path class="route r5" d="M132 150 C 300 244, 470 244, 628 150"/>
+        <!-- traveling fragments -->
+        <circle class="frag f1" r="5.5" fill="var(--amber)"/>
+        <circle class="frag f2" r="5.5" fill="var(--coral)"/>
+        <circle class="frag f3" r="5.5" fill="var(--petrol)"/>
+        <circle class="frag f4" r="5.5" fill="var(--amber)"/>
+        <circle class="frag f5" r="5.5" fill="var(--coral)"/>
+        <!-- collector / reassembly -->
+        <g>
+          <rect x="640" y="118" width="76" height="64" rx="9" fill="none" stroke="var(--petrol)" stroke-width="1.6"/>
+          <clipPath id="cclip"><rect x="640" y="118" width="76" height="64" rx="9"/></clipPath>
+          <g clip-path="url(#cclip)">
+            <rect class="collector-fill" x="640" y="118" width="76" height="64" fill="color-mix(in srgb, var(--petrol) 22%, transparent)"/>
+          </g>
+        </g>
+      </svg>
+      <div class="stage-cap">one chunk, one proxy</div>
+    </div>
+  </div>
+</header>
+
+<!-- ============ MAKER NOTE ============ -->
+<section class="note block" style="padding-top:32px">
+  <div class="wrap">
+    <div class="note-card reveal">
+      <span class="eyebrow">A couple of words from the person who wrote it</span>
+      <p>This is my first public project on GitHub. It started from a very concrete need of mine: accessing the files I keep on Mega from any computer — the one at home and the one at work — without logging in every time.</p>
+      <p class="soft">The thing is, without logging in Mega lets you download 5 GB a day: once that's gone, you have to wait 24 hours. When I need to move more of my own stuff, that gets inconvenient. That's where this came from.</p>
+      <p class="soft">At some point it stopped being an experiment and became something I used every day, so I cleaned it up and put it online. It's a first for me too: if you find a bug or have an idea, open an issue — I'll gladly read it.</p>
+      <div class="sign">
+        <span class="avatar">P</span>
+        <span class="who">SuperPHaze<small>author · maintains the project</small></span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ WHAT IT DOES ============ -->
+<section id="cosa" class="block tint">
+  <div class="wrap">
+    <div class="reveal" style="text-align:center;margin-bottom:48px">
+      <span class="eyebrow">The solution</span>
+      <h2>A different proxy for every chunk</h2>
+      <p class="lead" style="margin:0 auto">Instead of pulling everything from a single address, the file is split and then reassembled: each chunk goes through a different public proxy. The load spreads across many IPs and none of them gets put under pressure.</p>
+    </div>
+    <div class="grid g3">
+      <div class="feat reveal"><div class="ic">⚡</div><h3>Built for multi-GB files</h3><p>Handles downloads that would stall from a single IP, putting the file back together piece by piece down to the last one.</p></div>
+      <div class="feat reveal"><div class="ic">🔄</div><h3>It finds the proxies for you</h3><p>The app collects and verifies thousands of public proxies on its own and rotates through them while downloading. You configure nothing.</p></div>
+      <div class="feat reveal"><div class="ic">⏸</div><h3>Resumes where it left off</h3><p>Crash, dropped connection, computer turned off: on restart it only recovers the missing chunks, it doesn't start over from scratch.</p></div>
+      <div class="feat reveal"><div class="ic">🖥️</div><h3>An interface that makes sense</h3><p>Paste the link, hit start. See speed, estimated time, and the status of each file, with a light or dark theme.</p></div>
+      <div class="feat reveal"><div class="ic">🧩</div><h3>Several files at once</h3><p>Download multiple files together, each with its own queue of chunks and its own proxies, in parallel.</p></div>
+      <div class="feat reveal"><div class="ic">🔒</div><h3>Doesn't show your IP</h3><p>The service sees the proxies' IPs, not yours. <span class="aside">Free proxies, though, don't guarantee anonymity — more on that below.</span></p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ BY THE NUMBERS ============ -->
+<section class="block">
+  <div class="wrap">
+    <div class="reveal" style="text-align:center;margin-bottom:26px">
+      <span class="eyebrow" style="justify-content:center">By the numbers</span>
+      <h2>What happens at startup</h2>
+    </div>
+    <div class="grid g3 reveal" style="gap:18px">
+      <div style="text-align:center;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:26px 22px;box-shadow:var(--shadow-sm)">
+        <div style="font-family:var(--display);font-weight:800;font-size:clamp(1.7rem,3vw,2.2rem);color:var(--coral);line-height:1">32</div>
+        <div style="color:var(--muted);font-size:.95rem;margin-top:7px">public proxy sources combed through</div>
+      </div>
+      <div style="text-align:center;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:26px 22px;box-shadow:var(--shadow-sm)">
+        <div style="font-family:var(--display);font-weight:800;font-size:clamp(1.7rem,3vw,2.2rem);color:var(--coral);line-height:1">up to 1,000</div>
+        <div style="color:var(--muted);font-size:.95rem;margin-top:7px">proxies validated on every startup</div>
+      </div>
+      <div style="text-align:center;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:26px 22px;box-shadow:var(--shadow-sm)">
+        <div style="font-family:var(--display);font-weight:800;font-size:clamp(1.7rem,3vw,2.2rem);color:var(--coral);line-height:1">200</div>
+        <div style="color:var(--muted);font-size:.95rem;margin-top:7px">parallel checks in the first filter</div>
+      </div>
+      <div style="text-align:center;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:26px 22px;box-shadow:var(--shadow-sm)">
+        <div style="font-family:var(--display);font-weight:800;font-size:clamp(1.7rem,3vw,2.2rem);color:var(--coral);line-height:1">8 MB × 4</div>
+        <div style="color:var(--muted);font-size:.95rem;margin-top:7px">chunks over parallel connections, one proxy each</div>
+      </div>
+      <div style="text-align:center;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:26px 22px;box-shadow:var(--shadow-sm)">
+        <div style="font-family:var(--display);font-weight:800;font-size:clamp(1.7rem,3vw,2.2rem);color:var(--coral);line-height:1">~70%</div>
+        <div style="color:var(--muted);font-size:.95rem;margin-top:7px">proxies discarded: only the best get through</div>
+      </div>
+      <div style="text-align:center;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:26px 22px;box-shadow:var(--shadow-sm)">
+        <div style="font-family:var(--display);font-weight:800;font-size:clamp(1.7rem,3vw,2.2rem);color:var(--coral);line-height:1">29</div>
+        <div style="color:var(--muted);font-size:.95rem;margin-top:7px">automated tests covering the code</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ UNDER THE HOOD ============ -->
+<section id="cofano" class="hood block">
+  <div class="wrap">
+    <div class="reveal" style="text-align:center;margin-bottom:8px">
+      <span class="eyebrow">Under the hood</span>
+      <h2>How it's built inside</h2>
+      <p class="lead" style="margin:0 auto">The technical choices that keep downloads fast and reliable despite the inherent instability of free proxies. The specs, in short.</p>
+    </div>
+    <div class="hoodgrid">
+      <div class="hcard reveal"><h3>🧱 Fixed-size chunk queue</h3><p>The file is split into 8 MB chunks, downloaded with parallel <code>HTTP Range</code> requests — 4 connections by default, up to 5 files at once. The fixed size makes resume valid regardless of the number of connections; a dropped proxy costs at most one chunk.</p></div>
+      <div class="hcard reveal"><h3>🔄 Per-chunk rotation + watchdog</h3><p>Rotation is per-chunk, not per-file: each chunk uses a different proxy from the pool. A watchdog aborts attempts below 200 KB/s or past 180 s and retries them elsewhere, so slow or blocked proxies don't drag down the whole download.</p></div>
+      <div class="hcard reveal"><h3>✅ Two-stage validation</h3><p>Stage 1 — HTTP reachability, up to 200 parallel checks with aggressive timeouts. Stage 2 — reachability of Mega's API host. Out of up to 1,000 candidates, usually only a few dozen get through: about 70% are discarded.</p></div>
+      <div class="hcard reveal"><h3>🏅 Scored pool</h3><p>Every proxy has a score: +5 on success, −10 on failure, discarded below threshold. Hard penalties for CDN rejections (403/509/503), soft ones for transient errors; ties are broken by lower latency. A background refresher regenerates it without stopping downloads.</p></div>
+      <div class="hcard reveal"><h3>💾 Resume and atomic writes</h3><p>It always writes to a <code>.part</code> file with a <code>.progress.json</code> sidecar tracking completed chunks; the rename to the final name is atomic and is the only completion marker. On resume, only the missing chunks are re-downloaded.</p></div>
+      <div class="hcard reveal"><h3>🔐 Built-in AES decryption</h3><p>Mega's AES primitives are reimplemented in the project, with no fragile external dependencies. Decryption happens in streaming fashion (AES-CTR) straight onto the file: constant RAM even for files of many GB.</p></div>
+    </div>
+    <div class="pills reveal">
+      <span class="pill">Python</span><span class="pill">PyQt6</span><span class="pill">HTTP Range</span>
+      <span class="pill">AES streaming</span><span class="pill">Multithreading</span><span class="pill">29 automated tests</span><span class="pill">Headless CLI</span>
+    </div>
+  </div>
+</section>
+
+<!-- ============ HOW TO USE IT ============ -->
+<section id="come" class="steps block">
+  <div class="wrap">
+    <div class="reveal">
+      <span class="eyebrow">In three steps</span>
+      <h2>How to use it</h2>
+    </div>
+    <div class="steprow">
+      <div class="step reveal">
+        <div class="num">01</div>
+        <h3>Paste the link</h3>
+        <p>Copy one or more <code>mega.nz/…</code> links and paste them into the app, or import them from a text file.</p>
+      </div>
+      <div class="step reveal">
+        <div class="num">02</div>
+        <h3>Press start</h3>
+        <p>The app looks for proxies, verifies them, and fills its reservoir. You don't have to find or enter any proxy by hand.</p>
+      </div>
+      <div class="step reveal">
+        <div class="num">03</div>
+        <h3>Download</h3>
+        <p>The download starts in parallel chunks. Follow progress and speed; you can pause, cancel, or resume.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ DEMO ============ -->
+<section class="block">
+  <div class="wrap">
+    <div class="reveal" style="text-align:center">
+      <span class="eyebrow">The app in action</span>
+      <h2>Demo</h2>
+    </div>
+    <div class="shotwrap reveal">
+      <video src="assets/demo.mp4" autoplay loop muted playsinline controls style="width:100%;display:block"></video>
+      <div class="shot-cap">a tour through the app's sections</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ OPEN SOURCE ============ -->
+<section id="open" class="open block">
+  <div class="wrap">
+    <div class="reveal">
+      <div class="heart">🫶</div>
+      <span class="eyebrow" style="justify-content:center">Free software</span>
+      <p class="quote">Built for me, <em>shared with everyone.</em> Open source, MIT license: use it, modify it, redistribute it — and if you feel like it, buy me a coffee.</p>
+      <div class="cta">
+        <a class="btn btn-ghost" href="https://github.com/SuperPHaze/mega-downloader-proxy-rotator">Repository on GitHub</a>
+        <a class="btn btn-primary" href="https://github.com/SuperPHaze/mega-downloader-proxy-rotator/releases/latest">Download and try it</a>
+      </div>
+      <div class="disclaimer reveal">
+        <span class="tag">Responsible use</span>
+        <b>This is a tool for downloading files you own or have the right to download.</b> Working around a service's technical limits may touch its terms of use, and public proxies are run by unknown third parties: <b>they don't guarantee anonymity</b> and shouldn't be used for sensitive data. It's a neutral technical tool; the author assumes no responsibility for misuse.
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ FOOTER ============ -->
+<footer>
+  <div class="wrap">
+    <div>Mega Downloader Proxy Rotator (MDPR) · v1.8.2 · created by <b>SuperPHaze</b></div>
+    <div>MIT License · <a href="https://github.com/SuperPHaze/mega-downloader-proxy-rotator">GitHub</a></div>
+  </div>
+</footer>
+
+<script>
+  (function(){
+    var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    var els = document.querySelectorAll('.reveal');
+    if(reduce || !('IntersectionObserver' in window)){
+      els.forEach(function(el){ el.classList.add('in'); });
+      return;
+    }
+    var io = new IntersectionObserver(function(entries){
+      entries.forEach(function(e){
+        if(e.isIntersecting){ e.target.classList.add('in'); io.unobserve(e.target); }
+      });
+    }, { threshold:.14 });
+    els.forEach(function(el){ io.observe(el); });
+  })();
+</script>
+</body>
+</html>

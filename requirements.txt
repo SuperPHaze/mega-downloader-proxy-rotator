@@ -1,0 +1,16 @@
+# Dipendenze runtime di Mega Proxy Downloader.
+# Tested on: Windows 11 + Python 3.11-3.14.
+#
+# mega.py NON e' una dipendenza: le primitive crypto e l'API pubblica
+# sono vendorizzate in src/downloader/mega_crypto.py e mega_api.py.
+
+# --- GUI ---
+PyQt6>=6.6
+
+# --- Crypto: AES-CBC per attributi Mega + AES-CTR per il payload file ---
+pycryptodome>=3.20
+
+# --- HTTP + scraping proxy ---
+requests>=2.31
+beautifulsoup4>=4.12
+lxml>=5.0
