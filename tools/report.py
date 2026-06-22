@@ -1,25 +1,27 @@
-"""Analizzatore di sola lettura dei log di diagnostica: ricompone app.log* +
-crash.log in un report HTML autonomo (grafici, tabella sessioni, eccezioni).
+"""Generatore di report HTML diagnostico (di sola lettura): legge il log
+strutturato universale `logs/events.jsonl` (+ rotazioni) e `logs/crash.log`
+e produce un report autonomo in `logs/reports/report_<timestamp>.html`.
 
-Non modifica ne' ruota i log: li legge soltanto. Nessuna dipendenza esterna
-(solo stdlib); il report usa Chart.js da CDN con fallback tabellare se offline.
+Non modifica ne' ruota i log: li legge soltanto, in streaming (riga per
+riga). Nessuna dipendenza esterna (solo stdlib); il report usa Chart.js da
+CDN con fallback tabellare se offline.
 
 Uso:
-    python -m tools.analyze_crashlog
-    python -m tools.analyze_crashlog --logs <cartella> --out crash_report.html
+    python -m tools.report
+    python -m tools.report --logs <cartella> --out <file.html>
 
-Formati attesi (vedi src/core/logging_setup.py e src/core/diagnostics.py,
-DEVONO restare allineati a questo parser):
-    app.log:   "%H:%M:%S [LEVELNAME] ThreadName logger.name: messaggio"
-               (formatter di logging_setup.py: niente data, solo ora).
-               Righe notevoli: "SESSION START vX.Y.Z pid=<pid>",
-               "SESSION CLEAN EXIT", "HEARTBEAT mem_rss=... threads=...
-               download_attivi=... pool_vivi=...", blocchi ERROR/CRITICAL
-               seguiti da un traceback Python "grezzo" (senza prefisso di
-               formattazione) fino alla riga successiva nel formato sopra.
+Formati attesi:
+    events.jsonl: una riga JSON per record (vedi
+        src/core/logging_setup.py:JsonLinesFormatter), campi base sempre
+        presenti (ts ISO-8601 con millisecondi, level, logger, thread, msg)
+        + campi extra a livello superiore secondo `event_type`
+        (session_start, session_clean_exit, heartbeat, config,
+        download_completed, download_abandoned, download_cancelled).
+        Le rotazioni (events.jsonl.1 ... events.jsonl.N) sono lette in
+        ordine cronologico (dalla piu' vecchia alla corrente).
     crash.log: dump nativi di faulthandler ("Fatal Python error: ..." senza
-               timestamp) intervallati da voci scritte dall'app stessa con
-               timestamp ISO: "<iso> [THREAD-EXC] ..." / "<iso> [QT-FATAL] ...".
+        timestamp) intervallati da voci scritte dall'app con timestamp ISO:
+        "<iso> [THREAD-EXC] ..." / "<iso> [QT-FATAL] ...".
 """
 from __future__ import annotations
 
@@ -29,21 +31,14 @@ import json
 import re
 import sys
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
+from typing import Iterable, Iterator
 
-_PROJECT_ROOT = Path(__file__).resolve().parents[1]
+from src.core.config import EVENTS_LOG, EVENTS_LOG_BACKUPS, LOGS_DIR, REPORTS_DIR
 
-LOG_LINE_RE = re.compile(
-    r"^(?P<time>\d{2}:\d{2}:\d{2}) \[(?P<level>[A-Z]+)\] (?P<thread>\S+) (?P<logger>\S+): (?P<msg>.*)$"
-)
-HEARTBEAT_RE = re.compile(
-    r"^HEARTBEAT mem_rss=(?P<mem>[\d.]+|n/d) threads=(?P<threads>\d+) "
-    r"download_attivi=(?P<dl>\d+) pool_vivi=(?P<pool>\d+)$"
-)
-SESSION_START_RE = re.compile(r"^SESSION START v(?P<version>\S+) pid=(?P<pid>\d+)$")
-SESSION_CLEAN_EXIT_MSG = "SESSION CLEAN EXIT"
-FILE_ID_RE = re.compile(r"\[file (?P<file_id>\d+)\]")
+ERROR_LEVELS = {"WARNING", "ERROR", "CRITICAL"}
+DOWNLOAD_EVENT_TYPES = {"download_completed", "download_abandoned", "download_cancelled"}
 
 # Voci di crash.log scritte dall'app (timestamp ISO completo, vedi
 # logging_setup._write_crash_log). I dump nativi di faulthandler invece NON
@@ -53,71 +48,74 @@ CRASH_ENTRY_START_RE = re.compile(
 )
 NATIVE_FAULT_START_RE = re.compile(r"^Fatal Python error:")
 
-ERROR_LEVELS = {"ERROR", "CRITICAL"}
-
 
 # === Modello dati =========================================================
 
 @dataclass
-class Heartbeat:
-    line_idx: int
-    time: str | None
+class HeartbeatEvent:
+    ts: str | None
     mem_rss_mb: float | None
-    threads: int
-    download_attivi: int
-    pool_vivi: int
+    threads: int | None
+    download_attivi: int | None
+    pool_vivi: int | None
 
 
 @dataclass
-class ExceptionEntry:
-    line_idx: int
-    time: str | None
+class LogEvent:
+    ts: str | None
     level: str
-    thread: str
     logger: str
-    message: str
+    thread: str
+    msg: str
+    exc: str | None = None
+
+
+@dataclass
+class DownloadEvent:
+    ts: str | None
+    event_type: str  # download_completed | download_abandoned | download_cancelled
     file_id: int | None
-    traceback: str
+    url: str | None = None
+    file_name: str | None = None
+    file_size: object = None
+    attempts: int | None = None
+    last_error: str | None = None
 
 
 @dataclass
 class CrashEntry:
-    kind: str  # "THREAD-EXC" | "QT-FATAL" | "NATIVE"
-    timestamp: str | None  # ISO completo, solo per THREAD-EXC/QT-FATAL
+    kind: str  # THREAD-EXC | QT-FATAL | NATIVE
+    timestamp: str | None
     text: str
 
 
 @dataclass
 class Session:
-    start_idx: int
-    start_time: str | None
+    start_ts: str | None
     version: str | None
     pid: int | None
-    end_idx: int | None = None
-    end_time: str | None = None
+    end_ts: str | None = None
     clean_exit: bool = False
-    heartbeats: list[Heartbeat] = field(default_factory=list)
-    exceptions: list[ExceptionEntry] = field(default_factory=list)
+    heartbeats: list[HeartbeatEvent] = field(default_factory=list)
+    errors: list[LogEvent] = field(default_factory=list)
+    downloads: list[DownloadEvent] = field(default_factory=list)
     crashes: list[CrashEntry] = field(default_factory=list)
 
     @property
     def outcome(self) -> str:
-        """CLEAN / NATIVA / ANOMALA — le sole 3 classi mostrate in tabella.
-        La distinzione piu' fine (eccezione vs causa esterna) vive solo nel
-        verdetto euristico, non nella colonna esito."""
         if self.clean_exit:
             return "CLEAN"
         if self.crashes:
-            return "NATIVA"
-        return "ANOMALA"
+            return "CRASH"
+        return "TRONCATA"
 
     @property
-    def effective_end_time(self) -> str | None:
-        if self.end_time:
-            return self.end_time
+    def effective_end_ts(self) -> str | None:
+        if self.end_ts:
+            return self.end_ts
         if self.heartbeats:
-            return self.heartbeats[-1].time
-        return self.start_time
+            return self.heartbeats[-1].ts
+        return self.start_ts
 
     @property
     def mem_peak(self) -> float | None:
@@ -125,22 +123,28 @@ class Session:
         return max(vals) if vals else None
 
 
-# === Lettura file ==========================================================
+def _parse_ts(ts: str | None) -> datetime | None:
+    if not ts:
+        return None
+    try:
+        return datetime.fromisoformat(ts)
+    except ValueError:
+        return None
 
-def find_app_log_files(logs_dir: Path) -> list[Path]:
-    """File app.log* in ordine CRONOLOGICO (dal piu' vecchio al piu' recente).
 
-    RotatingFileHandler numera i backup al CONTRARIO: app.log.3 e' il piu'
-    vecchio, app.log.1 il piu' recente fra i ruotati, app.log e' quello
-    corrente (il piu' recente di tutti). File assenti vengono saltati senza
-    errori.
-    """
+# === Lettura file in streaming ============================================
+
+def find_events_log_files(logs_dir: Path) -> list[Path]:
+    """File events.jsonl* in ordine CRONOLOGICO (dal piu' vecchio al piu'
+    recente). RotatingFileHandler numera i backup al CONTRARIO: il suffisso
+    piu' alto e' il piu' vecchio, events.jsonl (senza suffisso) e' il
+    corrente. File assenti vengono saltati senza errori."""
     files: list[Path] = []
-    for suffix in (3, 2, 1):
-        p = logs_dir / f"app.log.{suffix}"
+    for suffix in range(EVENTS_LOG_BACKUPS, 0, -1):
+        p = logs_dir / f"{EVENTS_LOG}.{suffix}"
         if p.exists():
             files.append(p)
-    current = logs_dir / "app.log"
+    current = logs_dir / EVENTS_LOG
     if current.exists():
         files.append(current)
     return files
@@ -153,106 +157,101 @@ def read_text_safe(path: Path) -> str:
         return ""
 
 
-# === Parsing app.log ========================================================
+def stream_records(paths: Iterable[Path], malformed_counter: list[int]) -> Iterator[dict]:
+    """Legge le righe JSON dei file forniti una alla volta (no caricamento
+    integrale in RAM). Le righe malformate vengono contate in
+    malformed_counter[0], non interrompono la lettura."""
+    for p in paths:
+        try:
+            f = open(p, "r", encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        with f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    rec = json.loads(line)
+                except ValueError:
+                    malformed_counter[0] += 1
+                    continue
+                if isinstance(rec, dict):
+                    yield rec
+                else:
+                    malformed_counter[0] += 1
 
-def parse_app_log(lines: list[str]) -> tuple[list[Session], list[ExceptionEntry]]:
-    """Ritorna (sessioni, eccezioni orfane senza una sessione aperta).
 
-    Scansione sequenziale a singolo passaggio: l'ordine delle righe nel file
-    e' l'unica fonte di "tempo relativo" disponibile (il formatter non
-    include la data, solo l'ora — vedi logging_setup.py).
-    """
+# === Ricostruzione sessioni ================================================
+
+def build_sessions(
+    records: Iterable[dict],
+) -> tuple[list[Session], list[LogEvent], list[DownloadEvent]]:
+    """Ritorna (sessioni, errori orfani, download orfani) — "orfani" sono i
+    record arrivati senza una sessione apertura corrispondente (session_start
+    mai vista, es. log troncato all'inizio)."""
     sessions: list[Session] = []
-    orphan_exceptions: list[ExceptionEntry] = []
     current: Session | None = None
-    pending_exc: ExceptionEntry | None = None
-    pending_tb_lines: list[str] = []
+    orphan_errors: list[LogEvent] = []
+    orphan_downloads: list[DownloadEvent] = []
 
-    def _finalize_pending() -> None:
-        nonlocal pending_exc, pending_tb_lines
-        if pending_exc is not None:
-            pending_exc.traceback = "\n".join(pending_tb_lines).strip()
-        pending_exc = None
-        pending_tb_lines = []
+    for rec in records:
+        event_type = rec.get("event_type")
+        ts = rec.get("ts")
+        level = rec.get("level", "")
 
-    for idx, line in enumerate(lines):
-        m = LOG_LINE_RE.match(line)
-        if m is None:
-            # Riga di continuazione: traceback "grezzo" appeso da logging
-            # quando si passa exc_info (niente prefisso di formattazione).
-            if pending_exc is not None:
-                pending_tb_lines.append(line)
+        if event_type == "session_start":
+            if current is not None:
+                # Sessione precedente senza CLEAN EXIT prima del nuovo START:
+                # chiusura anomala (verra' marcata CRASH o TRONCATA in base
+                # all'eventuale attribuzione di un crash.log).
+                sessions.append(current)
+            current = Session(start_ts=ts, version=rec.get("app_version"), pid=rec.get("pid"))
             continue
 
-        _finalize_pending()
-
-        time_, level, thread, logger_, msg = (
-            m.group("time"), m.group("level"), m.group("thread"),
-            m.group("logger"), m.group("msg"),
-        )
-
-        if msg == SESSION_CLEAN_EXIT_MSG:
+        if event_type == "session_clean_exit":
             if current is not None:
-                current.end_idx = idx
-                current.end_time = time_
+                current.end_ts = ts
                 current.clean_exit = True
                 sessions.append(current)
                 current = None
             continue
 
-        sm = SESSION_START_RE.match(msg)
-        if sm:
+        if event_type == "heartbeat":
             if current is not None:
-                # Sessione precedente senza CLEAN EXIT prima del nuovo START:
-                # chiusura anomala, la finalizziamo qui.
-                current.end_idx = idx - 1
-                sessions.append(current)
-            current = Session(
-                start_idx=idx, start_time=time_,
-                version=sm.group("version"), pid=int(sm.group("pid")),
-            )
-            continue
-
-        hb = HEARTBEAT_RE.match(msg)
-        if hb:
-            if current is not None:
-                mem_raw = hb.group("mem")
-                mem_val = None if mem_raw == "n/d" else float(mem_raw)
-                current.heartbeats.append(Heartbeat(
-                    line_idx=idx, time=time_, mem_rss_mb=mem_val,
-                    threads=int(hb.group("threads")),
-                    download_attivi=int(hb.group("dl")),
-                    pool_vivi=int(hb.group("pool")),
+                current.heartbeats.append(HeartbeatEvent(
+                    ts=ts, mem_rss_mb=rec.get("mem_rss_mb"), threads=rec.get("threads"),
+                    download_attivi=rec.get("download_attivi"), pool_vivi=rec.get("pool_vivi"),
                 ))
             continue
 
-        if level in ERROR_LEVELS:
-            fm = FILE_ID_RE.search(msg)
-            entry = ExceptionEntry(
-                line_idx=idx, time=time_, level=level, thread=thread,
-                logger=logger_, message=msg,
-                file_id=int(fm.group("file_id")) if fm else None,
-                traceback="",
+        if event_type in DOWNLOAD_EVENT_TYPES:
+            dl = DownloadEvent(
+                ts=ts, event_type=event_type, file_id=rec.get("file_id"),
+                url=rec.get("url"), file_name=rec.get("file_name"),
+                file_size=rec.get("file_size"), attempts=rec.get("attempts"),
+                last_error=rec.get("last_error"),
             )
-            pending_exc = entry
-            pending_tb_lines = []
-            if current is not None:
-                current.exceptions.append(entry)
-            else:
-                orphan_exceptions.append(entry)
+            (current.downloads if current is not None else orphan_downloads).append(dl)
             continue
 
-    _finalize_pending()
+        if level in ERROR_LEVELS:
+            ev = LogEvent(
+                ts=ts, level=level, logger=rec.get("logger", ""),
+                thread=rec.get("thread", ""), msg=rec.get("msg", ""), exc=rec.get("exc"),
+            )
+            (current.errors if current is not None else orphan_errors).append(ev)
+            continue
+
     if current is not None:
-        # File terminato senza CLEAN EXIT: chiusura anomala (o sessione
-        # ancora in corso al momento dell'analisi).
-        current.end_idx = len(lines) - 1
+        # File terminato senza session_clean_exit: chiusura anomala (o
+        # sessione ancora in corso al momento dell'analisi).
         sessions.append(current)
 
-    return sessions, orphan_exceptions
+    return sessions, orphan_errors, orphan_downloads
 
 
-# === Parsing crash.log =======================================================
+# === Parsing crash.log ======================================================
 
 def parse_crash_log(text: str) -> list[CrashEntry]:
     """crash.log e' eterogeneo: dump nativi di faulthandler (nessun
@@ -271,8 +270,7 @@ def parse_crash_log(text: str) -> list[CrashEntry]:
     def _flush() -> None:
         if current_kind is not None:
             entries.append(CrashEntry(
-                kind=current_kind, timestamp=current_ts,
-                text="\n".join(body).strip(),
+                kind=current_kind, timestamp=current_ts, text="\n".join(body).strip(),
             ))
 
     for line in lines:
@@ -299,13 +297,13 @@ def parse_crash_log(text: str) -> list[CrashEntry]:
 
 
 def attribute_crashes(sessions: list[Session], crashes: list[CrashEntry]) -> list[CrashEntry]:
-    """Associa ogni voce di crash.log alla sessione di app.log piu'
-    plausibile. Euristica (niente data nei timestamp di app.log):
-    - voci con timestamp ISO (THREAD-EXC/QT-FATAL): confronta la sola
-      porzione HH:MM:SS con la finestra [start_time, end_time] di ciascuna
-      sessione; se nessuna finestra combacia, ricade sulla sessione con lo
-      start_time piu' recente non successivo all'evento, altrimenti
-      sull'ultima sessione del log.
+    """Associa ogni voce di crash.log alla sessione di events.jsonl piu'
+    plausibile, confrontando timestamp ISO completi (data compresa, niente
+    ambiguita' di mezzanotte):
+    - voci con timestamp (THREAD-EXC/QT-FATAL): la sessione la cui finestra
+      [start_ts, effective_end_ts] contiene il timestamp; altrimenti la
+      sessione con lo start_ts piu' recente non successivo, altrimenti
+      l'ultima sessione.
     - dump nativi (nessun timestamp): attribuiti all'ultima sessione senza
       CLEAN EXIT (un crash nativo termina il processo, quindi e' quasi
       sempre legato alla sessione piu' recente ancora "aperta").
@@ -315,14 +313,15 @@ def attribute_crashes(sessions: list[Session], crashes: list[CrashEntry]) -> lis
     for c in crashes:
         target: Session | None = None
         if c.timestamp:
-            tod = c.timestamp[11:19]  # HH:MM:SS
+            c_dt = _parse_ts(c.timestamp)
             for s in sessions:
-                end = s.effective_end_time
-                if s.start_time and end and s.start_time <= tod <= end:
+                start_dt = _parse_ts(s.start_ts)
+                end_dt = _parse_ts(s.effective_end_ts)
+                if start_dt and end_dt and c_dt and start_dt <= c_dt <= end_dt:
                     target = s
                     break
-            if target is None:
-                earlier = [s for s in sessions if s.start_time and s.start_time <= tod]
+            if target is None and c_dt is not None:
+                earlier = [s for s in sessions if _parse_ts(s.start_ts) and _parse_ts(s.start_ts) <= c_dt]
                 target = earlier[-1] if earlier else (sessions[-1] if sessions else None)
         else:
             open_sessions = [s for s in sessions if not s.clean_exit]
@@ -332,49 +331,6 @@ def attribute_crashes(sessions: list[Session], crashes: list[CrashEntry]) -> lis
         else:
             unattributed.append(c)
     return unattributed
-
-
-# === Verdetto euristico ======================================================
-
-def _mem_trend(heartbeats: list[Heartbeat]) -> tuple[bool, float, float]:
-    """True se la memoria cresce in modo ~monotono (>=70% dei passi non
-    decrescenti) con una crescita totale >= 15%: indizio di leak/OOM."""
-    vals = [h.mem_rss_mb for h in heartbeats if h.mem_rss_mb is not None]
-    if len(vals) < 3:
-        return False, 0.0, 0.0
-    diffs = [vals[i + 1] - vals[i] for i in range(len(vals) - 1)]
-    nondecreasing_ratio = sum(1 for d in diffs if d >= 0) / len(diffs)
-    growth_pct = ((vals[-1] - vals[0]) / vals[0] * 100) if vals[0] > 0 else 0.0
-    growing = nondecreasing_ratio >= 0.7 and growth_pct >= 15
-    return growing, vals[0], vals[-1]
-
-
-def build_verdict(sessions: list[Session]) -> list[str]:
-    anomale = [s for s in sessions if s.outcome != "CLEAN"]
-    if not anomale:
-        return ["Nessuna chiusura anomala rilevata: tutte le sessioni si sono "
-                "chiuse correttamente (SESSION CLEAN EXIT)."]
-    bullets: list[str] = []
-    for s in anomale:
-        label = f"Sessione avviata alle {s.start_time or '?'}"
-        if s.outcome == "NATIVA":
-            bullets.append(f"{label}: crash NATIVO rilevato in crash.log -> vedi dump sotto.")
-            continue
-        if s.exceptions:
-            bullets.append(f"{label}: eccezione non gestita con traceback -> vedi sotto.")
-            continue
-        growing, first, last = _mem_trend(s.heartbeats)
-        if growing:
-            bullets.append(
-                f"{label}: memoria in crescita quasi monotona prima della chiusura "
-                f"({first:.0f}->{last:.0f} MB) -> sospetto OOM/leak."
-            )
-        else:
-            bullets.append(
-                f"{label}: nessuna eccezione ne' dump nativo associato -> probabile "
-                "causa esterna (sleep/standby, riavvio, kill del processo dal sistema)."
-            )
-    return bullets
 
 
 # === Rendering HTML ==========================================================
@@ -401,17 +357,17 @@ h2 { font-size: 1.1rem; margin: 32px 0 12px; border-bottom: 1px solid var(--bord
 }
 .card .label { color: var(--muted); font-size: 0.78rem; text-transform: uppercase; letter-spacing: .03em; }
 .card .value { font-size: 1.6rem; font-weight: 600; margin-top: 4px; }
-.verdict { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px 18px; margin-bottom: 8px; }
-.verdict ul { margin: 6px 0 0; padding-left: 20px; }
-.verdict li { margin: 4px 0; }
 table { width: 100%; border-collapse: collapse; background: var(--panel); border-radius: 10px; overflow: hidden; }
 th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: 0.88rem; }
 th { color: var(--muted); font-weight: 600; font-size: 0.78rem; text-transform: uppercase; }
 tr:last-child td { border-bottom: none; }
 .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 0.75rem; font-weight: 600; }
 .badge.clean { background: rgba(62,207,142,.15); color: var(--ok); }
-.badge.anomala { background: rgba(245,166,35,.15); color: var(--warn); }
-.badge.nativa { background: rgba(242,87,103,.15); color: var(--bad); }
+.badge.troncata { background: rgba(245,166,35,.15); color: var(--warn); }
+.badge.crash { background: rgba(242,87,103,.15); color: var(--bad); }
+.badge.completed { background: rgba(62,207,142,.15); color: var(--ok); }
+.badge.abandoned { background: rgba(242,87,103,.15); color: var(--bad); }
+.badge.cancelled { background: rgba(245,166,35,.15); color: var(--warn); }
 .chart-wrap { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
 .chart-wrap canvas { max-height: 320px; }
 .fallback-table { display: none; }
@@ -425,24 +381,30 @@ footer { color: var(--muted); font-size: 0.78rem; margin-top: 32px; text-align: 
 """
 
 
-def _badge(outcome: str) -> str:
-    cls = {"CLEAN": "clean", "ANOMALA": "anomala", "NATIVA": "nativa"}.get(outcome, "anomala")
+def _session_badge(outcome: str) -> str:
+    cls = {"CLEAN": "clean", "TRONCATA": "troncata", "CRASH": "crash"}.get(outcome, "troncata")
     return f'<span class="badge {cls}">{html.escape(outcome)}</span>'
 
 
+_DOWNLOAD_BADGE = {
+    "download_completed": ("completed", "Completato"),
+    "download_abandoned": ("abandoned", "Abbandonato"),
+    "download_cancelled": ("cancelled", "Annullato"),
+}
+
+
+def _download_badge(event_type: str) -> str:
+    cls, label = _DOWNLOAD_BADGE.get(event_type, ("troncata", event_type))
+    return f'<span class="badge {cls}">{html.escape(label)}</span>'
+
+
 def _fmt_duration(start: str | None, end: str | None) -> str:
-    if not start or not end:
-        return "n/d"
-    try:
-        t0 = datetime.strptime(start, "%H:%M:%S")
-        t1 = datetime.strptime(end, "%H:%M:%S")
-    except ValueError:
+    t0, t1 = _parse_ts(start), _parse_ts(end)
+    if t0 is None or t1 is None:
         return "n/d"
     delta = t1 - t0
     if delta.total_seconds() < 0:
-        # Rollover di mezzanotte: niente data disponibile per disambiguare,
-        # assumiamo +1 giorno (unica ipotesi ragionevole con solo HH:MM:SS).
-        delta += timedelta(days=1)
+        return "n/d"
     total = int(delta.total_seconds())
     h, rem = divmod(total, 3600)
     m, s = divmod(rem, 60)
@@ -463,7 +425,7 @@ def _build_chart_data(sessions: list[Session]) -> dict:
         start_marker_idx = cursor
         crash_marker_idx = None
         for hb in s.heartbeats:
-            labels.append(hb.time or f"#{cursor}")
+            labels.append(hb.ts or f"#{cursor}")
             mem.append(hb.mem_rss_mb)
             threads.append(hb.threads)
             download_attivi.append(hb.download_attivi)
@@ -478,25 +440,18 @@ def _build_chart_data(sessions: list[Session]) -> dict:
             crash_marker[crash_marker_idx] = mem[crash_marker_idx]
 
     return {
-        "labels": labels,
-        "mem": mem,
-        "threads": threads,
-        "download_attivi": download_attivi,
-        "pool_vivi": pool_vivi,
-        "session_start_marker": session_start_marker,
-        "crash_marker": crash_marker,
+        "labels": labels, "mem": mem, "threads": threads,
+        "download_attivi": download_attivi, "pool_vivi": pool_vivi,
+        "session_start_marker": session_start_marker, "crash_marker": crash_marker,
     }
 
 
-def _render_exception_details(exc: ExceptionEntry) -> str:
-    # Nessun suffisso "[file N]" ridondante: il numero, quando presente,
-    # e' gia' incluso nel testo di exc.message dalla convenzione di logging
-    # del worker. exc.file_id resta disponibile per usi futuri (es. ordinamento).
+def _render_error_details(e: LogEvent, session_label: str) -> str:
     summary = (
-        f'<span class="meta">{html.escape(exc.time or "?")} [{html.escape(exc.level)}] '
-        f'{html.escape(exc.logger)}</span>{html.escape(exc.message)}'
+        f'<span class="meta">{html.escape(e.ts or "?")} [{html.escape(e.level)}] '
+        f'{html.escape(e.logger)} — {html.escape(session_label)}</span>{html.escape(e.msg)}'
     )
-    body = html.escape(exc.traceback) if exc.traceback else "(nessun traceback disponibile)"
+    body = html.escape(e.exc) if e.exc else "(nessun traceback disponibile)"
     return f"<details><summary>{summary}</summary><pre>{body}</pre></details>"
 
 
@@ -508,62 +463,90 @@ def _render_crash_details(c: CrashEntry) -> str:
 
 def render_html(
     sessions: list[Session],
-    orphan_exceptions: list[ExceptionEntry],
+    orphan_errors: list[LogEvent],
+    orphan_downloads: list[DownloadEvent],
     unattributed_crashes: list[CrashEntry],
+    malformed_lines: int,
     generated_at: str,
 ) -> str:
     n_sessions = len(sessions)
     n_anomale = sum(1 for s in sessions if s.outcome != "CLEAN")
-    n_exceptions = sum(len(s.exceptions) for s in sessions) + len(orphan_exceptions)
+    n_errors = sum(len(s.errors) for s in sessions) + len(orphan_errors)
+    all_downloads = [(s, d) for s in sessions for d in s.downloads] + [(None, d) for d in orphan_downloads]
+    n_downloads = len(all_downloads)
     n_native = sum(1 for s in sessions for c in s.crashes if c.kind == "NATIVE") + sum(
         1 for c in unattributed_crashes if c.kind == "NATIVE"
     )
-    ultima_esito = sessions[-1].outcome if sessions else "n/d"
     mem_peak = None
     for s in sessions:
         p = s.mem_peak
         if p is not None and (mem_peak is None or p > mem_peak):
             mem_peak = p
 
-    verdict_lines = build_verdict(sessions)
-
     cards_html = f"""
     <div class="cards">
       <div class="card"><div class="label">Sessioni</div><div class="value">{n_sessions}</div></div>
       <div class="card"><div class="label">Chiusure anomale</div><div class="value">{n_anomale}</div></div>
-      <div class="card"><div class="label">Eccezioni</div><div class="value">{n_exceptions}</div></div>
+      <div class="card"><div class="label">Errori/warning</div><div class="value">{n_errors}</div></div>
+      <div class="card"><div class="label">Eventi download</div><div class="value">{n_downloads}</div></div>
       <div class="card"><div class="label">Crash nativi</div><div class="value">{n_native}</div></div>
-      <div class="card"><div class="label">Esito ultima sessione</div><div class="value">{_badge(ultima_esito)}</div></div>
       <div class="card"><div class="label">Picco mem_rss</div><div class="value">{f"{mem_peak:.0f} MB" if mem_peak is not None else "n/d"}</div></div>
+      <div class="card"><div class="label">Righe malformate</div><div class="value">{malformed_lines}</div></div>
     </div>
     """
-
-    verdict_html = "<div class=\"verdict\"><ul>" + "".join(
-        f"<li>{html.escape(line)}</li>" for line in verdict_lines
-    ) + "</ul></div>"
 
     rows = []
     for s in sessions:
         rows.append(
             "<tr>"
-            f"<td>{html.escape(s.start_time or '?')}</td>"
-            f"<td>{html.escape(s.effective_end_time or '?')}</td>"
-            f"<td>{_fmt_duration(s.start_time, s.effective_end_time)}</td>"
-            f"<td>{_badge(s.outcome)}</td>"
+            f"<td>{html.escape(s.version or '?')}</td>"
+            f"<td>{html.escape(str(s.pid) if s.pid is not None else '?')}</td>"
+            f"<td>{html.escape(s.start_ts or '?')}</td>"
+            f"<td>{html.escape(s.effective_end_ts or '?')}</td>"
+            f"<td>{_fmt_duration(s.start_ts, s.effective_end_ts)}</td>"
+            f"<td>{_session_badge(s.outcome)}</td>"
             f"<td>{f'{s.mem_peak:.0f} MB' if s.mem_peak is not None else 'n/d'}</td>"
             "</tr>"
         )
     sessions_table = (
-        "<table><thead><tr><th>Inizio</th><th>Fine</th><th>Durata</th>"
-        "<th>Esito</th><th>Mem max</th></tr></thead><tbody>"
-        + ("".join(rows) if rows else '<tr><td colspan="5" class="empty">Nessuna sessione trovata.</td></tr>')
+        "<table><thead><tr><th>Versione</th><th>PID</th><th>Inizio</th><th>Fine</th>"
+        "<th>Durata</th><th>Esito</th><th>Mem max</th></tr></thead><tbody>"
+        + ("".join(rows) if rows else '<tr><td colspan="7" class="empty">Nessuna sessione trovata.</td></tr>')
         + "</tbody></table>"
     )
 
-    all_exceptions = [exc for s in sessions for exc in s.exceptions] + orphan_exceptions
-    exceptions_html = (
-        "".join(_render_exception_details(e) for e in all_exceptions)
-        if all_exceptions else '<div class="empty">Nessuna eccezione trovata.</div>'
+    def _session_label(s: Session | None) -> str:
+        return f"sessione {s.start_ts}" if s is not None else "(orfano, nessuna sessione)"
+
+    all_errors = [(s, e) for s in sessions for e in s.errors] + [(None, e) for e in orphan_errors]
+    errors_html = (
+        "".join(_render_error_details(e, _session_label(s)) for s, e in all_errors)
+        if all_errors else '<div class="empty">Nessun errore/warning trovato.</div>'
+    )
+
+    dl_rows = []
+    for s, d in all_downloads:
+        detail = ""
+        if d.event_type == "download_completed":
+            size = d.file_size if d.file_size is not None else "n/d"
+            detail = f"{html.escape(d.file_name or '?')} ({size} byte)"
+        elif d.event_type == "download_abandoned":
+            detail = f"tentativi={d.attempts} — {html.escape(d.last_error or '')}"
+        elif d.event_type == "download_cancelled":
+            detail = "cancellato dall'utente"
+        dl_rows.append(
+            "<tr>"
+            f"<td>{html.escape(d.ts or '?')}</td>"
+            f"<td>{d.file_id if d.file_id is not None else '?'}</td>"
+            f"<td>{_download_badge(d.event_type)}</td>"
+            f"<td>{html.escape(d.url or '')}</td>"
+            f"<td>{detail}</td>"
+            "</tr>"
+        )
+    downloads_table = (
+        "<table><thead><tr><th>Quando</th><th>File ID</th><th>Esito</th><th>URL</th><th>Dettaglio</th></tr></thead><tbody>"
+        + ("".join(dl_rows) if dl_rows else '<tr><td colspan="5" class="empty">Nessun evento download trovato.</td></tr>')
+        + "</tbody></table>"
     )
 
     all_crashes = [c for s in sessions for c in s.crashes] + unattributed_crashes
@@ -589,7 +572,7 @@ def render_html(
         <div class="chart-wrap">
           <canvas id="chartMem" height="90"></canvas>
           <table class="fallback-table" id="fallbackMem">
-            <thead><tr><th>Ora</th><th>mem_rss (MB)</th><th>Thread</th><th>Download attivi</th><th>Pool vivi</th></tr></thead>
+            <thead><tr><th>Quando</th><th>mem_rss (MB)</th><th>Thread</th><th>Download attivi</th><th>Pool vivi</th></tr></thead>
             <tbody>{fallback_rows}</tbody>
           </table>
         </div>
@@ -665,15 +648,12 @@ def render_html(
 <html lang="it">
 <head>
 <meta charset="utf-8">
-<title>Crash report — Mega Downloader Proxy Rotator</title>
+<title>Report diagnostico — Mega Downloader Proxy Rotator</title>
 <style>{_CSS}</style>
 </head>
 <body>
-<h1>Crash report diagnostico</h1>
-<div class="subtitle">Generato il {html.escape(generated_at)} da tools/analyze_crashlog.py — solo lettura, nessun log modificato.</div>
-
-<h2>Verdetto euristico</h2>
-{verdict_html}
+<h1>Report diagnostico</h1>
+<div class="subtitle">Generato il {html.escape(generated_at)} da tools/report.py — solo lettura, nessun log modificato.</div>
 
 {cards_html}
 
@@ -683,8 +663,11 @@ def render_html(
 <h2>Andamento nel tempo</h2>
 {charts_section}
 
-<h2>Eccezioni (app.log)</h2>
-{exceptions_html}
+<h2>Errori e anomalie</h2>
+{errors_html}
+
+<h2>Download</h2>
+{downloads_table}
 
 <h2>Crash nativi (crash.log)</h2>
 {crashes_html}
@@ -701,36 +684,39 @@ def render_html(
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        prog="analyze_crashlog",
-        description="Analizza app.log/crash.log e genera un report HTML diagnostico (sola lettura).",
+        prog="report",
+        description="Genera un report HTML diagnostico da logs/events.jsonl + logs/crash.log (sola lettura).",
     )
     parser.add_argument(
-        "--logs", type=Path, default=_PROJECT_ROOT,
-        help="Cartella contenente app.log* e crash.log (default: root del progetto).",
+        "--logs", type=Path, default=LOGS_DIR,
+        help="Cartella contenente events.jsonl* e crash.log (default: logs/ del progetto).",
     )
     parser.add_argument(
         "--out", type=Path, default=None,
-        help="Path del report HTML da generare (default: <logs>/crash_report.html).",
+        help="Path del report HTML da generare (default: logs/reports/report_<timestamp>.html).",
     )
     args = parser.parse_args(argv)
 
     logs_dir: Path = args.logs
-    out_path: Path = args.out if args.out is not None else logs_dir / "crash_report.html"
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    out_path: Path = args.out if args.out is not None else REPORTS_DIR / f"report_{timestamp}.html"
 
-    all_lines: list[str] = []
-    for p in find_app_log_files(logs_dir):
-        all_lines.extend(read_text_safe(p).splitlines())
-
-    sessions, orphan_exceptions = parse_app_log(all_lines)
+    malformed_counter = [0]
+    records = stream_records(find_events_log_files(logs_dir), malformed_counter)
+    sessions, orphan_errors, orphan_downloads = build_sessions(records)
 
     crash_text = read_text_safe(logs_dir / "crash.log")
     crash_entries = parse_crash_log(crash_text)
     unattributed = attribute_crashes(sessions, crash_entries)
 
     generated_at = datetime.now().isoformat(timespec="seconds")
-    report = render_html(sessions, orphan_exceptions, unattributed, generated_at)
+    report = render_html(
+        sessions, orphan_errors, orphan_downloads, unattributed,
+        malformed_counter[0], generated_at,
+    )
 
     try:
+        out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_text(report, encoding="utf-8")
     except OSError as exc:
         print(f"Errore: impossibile scrivere il report in {out_path}: {exc}", file=sys.stderr)
@@ -738,13 +724,13 @@ def main(argv: list[str] | None = None) -> int:
 
     n_sessions = len(sessions)
     n_anomale = sum(1 for s in sessions if s.outcome != "CLEAN")
-    n_exceptions = sum(len(s.exceptions) for s in sessions) + len(orphan_exceptions)
+    n_errors = sum(len(s.errors) for s in sessions) + len(orphan_errors)
     n_native = sum(1 for c in crash_entries if c.kind == "NATIVE")
     print(f"Report scritto in: {out_path}")
     print(
         f"Sessioni: {n_sessions} | chiusure anomale: {n_anomale} | "
-        f"eccezioni: {n_exceptions} | voci crash.log: {len(crash_entries)} "
-        f"(di cui {n_native} crash nativi)"
+        f"errori/warning: {n_errors} | voci crash.log: {len(crash_entries)} "
+        f"(di cui {n_native} crash nativi) | righe malformate: {malformed_counter[0]}"
     )
     return 0
 
