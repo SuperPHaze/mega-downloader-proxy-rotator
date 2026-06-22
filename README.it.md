@@ -49,7 +49,7 @@ App **desktop per Windows** (Python + PyQt6) che scarica file da Mega.nz instrad
 - **Storico download** con avviso sui link già scaricati (dedup per handle Mega).
 - **Watchdog per chunk**: scarta i proxy troppo lenti o che non finiscono in tempo.
 - **Funzioni sperimentali** (opt-in, disattivate di default): connessioni parallele per file regolabili e selezione dei proxy per velocità osservata.
-- **Diagnostica crash passiva** sempre attiva (heartbeat di memoria, traceback multi-thread) con un analizzatore dei log (`tools/analyze_crashlog.py`) che produce un report HTML.
+- **Diagnostica crash passiva** sempre attiva (heartbeat di memoria, traceback multi-thread), log strutturato universale (`logs/events.jsonl`) e un generatore di report HTML (`tools/report.py`).
 - **Interfaccia** a schede con cruscotto (velocità, ETA, stato del pool), tema chiaro/scuro, pausa/ripresa/annullo globali e per singolo job.
 - **Modalità CLI** per macchine headless.
 

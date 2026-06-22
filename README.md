@@ -49,7 +49,7 @@ A **Windows desktop app** (Python + PyQt6) that downloads files from Mega.nz by 
 - **Download history** with a warning for links already downloaded (deduplicated by Mega handle).
 - **Per-fragment watchdog**: drops proxies that are too slow or fail to finish in time.
 - **Experimental features** (opt-in, disabled by default): adjustable parallel connections per file and proxy selection by observed speed.
-- **Passive crash diagnostics**, always on (memory heartbeat, multi-thread tracebacks), with a log analyzer (`tools/analyze_crashlog.py`) that produces an HTML report.
+- **Passive crash diagnostics**, always on (memory heartbeat, multi-thread tracebacks), universal structured logging (`logs/events.jsonl`), and an HTML report generator (`tools/report.py`).
 - **Tabbed interface** with a dashboard (speed, ETA, pool status), light/dark theme, global and per-job pause/resume/cancel.
 - **CLI mode** for headless machines.
 

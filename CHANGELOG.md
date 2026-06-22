@@ -6,6 +6,16 @@ All notable changes to this project. Format based on [Keep a Changelog](https://
 
 ## [Unreleased]
 
+### Added
+- **Universal structured logging** (`logs/events.jsonl`, JSON Lines at DEBUG level): every logging record is also written in structured form, with no upstream filtering. Primary source for the new diagnostics.
+- **New `tools/report.py` tool**: reads `logs/events.jsonl` and `logs/crash.log` (read-only, streaming) and generates an HTML report in `logs/reports/` with sessions, heartbeat timeline, errors/anomalies, download events, and native crashes.
+
+### Changed
+- **All logs, the crash log, and generated reports are consolidated into the `logs/` folder** (previously scattered in the project root): `app.log`, `crash.log`, `failed_links.log`, `download_history.log`, `proxy_sources_stats.log`, `events.jsonl`, `reports/`.
+
+### Removed
+- `tools/analyze_crashlog.py`, replaced by `tools/report.py` (primary source events.jsonl instead of app.log/crash.log).
+
 ## [1.8.3] — 2026-06-22
 
 ### Added

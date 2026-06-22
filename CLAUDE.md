@@ -53,7 +53,8 @@ src/
 tools/
 ├── cli_download.py        # runner CLI senza GUI (riusa Orchestrator)
 ├── monitor_gui.py         # GUI live monitor velocita' download
-└── monitor_speed.py       # CLI polling cartella downloads/
+├── monitor_speed.py       # CLI polling cartella downloads/
+└── report.py              # report HTML diagnostico (sola lettura) da logs/events.jsonl + logs/crash.log
 
 scripts/
 ├── bench_cache.py         # bench cold vs hot start (cache)
@@ -96,11 +97,13 @@ package.ps1                # packaging: crea dist/MegaProxyRotator-X.Y.Z.zip
 - L'import di `pycryptodome` (pesante) avviene localmente dentro `MegaClient.download()` e `ParallelMegaDownloader.download()` per non rallentare l'avvio della GUI.
 
 ## Logging
-- Configurato in `core/logging_setup.py`. File: `mega-proxy-downloader/app.log` (rotante 5 MB × 3 backup).
-- Livello DEBUG su tutti i moduli; `urllib3` e `requests` capped a WARNING.
-- `setup_logging()` viene chiamato in `src/main.py` prima della creazione di `QApplication`.
+- Configurato in `core/logging_setup.py`. Tutti i log diagnostici/operativi vivono in `logs/` (vedi `LOGS_DIR`/`REPORTS_DIR` in `core/config.py`); restano in root solo le cache (`proxy_cache.json`, `branding_cache.json`, `branding_logo.*`).
+- File human-readable: `logs/app.log` (rotante 5 MB × 3 backup). Livello DEBUG su tutti i moduli; `urllib3` e `requests` capped a WARNING.
+- **Log strutturato universale**: `logs/events.jsonl` (JSON Lines, rotante 20 MB × 5 backup, sempre a DEBUG senza filtri a monte). Ogni record di logging viene scritto anche qui via `JsonLinesFormatter` (campi base `ts/level/logger/thread/msg` + ogni attributo `extra={...}` passato dal chiamante). Sorgente primaria per `tools/report.py`.
+- `setup_logging()` viene chiamato in `src/main.py` prima della creazione di `QApplication`; crea `logs/` se assente.
 - Hook globale `sys.excepthook` cattura le eccezioni non gestite nel thread principale.
-- Log dedicati JSONL: `failed_links.log` (link abbandonati), `download_history.log` (download completati, dedup per handle), `proxy_sources_stats.log` (survival per-fonte). Cache proxy persistente: `proxy_cache.json`.
+- Log dedicati JSONL in `logs/`: `failed_links.log` (link abbandonati), `download_history.log` (download completati, dedup per handle), `proxy_sources_stats.log` (survival per-fonte).
+- `tools/report.py` legge `logs/events.jsonl` + `logs/crash.log` (sola lettura) e genera un report HTML in `logs/reports/`.
 
 ## Setup ambiente (Windows + Python 3.11–3.14)
 ```powershell
