@@ -17,7 +17,7 @@ from PyQt6.QtWidgets import (
 
 from src.core import diagnostics
 from src.core.branding import resolve as resolve_branding
-from src.core.config import APP_VERSION, HEARTBEAT_INTERVAL_S
+from src.core.config import APP_VERSION, HEARTBEAT_INTERVAL_S, PARALLEL_CONNECTIONS_PER_FILE
 from src.core.icon_loader import build_app_icon
 from src.core.state import SessionState
 from src.downloader.orchestrator import DownloadOrchestrator
@@ -30,9 +30,7 @@ from src.gui.jobs_panel import JobsPanel
 from src.gui.link_panel import LinkPanel, confirm_already_downloaded
 from src.gui.preferences import (
     load_check_updates_on_startup,
-    load_connections_per_file,
     load_dark_theme,
-    load_throughput_selection,
     save_dark_theme,
 )
 from src.gui.stats_bar import StatsBar
@@ -207,11 +205,10 @@ class MainWindow(QMainWindow):
         concurrency = self.controls.get_concurrency()
         file_time_limit_s = self.controls.get_file_time_limit_s()
         chunk_size_bytes = self.controls.get_chunk_size_bytes()
-        # Funzioni Sperimentali: lette da preferences.json all'avvio sessione
-        # (non a caldo). Default = comportamento storico (4 connessioni,
-        # selezione per score).
-        connections_per_file = load_connections_per_file()
-        selection_mode = "throughput" if load_throughput_selection() else "score"
+        # Funzioni sperimentali ritirate dall'interfaccia in 1.9.0: si usano i default
+        # di config; eventuali valori salvati in preferences.json vengono ignorati.
+        connections_per_file = PARALLEL_CONNECTIONS_PER_FILE
+        selection_mode = "score"
         self.orchestrator = DownloadOrchestrator(self.session_state)
         qc = Qt.ConnectionType.QueuedConnection
         self.orchestrator.progress.connect(self.jobs_panel.on_progress, qc)
