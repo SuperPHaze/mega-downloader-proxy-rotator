@@ -82,7 +82,7 @@ MAX_PROXIES_TO_VALIDATE = 1000
 # dei falsi negativi che httpbin.org/ip produceva quando era sotto carico.
 # Alta concorrenza, timeout aggressivi: scarta i proxy morti senza
 # sprecare un round-trip sulla capacita' limitata del test Mega (stage 2).
-VALIDATOR_STAGE1_WORKERS = 200
+VALIDATOR_STAGE1_WORKERS = 100
 VALIDATOR_STAGE1_TIMEOUT = 4                                # connect+read combinati
 VALIDATOR_STAGE1_URL = "http://www.gstatic.com/generate_204"
 
@@ -145,7 +145,19 @@ PARALLEL_SEGMENT_BACKOFF_MAX = 8
 # a intervalli regolari e, se scende sotto la soglia, lancia uno scrape+validate
 # senza bloccare i worker (che intanto continuano a usare i proxy gia' presenti).
 POOL_REFRESH_INTERVAL = 30          # secondi tra check
-POOL_REFRESH_THRESHOLD = 50         # se vivi < soglia -> refill background
+
+# Isteresi armato/disarmato (vedi proxy/refresher.py): senza isteresi, un pool
+# che oscilla intorno a una soglia singola scatena refill ripetuti a raffica
+# (osservato: 66 refill in una sessione, ~200 thread di picco -> access
+# violation nei thread di validazione). Con isteresi il refresher si "disarma"
+# dopo un refill e si riarma solo quando il pool torna sano (>= HIGH).
+POOL_REFRESH_THRESHOLD_LOW = 40     # armato + vivi < LOW -> refill, poi disarma
+POOL_REFRESH_THRESHOLD_HIGH = 80    # disarmato + vivi >= HIGH -> riarma
+POOL_REFRESH_MIN_INTERVAL_S = 45    # mai due refill a meno di N secondi l'uno dall'altro
+
+# DEPRECATO: alias retro-compatibile pre-isteresi. Codice nuovo deve usare
+# POOL_REFRESH_THRESHOLD_LOW / _HIGH.
+POOL_REFRESH_THRESHOLD = POOL_REFRESH_THRESHOLD_LOW
 
 # Dimensione di ogni chunk nella coda parallela (MB). Deve essere multiplo di
 # 16 byte (block AES — i MB lo sono sempre). Pezzi più piccoli = più resistenza

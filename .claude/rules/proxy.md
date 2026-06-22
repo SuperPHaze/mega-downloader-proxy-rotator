@@ -11,7 +11,7 @@ paths: ["src/proxy/**/*.py"]
 4. Mai sollevare eccezioni dal parser: una fonte rotta non deve bloccare le altre — già gestito a livello di `fetch_all`.
 
 ## Validazione (a due stadi)
-- `ProxyValidator.validate_against_mega` esegue Stage 1 ("il proxy funziona?" su `VALIDATOR_STAGE1_URL` = `http://www.gstatic.com/generate_204`, `VALIDATOR_STAGE1_WORKERS=200`, timeout `VALIDATOR_STAGE1_TIMEOUT=4s`) poi Stage 2 ("il proxy raggiunge l'infrastruttura di download Mega?" su `VALIDATOR_STAGE2_URL` = host dell'API Mega `https://g.api.mega.co.nz/cs`, `VALIDATOR_STAGE2_WORKERS=60`, timeout `VALIDATOR_STAGE2_TIMEOUT=PROXY_TIMEOUT=8s`).
+- `ProxyValidator.validate_against_mega` esegue Stage 1 ("il proxy funziona?" su `VALIDATOR_STAGE1_URL` = `http://www.gstatic.com/generate_204`, `VALIDATOR_STAGE1_WORKERS=100`, timeout `VALIDATOR_STAGE1_TIMEOUT=4s`) poi Stage 2 ("il proxy raggiunge l'infrastruttura di download Mega?" su `VALIDATOR_STAGE2_URL` = host dell'API Mega `https://g.api.mega.co.nz/cs`, `VALIDATOR_STAGE2_WORKERS=60`, timeout `VALIDATOR_STAGE2_TIMEOUT=PROXY_TIMEOUT=8s`).
 - Solo i proxy che passano Stage 1 vengono testati allo Stage 2.
 - Stage 2 ha cortocircuito: se `VALIDATOR_TARGET_ALIVE` (default 80) viene raggiunto, i future rimanenti vengono cancellati.
 - Stage 1: valido un 2xx/3xx (l'endpoint risponde 204 per design). Stage 2: valida QUALSIASI risposta HTTP ricevuta dall'host API (anche un errore applicativo Mega, es. `-2`), non necessariamente 200 — un criterio più severo scarterebbe falsi negativi (proxy che funzionano benissimo per il download ma a cui Mega risponde con un errore applicativo sulla GET di test, che non e' una vera chiamata `g=1`). Niente redirect seguiti in nessuno dei due stage (`allow_redirects=False`): vogliamo la risposta diretta dell'host testato, non quella di un eventuale hop successivo.
@@ -35,10 +35,11 @@ paths: ["src/proxy/**/*.py"]
 - `export_for_cache(min_score=0)` produce uno snapshot serializzabile (host, port, protocol, score, latency_ms) per `proxy_cache.save()`; dedup su (host, port).
 
 ## Refresher in background
-- `BackgroundPoolRefresher` (in `proxy/refresher.py`) tiene il pool sopra `POOL_REFRESH_THRESHOLD` rinfrescando in background senza bloccare i worker.
-- Doppia condizione (OR) per scatenare un refill:
-  1. `pool.size() < POOL_REFRESH_THRESHOLD` (soglia quantitativa)
-  2. `now - last_refill_ts > POOL_REFRESH_MAX_INTERVAL_S` (soglia temporale, default 300s)
+- `BackgroundPoolRefresher` (in `proxy/refresher.py`) tiene il pool sopra `POOL_REFRESH_THRESHOLD_LOW` rinfrescando in background senza bloccare i worker.
+- Isteresi armato/disarmato (introdotta per eliminare il flapping che causava raffiche di refill a ripetizione — osservato: 66 refill in una sessione, picchi di ~200 thread, correlati a un access violation nei thread di validazione): il refresher parte **armato**; un refill lo **disarma**; torna **armato** solo quando `pool.size() >= POOL_REFRESH_THRESHOLD_HIGH`. Mentre è disarmato, scendere di nuovo sotto `POOL_REFRESH_THRESHOLD_LOW` NON scatena un nuovo refill.
+- Doppia condizione (OR) per scatenare un refill, entrambe comunque vincolate a `POOL_REFRESH_MIN_INTERVAL_S` dall'ultimo refill:
+  1. `armato AND pool.size() < POOL_REFRESH_THRESHOLD_LOW` (soglia quantitativa)
+  2. `now - last_refill_ts > POOL_REFRESH_MAX_INTERVAL_S` (soglia temporale, default 300s) — scatta anche da disarmato
 - La condizione tempo-based copre il caso in cui il pool oscilla appena sopra soglia ma i proxy si degradano silenziosamente (rate-limit progressivo, captive portal). Non rimuovere la condizione 1: rispondere solo alla 2 lascerebbe il pool scoperto se cala bruscamente.
 - `start(initial_force=True)` salta il primo wait e forza un refill immediato: usato dopo un hot-start da cache per rinforzare il pool con uno scrape completo.
 

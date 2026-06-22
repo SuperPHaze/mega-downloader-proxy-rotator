@@ -6,9 +6,12 @@ paths: ["src/core/**/*.py"]
 
 ## SessionState (state.py)
 - È condiviso fra GUI e tutti i `DownloadWorker`: DEVE restare thread-safe.
-- Ogni accesso a `_paused`, `_cancelled`, `_running` passa attraverso `QMutexLocker`.
-- `wait_if_paused()` usa `QWaitCondition` per non fare busy-wait.
-- `cancel()` deve fare `wakeAll()` per sbloccare worker in pausa che altrimenti resterebbero appesi.
+- Implementato con `threading.Lock`/`threading.Condition` (stdlib), NON con `QMutex`/`QWaitCondition`:
+  sotto alta concorrenza (decine di thread Python puri in un `ThreadPoolExecutor`, non `QThread`)
+  le primitive Qt hanno causato un access violation nativo intermittente in `is_cancelled()`.
+- Ogni accesso a `_paused`, `_cancelled`, `_running` passa attraverso `self._lock`.
+- `wait_if_paused()` usa `threading.Condition.wait()` per non fare busy-wait.
+- `cancel()` deve fare `notify_all()` per sbloccare worker in pausa che altrimenti resterebbero appesi.
 - Non aggiungere stato applicativo qui (es. lista link, contatori): tenerlo nell'orchestrator.
 
 ## config.py

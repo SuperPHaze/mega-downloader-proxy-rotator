@@ -5,6 +5,14 @@
 # Convive con `ProxyPool.refill_blocking()` (che invece e' chiamato dai worker
 # come reazione al pool vuoto): il refresher usa `force=True` per aggiungere
 # proxy freschi anche se il pool non e' a zero, mantenendolo sopra soglia.
+#
+# Isteresi armato/disarmato: senza isteresi, un pool che oscilla intorno a
+# una soglia singola scatena refill ripetuti a raffica (osservato: 66 refill
+# in una sessione, picchi di ~200 thread -> access violation nei thread di
+# validazione). Con l'isteresi il refresher si "disarma" subito dopo un
+# refill e si riarma solo quando il pool torna sano (>= HIGH); in piu' un
+# intervallo minimo (MIN_INTERVAL_S) impedisce due refill troppo vicini anche
+# nel caso limite di un riarmo immediato.
 from __future__ import annotations
 
 import logging
@@ -14,7 +22,9 @@ import time
 from src.core.config import (
     POOL_REFRESH_INTERVAL,
     POOL_REFRESH_MAX_INTERVAL_S,
-    POOL_REFRESH_THRESHOLD,
+    POOL_REFRESH_MIN_INTERVAL_S,
+    POOL_REFRESH_THRESHOLD_HIGH,
+    POOL_REFRESH_THRESHOLD_LOW,
 )
 from src.core.state import SessionState
 from src.proxy.pool import ProxyPool
@@ -28,13 +38,17 @@ class BackgroundPoolRefresher:
         pool: ProxyPool,
         session_state: SessionState,
         interval_s: float = POOL_REFRESH_INTERVAL,
-        threshold: int = POOL_REFRESH_THRESHOLD,
+        threshold_low: int = POOL_REFRESH_THRESHOLD_LOW,
+        threshold_high: int = POOL_REFRESH_THRESHOLD_HIGH,
+        min_interval_s: float = POOL_REFRESH_MIN_INTERVAL_S,
         max_interval_s: float = POOL_REFRESH_MAX_INTERVAL_S,
     ) -> None:
         self.pool = pool
         self.session_state = session_state
         self.interval = interval_s
-        self.threshold = threshold
+        self.threshold_low = threshold_low
+        self.threshold_high = threshold_high
+        self.min_interval = min_interval_s
         self.max_interval = max_interval_s
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
@@ -42,12 +56,17 @@ class BackgroundPoolRefresher:
         # che popola il pool prima di start()). Inizializzato a `start()`.
         self._last_refill_ts: float = 0.0
         self._initial_force: bool = False
+        # Stato dell'isteresi: armato = puo' scattare un refill quando i vivi
+        # scendono sotto threshold_low. Dopo un refill si disarma; si riarma
+        # solo quando i vivi tornano >= threshold_high.
+        self._armed: bool = True
 
     def start(self, initial_force: bool = False) -> None:
         if self._thread is not None and self._thread.is_alive():
             return
         self._stop.clear()
         self._initial_force = initial_force
+        self._armed = True
         self._thread = threading.Thread(
             target=self._run,
             daemon=True,
@@ -60,9 +79,10 @@ class BackgroundPoolRefresher:
         self._last_refill_ts = 0.0 if initial_force else time.monotonic()
         self._thread.start()
         log.info(
-            "Refresher avviato: interval=%.1fs threshold=%d max_interval=%.0fs "
-            "initial_force=%s",
-            self.interval, self.threshold, self.max_interval, initial_force,
+            "Refresher avviato: interval=%.1fs low=%d high=%d min_interval=%.0fs "
+            "max_interval=%.0fs initial_force=%s",
+            self.interval, self.threshold_low, self.threshold_high,
+            self.min_interval, self.max_interval, initial_force,
         )
 
     def stop(self) -> None:
@@ -88,35 +108,50 @@ class BackgroundPoolRefresher:
             if self.session_state.is_cancelled():
                 log.info("Refresher: sessione cancellata, esco")
                 return
-            alive = self.pool.size()
-            elapsed_since_refill = time.monotonic() - self._last_refill_ts
-            # Doppia condizione (OR): refill se sotto soglia OPPURE se l'ultimo
-            # refill e' troppo vecchio. Il trigger tempo-based copre il caso in
-            # cui il pool oscilla appena sopra soglia ma i proxy si degradano
-            # silenziosamente (rate-limit progressivo, captive portal).
-            below_threshold = alive < self.threshold
-            timed_out = elapsed_since_refill > self.max_interval
-            if not below_threshold and not timed_out:
-                log.debug(
-                    "Refresher: pool ok (vivi=%d >= %d, %ds dall'ultimo refill), skip",
-                    alive, self.threshold, int(elapsed_since_refill),
-                )
-                continue
-            if below_threshold:
-                log.info(
-                    "Refresher: pool sotto soglia (vivi=%d < %d), refill in corso",
-                    alive, self.threshold,
-                )
-            else:
-                log.info(
-                    "Refresher: refill forzato: nessun refresh da %ds (vivi=%d)",
-                    int(elapsed_since_refill), alive,
-                )
-            try:
-                added = self.pool.refill_blocking(force=True)
-                # Aggiorna timestamp solo a refill completato: se solleva,
-                # il prossimo tick riprova subito invece di aspettare max_interval.
-                self._last_refill_ts = time.monotonic()
-                log.info("Refresher: refill completato (+%d proxy)", added)
-            except Exception as exc:
-                log.exception("Refresher: errore durante refill: %s", exc)
+
+            self._tick()
+
+    def _tick(self) -> None:
+        """Un singolo check (+ eventuale refill). Isolato da `_run` per
+        permettere ai test di pilotare l'isteresi senza thread/sleep reali."""
+        alive = self.pool.size()
+        elapsed_since_refill = time.monotonic() - self._last_refill_ts
+
+        # Riarmo: una volta che il pool e' tornato sano, riabilita il
+        # trigger sotto-soglia (altrimenti resterebbe disarmato per il
+        # resto della sessione dopo il primo refill).
+        if not self._armed and alive >= self.threshold_high:
+            log.debug("Refresher: pool tornato sano (vivi=%d >= %d), riarmo",
+                      alive, self.threshold_high)
+            self._armed = True
+
+        below_threshold = self._armed and alive < self.threshold_low
+        timed_out = elapsed_since_refill > self.max_interval
+        past_min_interval = elapsed_since_refill >= self.min_interval
+
+        if not (below_threshold or timed_out) or not past_min_interval:
+            log.debug(
+                "Refresher: skip (vivi=%d armato=%s %ds dall'ultimo refill)",
+                alive, self._armed, int(elapsed_since_refill),
+            )
+            return
+
+        if below_threshold:
+            log.info(
+                "Refresher: pool sotto soglia (vivi=%d < %d), refill in corso",
+                alive, self.threshold_low,
+            )
+        else:
+            log.info(
+                "Refresher: refill forzato: nessun refresh da %ds (vivi=%d)",
+                int(elapsed_since_refill), alive,
+            )
+        try:
+            added = self.pool.refill_blocking(force=True)
+            # Aggiorna timestamp solo a refill completato: se solleva,
+            # il prossimo tick riprova subito invece di aspettare max_interval.
+            self._last_refill_ts = time.monotonic()
+            self._armed = False
+            log.info("Refresher: refill completato (+%d proxy)", added)
+        except Exception as exc:
+            log.exception("Refresher: errore durante refill: %s", exc)
