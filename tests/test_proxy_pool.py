@@ -90,3 +90,68 @@ def test_size_counts_alive_only():
 def test_get_next_returns_none_on_empty_pool():
     pool = ProxyPool()
     assert pool.get_next() is None
+
+
+# ---- Funzioni Sperimentali: Leva A/B (additive, default off) -------------
+
+def test_default_selection_mode_is_score():
+    # Con i flag ai default il pool deve restare in modalita' storica.
+    pool = ProxyPool()
+    assert pool.selection_mode == "score"
+
+
+def test_score_mode_get_next_sequence_unchanged():
+    # Regressione: con selection_mode="score" (default) la sequenza prodotta
+    # da get_next() e' IDENTICA a quella attuale (score-tier -> tiebreak
+    # latenza -> round-robin), a prescindere da record_throughput().
+    pool = ProxyPool()
+    p1, p2, p3 = _proxy("1.1.1.1"), _proxy("2.2.2.2"), _proxy("3.3.3.3")
+    pool.add_many([p1, p2, p3])
+    # record_throughput non deve influenzare il ramo "score".
+    pool.record_throughput(p3, 999_999.0)
+    seq = [pool.get_next() for _ in range(6)]
+    expected = [p1, p2, p3, p1, p2, p3]
+    assert seq == expected
+
+
+def test_record_throughput_ema_known_values():
+    from src.core.config import POOL_THROUGHPUT_EMA_ALPHA
+
+    pool = ProxyPool()
+    p = _proxy()
+    pool.add_many([p])
+    pool.record_throughput(p, 1000.0)
+    assert pool._throughput[(p["host"], p["port"])] == 1000.0
+    pool.record_throughput(p, 2000.0)
+    expected = POOL_THROUGHPUT_EMA_ALPHA * 2000.0 + (1 - POOL_THROUGHPUT_EMA_ALPHA) * 1000.0
+    assert pool._throughput[(p["host"], p["port"])] == expected
+
+
+def test_record_throughput_never_measured_proxy_has_no_entry():
+    pool = ProxyPool()
+    p1, p2 = _proxy("1.1.1.1"), _proxy("2.2.2.2")
+    pool.add_many([p1, p2])
+    pool.record_throughput(p1, 500.0)
+    assert (p2["host"], p2["port"]) not in pool._throughput
+    # get_next in modalita' throughput non deve sollevare anche se p2 non e'
+    # mai stato misurato.
+    pool.selection_mode = "throughput"
+    pool.n_connections = 1
+    for _ in range(4):
+        assert pool.get_next() is not None
+
+
+def test_throughput_mode_prefers_fast_proxies_with_rotation():
+    pool = ProxyPool(selection_mode="throughput", n_connections=1)
+    fast = _proxy("1.1.1.1")
+    slow = _proxy("2.2.2.2")
+    very_slow = _proxy("3.3.3.3")
+    pool.add_many([fast, slow, very_slow])
+    pool.record_throughput(fast, 5_000_000.0)
+    pool.record_throughput(slow, 500_000.0)
+    pool.record_throughput(very_slow, 1_000.0)
+    # K = n_connections(1) * POOL_THROUGHPUT_TOPK_FACTOR(2) = 2 -> top-2 piu'
+    # veloci (fast, slow) ruotati; il piu' lento resta fuori dalla rotazione.
+    seen = {(pool.get_next() or {}).get("host") for _ in range(10)}
+    assert seen == {"1.1.1.1", "2.2.2.2"}
+    assert "3.3.3.3" not in seen

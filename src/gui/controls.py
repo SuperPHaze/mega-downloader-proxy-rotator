@@ -1,9 +1,11 @@
 # Barra comandi: Avvia, Pausa/Riprendi, Annulla, Impostazioni (popup),
-# Aggiungi link, toggle tema, Info.
+# Sperimentale (dialog separato), Aggiungi link, toggle tema, Info.
 # Le tre opzioni di configurazione (paralleli, limite, pezzo) sono raggruppate
 # in un QMenu+QWidgetAction persistente, accessibile dal pulsante Impostazioni.
 # I widget sottostanti (concurrency_combo, time_limit_spin, chunk_size_combo)
 # restano attributi della classe: getter e segnali sono invariati.
+# Il pulsante Sperimentale apre ExperimentalFeaturesDialog (gui/experimental_dialog.py),
+# una superficie isolata per le leve in prova: non ne ospita i widget qui.
 from __future__ import annotations
 
 from PyQt6.QtCore import pyqtSignal
@@ -30,6 +32,7 @@ class ControlsBar(QWidget):
     paste_links_requested = pyqtSignal()
     theme_toggled = pyqtSignal(bool)    # True = tema scuro
     info_requested = pyqtSignal()
+    experimental_requested = pyqtSignal()
 
     def __init__(self) -> None:
         super().__init__()
@@ -137,6 +140,18 @@ class ControlsBar(QWidget):
             _wa.setDefaultWidget(_container)
             self._settings_menu.addAction(_wa)
 
+        # Funzioni Sperimentali: superficie separata da Impostazioni, apre un
+        # dialog proprio (vedi gui/experimental_dialog.py). Bloccato durante
+        # una sessione attiva, come Impostazioni.
+        self._experimental_btn = QPushButton("🧪  Sperimentale")
+        self._experimental_btn.setToolTip(
+            "Funzioni in prova (connessioni per file, selezione proxy per "
+            "velocità). Disattivate di default.\n"
+            "Non modificabile durante una sessione di download."
+        )
+        self._experimental_btn.clicked.connect(self.experimental_requested)
+        layout.addWidget(self._experimental_btn)
+
         # Aggiungi link — sempre visibile.
         self.paste_btn = QPushButton("  Aggiungi link")
         paste_icon = self.style().standardIcon(QStyle.StandardPixmap.SP_FileDialogDetailedView)
@@ -198,6 +213,7 @@ class ControlsBar(QWidget):
         # Il pulsante Impostazioni blocca l'accesso al popup durante la sessione:
         # i tre controlli all'interno non possono essere modificati a download attivo.
         self._settings_btn.setEnabled(not running)
+        self._experimental_btn.setEnabled(not running)
         self.pause_btn.setEnabled(running)
         self.cancel_btn.setEnabled(running)
 

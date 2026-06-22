@@ -11,19 +11,27 @@ import threading
 from typing import Callable
 
 from src.core.config import (
+    PARALLEL_CONNECTIONS_PER_FILE,
     POOL_LATENCY_TIEBREAKER,
     POOL_SCORE_DEAD_THRESHOLD,
     POOL_SCORE_INITIAL,
     POOL_SCORE_MAX,
     POOL_SCORE_ON_FAILURE,
     POOL_SCORE_ON_SUCCESS,
+    POOL_THROUGHPUT_EMA_ALPHA,
+    POOL_THROUGHPUT_TOPK_FACTOR,
 )
 
 log = logging.getLogger(__name__)
 
 
 class ProxyPool:
-    def __init__(self, refill_fn: Callable[[], list[dict]] | None = None) -> None:
+    def __init__(
+        self,
+        refill_fn: Callable[[], list[dict]] | None = None,
+        selection_mode: str = "score",
+        n_connections: int = PARALLEL_CONNECTIONS_PER_FILE,
+    ) -> None:
         self._proxies: list[dict] = []
         # Punteggio reputazionale per ogni proxy (host, port).
         # Default POOL_SCORE_INITIAL all'inserimento.
@@ -31,10 +39,21 @@ class ProxyPool:
         # Latency in ms misurata da Stage 1 del validator (o fornita upstream
         # da fonti come Databay). Assente nel dict = ignota.
         self._latency: dict[tuple[str, str], int | None] = {}
+        # EMA del throughput osservato (byte/s) per proxy. Assente = mai
+        # misurato. Usata SOLO da get_next() quando selection_mode=="throughput";
+        # in modalita' "score" (default) non influisce su nulla.
+        self._throughput: dict[tuple[str, str], float] = {}
         self._index = 0
         self._lock = threading.Lock()
         self._refill_fn = refill_fn
         self._refill_lock = threading.Lock()
+        # "score" (DEFAULT, comportamento storico) | "throughput" (Leva B
+        # sperimentale). Settato dall'orchestrator all'avvio sessione, non a
+        # caldo durante il download.
+        self.selection_mode = selection_mode
+        # Numero di connessioni correnti per file (Leva A): usato per
+        # dimensionare il top-K della modalita' "throughput" (K = n * FACTOR).
+        self.n_connections = max(1, n_connections)
 
     def add_many(self, proxies: list[dict]) -> None:
         with self._lock:
@@ -87,6 +106,13 @@ class ProxyPool:
                     eligible.append(p)
             if not eligible:
                 return None
+            if self.selection_mode == "throughput":
+                pool_subset = self._throughput_top_k_unlocked(eligible)
+                n = len(pool_subset)
+                proxy = pool_subset[self._index % n]
+                self._index = (self._index + 1) % n
+                return proxy
+            # Ramo "score" (DEFAULT): IDENTICO al comportamento storico.
             # Trova top score; restringi al subset top-tier.
             top_score = max(
                 self._score.get((p["host"], p["port"]), POOL_SCORE_INITIAL)
@@ -105,6 +131,32 @@ class ProxyPool:
             proxy = top_tier[self._index % n]
             self._index = (self._index + 1) % n
             return proxy
+
+    def _throughput_top_k_unlocked(self, eligible: list[dict]) -> list[dict]:
+        """Subset su cui ruotare in modalita' 'throughput': i K proxy con EMA
+        piu' alta (K = n_connections * POOL_THROUGHPUT_TOPK_FACTOR), con
+        l'ultimo slot riservato all'esplorazione di un proxy mai misurato (se
+        ce ne sono) cosi' accumula un dato invece di restare escluso per
+        sempre. Caller deve tenere _lock."""
+        measured: list[tuple[float, dict]] = []
+        unmeasured: list[dict] = []
+        for p in eligible:
+            key = (p["host"], p["port"])
+            ema = self._throughput.get(key)
+            if ema is None:
+                unmeasured.append(p)
+            else:
+                measured.append((ema, p))
+        measured.sort(key=lambda t: t[0], reverse=True)
+        k = max(1, self.n_connections * POOL_THROUGHPUT_TOPK_FACTOR)
+        top_measured = [p for _, p in measured[:k]]
+        if unmeasured:
+            if len(top_measured) >= k:
+                top_measured = top_measured[: max(0, k - 1)]
+            top_k = top_measured + unmeasured[: max(1, k - len(top_measured))]
+        else:
+            top_k = top_measured
+        return top_k or eligible
 
     def record_success(self, proxy: dict) -> None:
         """Incrementa lo score del proxy di POOL_SCORE_ON_SUCCESS,
@@ -128,6 +180,23 @@ class ProxyPool:
             remaining = self._count_alive_unlocked()
         log.debug("Pool: failure %s:%s score %d -> %d (vivi: %d)",
                   proxy["host"], proxy["port"], cur, new, remaining)
+
+    def record_throughput(self, proxy: dict, bps: float) -> None:
+        """Aggiorna la EMA del throughput osservato (byte/s) per il proxy.
+        Additivo: usata SOLO dal ramo 'throughput' di get_next(); non tocca
+        score/latency e non influisce sulla modalita' 'score' (default).
+        Chiamata accanto a record_success sul completamento di un chunk."""
+        if bps <= 0:
+            return
+        key = (proxy["host"], proxy["port"])
+        with self._lock:
+            prev = self._throughput.get(key)
+            new = bps if prev is None else (
+                POOL_THROUGHPUT_EMA_ALPHA * bps + (1 - POOL_THROUGHPUT_EMA_ALPHA) * prev
+            )
+            self._throughput[key] = new
+        log.debug("Pool: throughput %s:%s ema -> %.1f KB/s",
+                  proxy["host"], proxy["port"], new / 1024)
 
     def penalize(self, proxy: dict, hard: bool = False) -> None:
         """Penalità: hard=True scende immediatamente sotto soglia

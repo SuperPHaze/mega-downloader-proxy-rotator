@@ -123,6 +123,12 @@ MAX_CONCURRENT_DOWNLOADS = 1
 # 1 = comportamento legacy (mega.py monolitico). >1 = parallel client.
 PARALLEL_CONNECTIONS_PER_FILE = 4
 
+# Limiti del controllo "Connessioni per file" nella scheda Funzioni
+# Sperimentali (Leva A). PARALLEL_CONNECTIONS_PER_FILE resta il DEFAULT
+# quando l'utente non tocca il controllo; il range e' [MIN, MAX].
+PARALLEL_CONNECTIONS_MIN = 2
+PARALLEL_CONNECTIONS_MAX = 16
+
 # Dimensione minima di un segmento parallelo. File piu' piccoli vanno
 # direttamente in seriale (non vale la pena di splittarli).
 PARALLEL_MIN_SEGMENT_BYTES = 1 * 1024 * 1024  # 1 MiB
@@ -226,6 +232,15 @@ POOL_SCORE_MAX = 100
 # Il valore è popolato dal validator Stage 1 (o upstream da fonti come Databay).
 POOL_LATENCY_TIEBREAKER = True
 
+# Selezione per throughput osservato (Leva B della scheda Funzioni
+# Sperimentali, default OFF -> selection_mode resta "score"). EMA dei bps
+# misurati per proxy: ema = alpha*nuovo + (1-alpha)*vecchio. K = connessioni
+# * FACTOR determina quanti dei proxy piu' veloci entrano in rotazione
+# round-robin (non si pesca sempre il singolo migliore, altrimenti si
+# brucia il proxy top con il rate-limit di Mega sullo stesso IP).
+POOL_THROUGHPUT_EMA_ALPHA = 0.3
+POOL_THROUGHPUT_TOPK_FACTOR = 2
+
 # Cache dei proxy validati: persistita su disco tra sessioni per evitare
 # lo scrape iniziale "da zero" (~30-120s) ogni volta. Il file e' relativo
 # alla root del progetto (stesso schema di app.log / failed_links.log /
@@ -236,4 +251,3 @@ PROXY_CACHE_TTL_S = 6 * 3600               # entry oltre TTL = scartate al load
 PROXY_CACHE_SAVE_INTERVAL_S = 300          # salvataggio periodico
 PROXY_CACHE_SCHEMA_VERSION = 1             # incrementare al cambio formato
 PROXY_CACHE_MIN_SCORE_FOR_PERSISTENCE = 0  # solo proxy con score >= soglia
-

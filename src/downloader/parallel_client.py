@@ -331,7 +331,10 @@ class ParallelMegaDownloader:
                         fut.result()
                     except Exception as exc:
                         chunk_errors.append(str(exc))
-                        log.error("[parallel] chunk fallito: %s", exc)
+                        # WARNING, non ERROR: copre abort locale/cancellazione,
+                        # retry esauriti e rate-limit CDN — fisiologico coi
+                        # proxy gratuiti, non un bug. Vedi rules/logging.md.
+                        log.warning("[parallel] chunk fallito: %s", exc)
                         # Abort soft: conta solo i fallimenti reali (chunk che
                         # hanno esaurito TUTTI i retry). Ignora eccezioni da
                         # abort/cancellazione gia' gestite dai checkpoint interni.
@@ -545,6 +548,11 @@ class ParallelMegaDownloader:
                     self._chunk_size,
                 )
                 self.pool.record_success(proxy)
+                # Leva B (sperimentale): segnale a costo zero, gia' disponibile
+                # al watchdog. Non influisce sulla modalita' "score" (default).
+                chunk_elapsed = time.monotonic() - attempt_start
+                if chunk_elapsed > 0:
+                    self.pool.record_throughput(proxy, downloaded / chunk_elapsed)
                 log.info(
                     "[parallel] chunk=%d OK (%d B in %d tentativi)",
                     chunk_idx, chunk_size_actual, attempt,

@@ -85,6 +85,7 @@ class DownloadWorker(QThread):
         session_state: SessionState,
         file_time_limit_s: int | None = None,
         chunk_size_bytes: int | None = None,
+        connections_per_file: int | None = None,
     ) -> None:
         super().__init__()
         self.file_id = file_id
@@ -108,6 +109,12 @@ class DownloadWorker(QThread):
         self._file_deadline: float | None = None
         # Dimensione chunk per ParallelMegaDownloader (byte). None = usa default.
         self._chunk_size_bytes: int | None = chunk_size_bytes
+        # Connessioni parallele per file (Leva A, scheda Funzioni Sperimentali).
+        # None = usa il default di config (comportamento storico).
+        self._connections_per_file: int = (
+            connections_per_file if connections_per_file is not None
+            else PARALLEL_CONNECTIONS_PER_FILE
+        )
 
     def _is_deadline_expired(self) -> bool:
         """True solo se il deadline per-file è scaduto E non c'è una cancellazione
@@ -143,25 +150,36 @@ class DownloadWorker(QThread):
         log.info("[file %d] start url=%s base_dir=%s", self.file_id, self.mega_url, base_dir)
 
         try:
-            for cycle in range(1, DOWNLOAD_CYCLES + 1):
-                ok = self._run_cycle_until_success(cycle, base_dir)
-                if not ok:
-                    # Uscita anticipata: cancellazione globale o locale.
-                    log.info("[file %d] interrotto al ciclo %d", self.file_id, cycle)
-                    return
+            try:
+                for cycle in range(1, DOWNLOAD_CYCLES + 1):
+                    ok = self._run_cycle_until_success(cycle, base_dir)
+                    if not ok:
+                        # Uscita anticipata: cancellazione globale o locale.
+                        log.info("[file %d] interrotto al ciclo %d", self.file_id, cycle)
+                        return
 
-            log.info(
-                "[file %d] tutti i %d cicli completati. Output: %s",
-                self.file_id, DOWNLOAD_CYCLES, base_dir.resolve(),
+                log.info(
+                    "[file %d] tutti i %d cicli completati. Output: %s",
+                    self.file_id, DOWNLOAD_CYCLES, base_dir.resolve(),
+                )
+                self._emit_completed_info()
+                self.all_done.emit(self.file_id)
+            finally:
+                # Se l'uscita e' avvenuta per cancellazione locale (non globale),
+                # notifica l'orchestrator cosi' libera lo slot ed eventualmente
+                # cancella la cartella di lavoro.
+                if self._local_cancelled and not self.session_state.is_cancelled():
+                    self.cancelled.emit(self.file_id)
+        except Exception:
+            # Rete di sicurezza diagnostica: qualunque eccezione non gia'
+            # gestita dentro _run_cycle_until_success non deve sparire senza
+            # traccia quando il thread termina. Rilancia dopo il log: nessun
+            # cambio di comportamento, solo visibilita'.
+            log.exception(
+                "[file %d] eccezione non gestita nel worker, il thread termina",
+                self.file_id,
             )
-            self._emit_completed_info()
-            self.all_done.emit(self.file_id)
-        finally:
-            # Se l'uscita e' avvenuta per cancellazione locale (non globale),
-            # notifica l'orchestrator cosi' libera lo slot ed eventualmente
-            # cancella la cartella di lavoro.
-            if self._local_cancelled and not self.session_state.is_cancelled():
-                self.cancelled.emit(self.file_id)
+            raise
 
     def _run_cycle_until_success(self, cycle: int, base_dir) -> bool:
         attempt = 0
@@ -229,7 +247,10 @@ class DownloadWorker(QThread):
             self._total_attempts += 1
             if self._total_attempts > MAX_ATTEMPTS_PER_FILE:
                 last_err = self._last_error_msg or "motivo sconosciuto"
-                log.error(
+                # WARNING, non ERROR: esaurire i tentativi e' un esito atteso
+                # con i proxy gratuiti (mortalita' alta), non un bug. Vedi
+                # rules/logging.md.
+                log.warning(
                     "[file %d] ciclo %d: %d tentativi falliti, abbandono link",
                     self.file_id, cycle, MAX_ATTEMPTS_PER_FILE,
                 )
@@ -286,12 +307,12 @@ class DownloadWorker(QThread):
                 self._effective_state.wait_if_paused()
                 log.info(
                     "[file %d] ciclo %d tentativo %d: inizio download in %s (parallel=%d)",
-                    self.file_id, cycle, attempt, cycle_dir, PARALLEL_CONNECTIONS_PER_FILE,
+                    self.file_id, cycle, attempt, cycle_dir, self._connections_per_file,
                 )
-                if PARALLEL_CONNECTIONS_PER_FILE > 1:
+                if self._connections_per_file > 1:
                     pd = ParallelMegaDownloader(
                         proxy_pool=self.proxy_pool,
-                        n_connections=PARALLEL_CONNECTIONS_PER_FILE,
+                        n_connections=self._connections_per_file,
                         session_state=self._effective_state,
                         chunk_size=self._chunk_size_bytes,
                     )

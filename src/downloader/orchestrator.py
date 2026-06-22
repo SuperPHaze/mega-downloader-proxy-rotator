@@ -14,6 +14,8 @@ from PyQt6.QtWidgets import QApplication
 from src.core.config import (
     MAX_CONCURRENT_DOWNLOADS,
     MAX_PROXIES_TO_VALIDATE,
+    PARALLEL_CHUNK_SIZE_MB,
+    PARALLEL_CONNECTIONS_PER_FILE,
     PROXY_CACHE_MIN_SCORE_FOR_PERSISTENCE,
     PROXY_CACHE_SAVE_INTERVAL_S,
     VALIDATOR_STAGE1_WORKERS,
@@ -215,6 +217,10 @@ class DownloadOrchestrator(QObject):
         self.file_time_limit_s: int | None = None
         # Dimensione chunk per il parallel client (byte). None = usa default config.
         self.chunk_size_bytes: int | None = None
+        # Connessioni per file (Leva A) e modalita' di selezione proxy (Leva B):
+        # scheda Funzioni Sperimentali. None/"score" = comportamento storico.
+        self.connections_per_file: int | None = None
+        self.selection_mode: str = "score"
         # Timer che pubblica periodicamente la size del pool. Non attivato in
         # __init__/start(): viene avviato in _on_setup_ok dopo il primo
         # add_many, altrimenti emetterebbe 0 a ripetizione durante il setup.
@@ -248,11 +254,36 @@ class DownloadOrchestrator(QObject):
         concurrency: int | None = None,
         file_time_limit_s: int | None = None,
         chunk_size_bytes: int | None = None,
+        connections_per_file: int | None = None,
+        selection_mode: str | None = None,
     ) -> None:
         if concurrency is not None:
             self.max_concurrent = max(1, int(concurrency))
         self.file_time_limit_s = file_time_limit_s
         self.chunk_size_bytes = chunk_size_bytes
+        self.connections_per_file = connections_per_file
+        self.selection_mode = selection_mode or "score"
+        # Letti UNA volta all'avvio sessione (non a caldo): il pool condiviso
+        # da tutti i worker adotta la modalita' di selezione e il K per il
+        # ramo "throughput" prima che parta il primo download.
+        self.pool.selection_mode = self.selection_mode
+        if self.connections_per_file is not None:
+            self.pool.n_connections = max(1, int(self.connections_per_file))
+        # Riga CONFIG a inizio sessione (vedi rules/logging.md): correla
+        # config attiva <-> eventuale crash nei log raccolti dagli utenti.
+        connessioni = self.connections_per_file or PARALLEL_CONNECTIONS_PER_FILE
+        chunk_mb = (
+            self.chunk_size_bytes / (1024 * 1024)
+            if self.chunk_size_bytes is not None
+            else PARALLEL_CHUNK_SIZE_MB
+        )
+        log.info(
+            "CONFIG connessioni=%d chunk_mb=%g selezione_velocita=%s "
+            "file_paralleli=%d validator_stage1=%d",
+            connessioni, chunk_mb,
+            "on" if self.selection_mode == "throughput" else "off",
+            self.max_concurrent, VALIDATOR_STAGE1_WORKERS,
+        )
         log.info(
             "Orchestrator.start: %d link, max %d concorrenti",
             len(links), self.max_concurrent,
@@ -409,6 +440,7 @@ class DownloadOrchestrator(QObject):
             file_id, link, self.pool, self.session_state,
             file_time_limit_s=self.file_time_limit_s,
             chunk_size_bytes=self.chunk_size_bytes,
+            connections_per_file=self.connections_per_file,
         )
         worker.setObjectName(f"Worker-{file_id}")
         worker.progress.connect(self.progress)
