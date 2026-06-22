@@ -241,6 +241,12 @@ POOL_LATENCY_TIEBREAKER = True
 POOL_THROUGHPUT_EMA_ALPHA = 0.3
 POOL_THROUGHPUT_TOPK_FACTOR = 2
 
+# Intervallo (secondi) dell'heartbeat diagnostico: una riga INFO su app.log
+# con memoria/thread/job attivi/pool vivi. Serve a vedere l'ora dell'ultimo
+# respiro prima di un crash silenzioso (es. di notte su hardware leggero) e
+# la curva della memoria nel tempo (diagnosi OOM/leak).
+HEARTBEAT_INTERVAL_S = 120
+
 # Cache dei proxy validati: persistita su disco tra sessioni per evitare
 # lo scrape iniziale "da zero" (~30-120s) ogni volta. Il file e' relativo
 # alla root del progetto (stesso schema di app.log / failed_links.log /

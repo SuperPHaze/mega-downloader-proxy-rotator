@@ -6,8 +6,10 @@ import sys
 
 from PyQt6.QtWidgets import QApplication
 
+from src.core import diagnostics
+from src.core.config import APP_VERSION
 from src.core.icon_loader import build_app_icon
-from src.core.logging_setup import setup_logging
+from src.core.logging_setup import install_qt_message_handler, setup_logging
 from src.gui.main_window import MainWindow
 
 
@@ -31,6 +33,7 @@ def main() -> int:
     log_file = setup_logging()
     log = logging.getLogger("main")
     log.info("Avvio applicazione. Log: %s", log_file)
+    diagnostics.log_session_start(APP_VERSION)
 
     # Hook globale: cattura eccezioni non gestite e le scrive nel log.
     def excepthook(exc_type, exc_value, exc_tb):
@@ -38,6 +41,11 @@ def main() -> int:
         sys.__excepthook__(exc_type, exc_value, exc_tb)
 
     sys.excepthook = excepthook
+
+    # Messaggi interni di Qt (warning/critical/fatal) sul logger Python:
+    # PRIMA di creare la QApplication, cosi' anche eventuali warning di
+    # inizializzazione finiscono in app.log invece che solo su console.
+    install_qt_message_handler()
 
     _set_windows_app_user_model_id()
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 import shutil
 
-from PyQt6.QtCore import Qt, QUrl
+from PyQt6.QtCore import Qt, QTimer, QUrl
 from PyQt6.QtGui import QDesktopServices
 from PyQt6.QtWidgets import (
     QApplication,
@@ -15,18 +15,26 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from src.core import diagnostics
 from src.core.branding import resolve as resolve_branding
-from src.core.config import APP_VERSION
+from src.core.config import APP_VERSION, HEARTBEAT_INTERVAL_S
 from src.core.icon_loader import build_app_icon
 from src.core.state import SessionState
 from src.downloader.orchestrator import DownloadOrchestrator
 from src.downloader.worker import job_output_dir
 from src.gui.about_dialog import AboutDialog
 from src.gui.controls import ControlsBar
+from src.gui.experimental_dialog import ExperimentalFeaturesDialog
 from src.gui.job_detail_dialog import JobDetailDialog
 from src.gui.jobs_panel import JobsPanel
 from src.gui.link_panel import LinkPanel, confirm_already_downloaded
-from src.gui.preferences import load_check_updates_on_startup, load_dark_theme, save_dark_theme
+from src.gui.preferences import (
+    load_check_updates_on_startup,
+    load_connections_per_file,
+    load_dark_theme,
+    load_throughput_selection,
+    save_dark_theme,
+)
 from src.gui.stats_bar import StatsBar
 from src.gui import style as _style
 from src.gui.style import LIGHT_QSS, apply_theme
@@ -103,6 +111,7 @@ class MainWindow(QMainWindow):
         self.controls.paste_links_requested.connect(self.link_panel.open_paste_dialog)
         self.controls.theme_toggled.connect(self._on_theme_toggle)
         self.controls.info_requested.connect(self._open_about_dialog)
+        self.controls.experimental_requested.connect(self._open_experimental_dialog)
         self.jobs_panel.job_double_clicked.connect(self._open_detail)
         self.jobs_panel.cancel_job_requested.connect(self._on_cancel_job_requested)
         self.jobs_panel.delete_folder_requested.connect(self._on_delete_folder_requested)
@@ -112,10 +121,30 @@ class MainWindow(QMainWindow):
 
         self._maybe_check_updates_on_startup()
 
+        # Heartbeat diagnostico: una riga INFO periodica su app.log con
+        # memoria/thread/job attivi/pool vivi. Passivo, non influenza il
+        # download: serve solo a vedere l'ultimo respiro prima di un crash
+        # silenzioso e la curva della memoria nel tempo.
+        self._heartbeat_timer = QTimer(self)
+        self._heartbeat_timer.setInterval(HEARTBEAT_INTERVAL_S * 1000)
+        self._heartbeat_timer.timeout.connect(self._on_heartbeat)
+        self._heartbeat_timer.start()
+
+    # ---- diagnostica -------------------------------------------------------
+
+    def _on_heartbeat(self) -> None:
+        download_attivi = self.jobs_panel.model.aggregates()["running"]
+        pool_vivi = self.orchestrator.pool.size() if self.orchestrator is not None else 0
+        diagnostics.log_heartbeat(download_attivi, pool_vivi)
+
     # ---- Info / controllo aggiornamenti -----------------------------------
 
     def _open_about_dialog(self) -> None:
         dlg = AboutDialog(self)
+        dlg.exec()
+
+    def _open_experimental_dialog(self) -> None:
+        dlg = ExperimentalFeaturesDialog(self)
         dlg.exec()
 
     def _on_update_download_requested(self) -> None:
@@ -178,6 +207,11 @@ class MainWindow(QMainWindow):
         concurrency = self.controls.get_concurrency()
         file_time_limit_s = self.controls.get_file_time_limit_s()
         chunk_size_bytes = self.controls.get_chunk_size_bytes()
+        # Funzioni Sperimentali: lette da preferences.json all'avvio sessione
+        # (non a caldo). Default = comportamento storico (4 connessioni,
+        # selezione per score).
+        connections_per_file = load_connections_per_file()
+        selection_mode = "throughput" if load_throughput_selection() else "score"
         self.orchestrator = DownloadOrchestrator(self.session_state)
         qc = Qt.ConnectionType.QueuedConnection
         self.orchestrator.progress.connect(self.jobs_panel.on_progress, qc)
@@ -215,6 +249,8 @@ class MainWindow(QMainWindow):
             concurrency=concurrency,
             file_time_limit_s=file_time_limit_s,
             chunk_size_bytes=chunk_size_bytes,
+            connections_per_file=connections_per_file,
+            selection_mode=selection_mode,
         )
 
     # ---- pausa / annullo globale -----------------------------------------
@@ -414,4 +450,8 @@ class MainWindow(QMainWindow):
                 log.warning("closeEvent: shutdown incompleto, chiudo comunque")
         if self._startup_update_worker is not None and self._startup_update_worker.isRunning():
             self._startup_update_worker.wait(2000)
+        # Marcatore di chiusura volontaria: se nel log compare un SESSION
+        # START senza questo prima del successivo START, e' stato un crash o
+        # un kill esterno (non una chiusura dall'utente).
+        diagnostics.log_session_clean_exit()
         super().closeEvent(event)
