@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import faulthandler
+import json
 import logging
 import sys
 import threading
@@ -11,10 +12,57 @@ from datetime import datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-_LOG_FILE = Path(__file__).resolve().parents[2] / "app.log"
-_CRASH_LOG_FILE = Path(__file__).resolve().parents[2] / "crash.log"
+from src.core.config import EVENTS_LOG, EVENTS_LOG_BACKUPS, EVENTS_LOG_MAX_BYTES, LOGS_DIR
+
+_LOG_FILE = LOGS_DIR / "app.log"
+_CRASH_LOG_FILE = LOGS_DIR / "crash.log"
 _FORMAT = "%(asctime)s [%(levelname)s] %(threadName)s %(name)s: %(message)s"
 _initialized = False
+
+# Attributi standard di LogRecord: tutto cio' che NON e' in questo insieme e
+# presente in record.__dict__ e' un campo "extra" passato dal chiamante, e va
+# nel JSONL (vedi rules/logging.md: instrumentazione extra={"event_type": ...}).
+_STANDARD_RECORD_ATTRS = {
+    "name", "msg", "args", "levelname", "levelno", "pathname", "filename",
+    "module", "exc_info", "exc_text", "stack_info", "lineno", "funcName",
+    "created", "msecs", "relativeCreated", "thread", "threadName",
+    "processName", "process", "taskName",
+}
+
+
+class JsonLinesFormatter(logging.Formatter):
+    """Formatter per il log strutturato universale (events.jsonl): una riga
+    JSON per record, con tutti gli extra del chiamante. Non solleva mai:
+    in caso di errore di serializzazione emette una riga minima."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        try:
+            payload = {
+                "ts": datetime.fromtimestamp(record.created).isoformat(timespec="milliseconds"),
+                "level": record.levelname,
+                "logger": record.name,
+                "thread": record.threadName,
+                "msg": record.getMessage(),
+            }
+            for key, value in record.__dict__.items():
+                if key in _STANDARD_RECORD_ATTRS or key.startswith("_"):
+                    continue
+                payload[key] = value
+            if record.exc_info:
+                payload["exc"] = self.formatException(record.exc_info)
+            return json.dumps(payload, default=str, ensure_ascii=False)
+        except Exception:
+            try:
+                minimal = {
+                    "ts": datetime.now().isoformat(timespec="milliseconds"),
+                    "level": record.levelname,
+                    "logger": record.name,
+                    "msg": str(getattr(record, "msg", "")),
+                    "_formatter_error": True,
+                }
+                return json.dumps(minimal, default=str, ensure_ascii=False)
+            except Exception:
+                return '{"_formatter_error": true}'
 
 # Handle di crash.log tenuto vivo a livello di modulo per tutta la vita del
 # processo: faulthandler ci scrive il traceback C nativo di un segfault/abort
@@ -59,6 +107,8 @@ def setup_logging(level: int = logging.DEBUG) -> Path:
     if _initialized:
         return _LOG_FILE
 
+    LOGS_DIR.mkdir(parents=True, exist_ok=True)
+
     root = logging.getLogger()
     root.setLevel(level)
 
@@ -75,6 +125,16 @@ def setup_logging(level: int = logging.DEBUG) -> Path:
     fh.setLevel(level)
     fh.setFormatter(fmt)
     root.addHandler(fh)
+
+    # Log strutturato universale (JSON Lines, sempre a DEBUG: nessun filtro a
+    # monte, il filtraggio lo fa tools/report.py a valle).
+    events_fh = RotatingFileHandler(
+        LOGS_DIR / EVENTS_LOG, maxBytes=EVENTS_LOG_MAX_BYTES,
+        backupCount=EVENTS_LOG_BACKUPS, encoding="utf-8",
+    )
+    events_fh.setLevel(logging.DEBUG)
+    events_fh.setFormatter(JsonLinesFormatter())
+    root.addHandler(events_fh)
 
     # Riduci rumore di librerie verbose (urllib3 debug = troppo).
     logging.getLogger("urllib3").setLevel(logging.WARNING)

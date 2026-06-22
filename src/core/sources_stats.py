@@ -10,6 +10,7 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 from src.core.config import (
+    LOGS_DIR,
     SOURCES_STATS_LOG,
     SOURCES_STATS_LOG_BACKUPS,
     SOURCES_STATS_LOG_MAX_BYTES,
@@ -20,7 +21,7 @@ _initialized = False
 
 
 def _path() -> Path:
-    return Path(__file__).resolve().parents[2] / SOURCES_STATS_LOG
+    return LOGS_DIR / SOURCES_STATS_LOG
 
 
 def sources_stats_path() -> Path:
@@ -34,6 +35,7 @@ def _setup_logger() -> logging.Logger:
         return logger
     logger.setLevel(logging.INFO)
     logger.propagate = False
+    LOGS_DIR.mkdir(parents=True, exist_ok=True)
     fh = RotatingFileHandler(
         _path(),
         maxBytes=SOURCES_STATS_LOG_MAX_BYTES,

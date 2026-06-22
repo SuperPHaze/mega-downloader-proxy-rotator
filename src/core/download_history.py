@@ -16,6 +16,7 @@ from src.core.config import (
     DOWNLOAD_HISTORY_LOG,
     DOWNLOAD_HISTORY_LOG_BACKUPS,
     DOWNLOAD_HISTORY_LOG_MAX_BYTES,
+    LOGS_DIR,
 )
 
 _LOGGER_NAME = "download_history"
@@ -46,7 +47,7 @@ def extract_handle(url: str) -> str | None:
 
 
 def _path() -> Path:
-    return Path(__file__).resolve().parents[2] / DOWNLOAD_HISTORY_LOG
+    return LOGS_DIR / DOWNLOAD_HISTORY_LOG
 
 
 def download_history_path() -> Path:
@@ -60,6 +61,7 @@ def _setup_logger() -> logging.Logger:
         return logger
     logger.setLevel(logging.INFO)
     logger.propagate = False  # niente eco sul root logger
+    LOGS_DIR.mkdir(parents=True, exist_ok=True)
     fh = RotatingFileHandler(
         _path(),
         maxBytes=DOWNLOAD_HISTORY_LOG_MAX_BYTES,

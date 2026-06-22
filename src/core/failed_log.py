@@ -13,6 +13,7 @@ from src.core.config import (
     FAILED_LINKS_LOG,
     FAILED_LINKS_LOG_BACKUPS,
     FAILED_LINKS_LOG_MAX_BYTES,
+    LOGS_DIR,
 )
 
 _LOGGER_NAME = "failed_links"
@@ -20,7 +21,7 @@ _initialized = False
 
 
 def _path() -> Path:
-    return Path(__file__).resolve().parents[2] / FAILED_LINKS_LOG
+    return LOGS_DIR / FAILED_LINKS_LOG
 
 
 def failed_log_path() -> Path:
@@ -34,6 +35,7 @@ def setup_failed_links_logger() -> logging.Logger:
         return logger
     logger.setLevel(logging.INFO)
     logger.propagate = False  # niente eco sul root logger
+    LOGS_DIR.mkdir(parents=True, exist_ok=True)
     fh = RotatingFileHandler(
         _path(),
         maxBytes=FAILED_LINKS_LOG_MAX_BYTES,

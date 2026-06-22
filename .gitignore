@@ -4,17 +4,14 @@ downloads/
 *.pyc
 .DS_Store
 dist/
-app.log*
-crash.log*
-failed_links.log*
-proxy_sources_stats.log*
-download_history.log*
 proxy_cache.json
-crash_report.html
+
+# Log diagnostici/operativi e report generati (vedi src/core/config.py:LOGS_DIR).
+logs/*
+!logs/.gitkeep
 
 # Output di debug / monitor
 /monitor_speed.*
-tail1000.log
 *.jsonl
 
 # Preferenze e settings locali

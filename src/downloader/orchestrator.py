@@ -283,6 +283,12 @@ class DownloadOrchestrator(QObject):
             connessioni, chunk_mb,
             "on" if self.selection_mode == "throughput" else "off",
             self.max_concurrent, VALIDATOR_STAGE1_WORKERS,
+            extra={
+                "event_type": "config",
+                "connessioni": connessioni,
+                "chunk_mb": chunk_mb,
+                "selezione_velocita": "on" if self.selection_mode == "throughput" else "off",
+            },
         )
         log.info(
             "Orchestrator.start: %d link, max %d concorrenti",
@@ -506,6 +512,16 @@ class DownloadOrchestrator(QObject):
             log.exception(
                 "Scrittura download_history.log fallita per file_id=%d", file_id,
             )
+        log.info(
+            "Download completato file_id=%d file_name=%s", file_id, file_name,
+            extra={
+                "event_type": "download_completed",
+                "file_id": file_id,
+                "url": url,
+                "file_name": file_name,
+                "file_size": file_size,
+            },
+        )
 
     def _on_worker_abandoned(self, file_id: int, url: str, attempts: int, last_error: str) -> None:
         # Persistiamo l'evento sul file dedicato (centralizzato qui per non
@@ -513,6 +529,13 @@ class DownloadOrchestrator(QObject):
         log.warning(
             "Worker file_id=%d abbandonato dopo %d tentativi: %s",
             file_id, attempts, last_error,
+            extra={
+                "event_type": "download_abandoned",
+                "file_id": file_id,
+                "url": url,
+                "attempts": attempts,
+                "last_error": last_error,
+            },
         )
         try:
             log_failed_link(file_id, url, attempts, last_error)
@@ -524,7 +547,10 @@ class DownloadOrchestrator(QObject):
     def _on_worker_cancelled(self, file_id: int) -> None:
         # Un worker ha onorato una richiesta di cancellazione locale.
         # Notifica la GUI e libera lo slot per il prossimo in coda.
-        log.info("Worker file_id=%d cancellato dall'utente", file_id)
+        log.info(
+            "Worker file_id=%d cancellato dall'utente", file_id,
+            extra={"event_type": "download_cancelled", "file_id": file_id},
+        )
         self.job_cancelled.emit(file_id)
         self._on_slot_freed(file_id)
 

@@ -206,6 +206,16 @@ MAX_FILE_DURATION_MINUTES = 60
 # Il conteggio NON si resetta tra cicli diversi dello stesso link.
 MAX_ATTEMPTS_PER_FILE = 15
 
+# Cartella unica per log diagnostici/operativi e report generati.
+LOGS_DIR = _PROJECT_ROOT / "logs"
+REPORTS_DIR = LOGS_DIR / "reports"
+
+# Log strutturato universale (JSON Lines, un record per riga, livello DEBUG:
+# massimo dettaglio). Sorgente primaria per tools/report.py.
+EVENTS_LOG = "events.jsonl"
+EVENTS_LOG_MAX_BYTES = 20_000_000   # 20 MB: il JSONL a DEBUG cresce più di app.log
+EVENTS_LOG_BACKUPS = 5
+
 # File log dedicato ai link abbandonati. Una riga per link, formato
 # JSON Lines per parsing successivo. Rotante per evitare crescita
 # illimitata su sessioni molto lunghe.

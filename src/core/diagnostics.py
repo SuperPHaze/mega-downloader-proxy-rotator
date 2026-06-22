@@ -89,12 +89,24 @@ def format_heartbeat(
 def log_heartbeat(download_attivi: int, pool_vivi: int) -> None:
     mem = get_process_memory_mb()
     threads = threading.active_count()
-    log.info(format_heartbeat(mem, threads, download_attivi, pool_vivi))
+    log.info(
+        format_heartbeat(mem, threads, download_attivi, pool_vivi),
+        extra={
+            "event_type": "heartbeat",
+            "mem_rss_mb": mem,
+            "threads": threads,
+            "download_attivi": download_attivi,
+            "pool_vivi": pool_vivi,
+        },
+    )
 
 
 def log_session_start(app_version: str) -> None:
-    log.info("SESSION START v%s pid=%d", app_version, os.getpid())
+    log.info(
+        "SESSION START v%s pid=%d", app_version, os.getpid(),
+        extra={"event_type": "session_start", "app_version": app_version, "pid": os.getpid()},
+    )
 
 
 def log_session_clean_exit() -> None:
-    log.info("SESSION CLEAN EXIT")
+    log.info("SESSION CLEAN EXIT", extra={"event_type": "session_clean_exit"})
