@@ -121,11 +121,11 @@ MAX_CONCURRENT_DOWNLOADS = 1
 # Mega.py nativo scarica seriale: aggiriamo risolvendo la URL CDN via mega.py
 # e poi facendo N richieste con Range: bytes=..., ognuna con un proxy diverso.
 # 1 = comportamento legacy (mega.py monolitico). >1 = parallel client.
-PARALLEL_CONNECTIONS_PER_FILE = 4
+PARALLEL_CONNECTIONS_PER_FILE = 10
 
-# Limiti del controllo "Connessioni per file" nella scheda Funzioni
-# Sperimentali (Leva A). PARALLEL_CONNECTIONS_PER_FILE resta il DEFAULT
-# quando l'utente non tocca il controllo; il range e' [MIN, MAX].
+# Limiti residui del motore (non piu' esposti in GUI dalla 1.9.0: la scheda
+# Funzioni Sperimentali e' stata svuotata). PARALLEL_CONNECTIONS_PER_FILE
+# resta il DEFAULT; il range [MIN, MAX] e' mantenuto per riuso futuro.
 PARALLEL_CONNECTIONS_MIN = 2
 PARALLEL_CONNECTIONS_MAX = 16
 
@@ -162,7 +162,7 @@ POOL_REFRESH_THRESHOLD = POOL_REFRESH_THRESHOLD_LOW
 # Dimensione di ogni chunk nella coda parallela (MB). Deve essere multiplo di
 # 16 byte (block AES — i MB lo sono sempre). Pezzi più piccoli = più resistenza
 # al cambio proxy, più richieste HTTP al CDN. Default GUI configurabile.
-PARALLEL_CHUNK_SIZE_MB = 8
+PARALLEL_CHUNK_SIZE_MB = 32
 
 # Abort soft della coda chunk: se questo numero di chunk ha esaurito TUTTI i
 # retry, il download viene interrotto (i chunk completati restano nel sidecar).
