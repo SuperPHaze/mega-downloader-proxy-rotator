@@ -17,7 +17,7 @@ https://github.com/user-attachments/assets/b4e0839b-6545-4614-9437-22f5ee564264
 
 
 
-![version](https://img.shields.io/badge/version-1.8.2-blue)
+![version](https://img.shields.io/badge/version-1.8.3-blue)
 ![python](https://img.shields.io/badge/python-3.11%E2%80%933.14-blue)
 ![platform](https://img.shields.io/badge/platform-Windows%2010%2F11-lightgrey)
 ![gui](https://img.shields.io/badge/GUI-PyQt6-green)
@@ -48,6 +48,8 @@ A **Windows desktop app** (Python + PyQt6) that downloads files from Mega.nz by 
 - **Configurable per-file time limit**; past the threshold the file is abandoned.
 - **Download history** with a warning for links already downloaded (deduplicated by Mega handle).
 - **Per-fragment watchdog**: drops proxies that are too slow or fail to finish in time.
+- **Experimental features** (opt-in, disabled by default): adjustable parallel connections per file and proxy selection by observed speed.
+- **Passive crash diagnostics**, always on (memory heartbeat, multi-thread tracebacks), with a log analyzer (`tools/analyze_crashlog.py`) that produces an HTML report.
 - **Tabbed interface** with a dashboard (speed, ETA, pool status), light/dark theme, global and per-job pause/resume/cancel.
 - **CLI mode** for headless machines.
 

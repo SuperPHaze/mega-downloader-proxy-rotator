@@ -22,9 +22,9 @@ Every download session is made up of three phases that operate in parallel once 
 
 **Pool provisioning.** Before downloading, the program builds a set of working proxies: it collects lists from numerous public sources and runs them through a two-stage validation (section 3). If a cache from a previous session is available, it starts "warm" from that and validates in the background.
 
-**Download.** The file is resolved and split into a queue of fixed-size chunks, downloaded by several parallel HTTP Range connections, each routed through a different proxy, decrypted in streaming fashion, and reassembled (sections 4 and 5).
+**Download.** The file is resolved and split into a queue of fixed-size chunks, downloaded by several parallel HTTP Range connections, each routed through a different proxy, decrypted in streaming fashion, and reassembled (sections 4 and 6).
 
-**Pool maintenance.** For the entire duration of the download, a background component monitors the size and quality of the pool and replenishes it as proxies are exhausted or degrade (section 6).
+**Pool maintenance.** For the entire duration of the download, a background component monitors the size and quality of the pool and replenishes it as proxies are exhausted or degrade (section 7).
 
 ---
 
@@ -32,7 +32,7 @@ Every download session is made up of three phases that operate in parallel once 
 
 Public proxy lists are large and largely made up of addresses that are no longer operational. Using them unfiltered would produce constant failures. The program therefore applies a **two-stage validation**, sized to quickly discard useless candidates and spend the more expensive test resources only on the promising ones.
 
-**Stage 1 — reachability.** A fast, high-concurrency pre-filter (up to 200 workers, 4 s timeout) against a highly reliable connectivity endpoint (Google's `generate_204`). It only verifies that the proxy can complete an HTTP round trip; it does not judge Mega reachability. It serves to eliminate dead proxies without wasting a test on stage 2's limited capacity.
+**Stage 1 — reachability.** A fast, high-concurrency pre-filter (up to 100 workers, 4 s timeout) against a highly reliable connectivity endpoint (Google's `generate_204`). It only verifies that the proxy can complete an HTTP round trip; it does not judge Mega reachability. It serves to eliminate dead proxies without wasting a test on stage 2's limited capacity.
 
 **Stage 2 — Mega reachability.** Survivors are tested, at moderate concurrency (60 workers) because Mega rate-limits, against the host of Mega's download API — the same one used by real link resolution, not the homepage. The success criterion is any HTTP response received from the host, even an application-level error: it means the round trip reached its destination. A stricter criterion would discard proxies that are perfectly valid for downloading.
 
@@ -60,7 +60,17 @@ Writing follows the **`.part` + atomic rename** pattern: the transfer always hap
 
 ---
 
-## 5. Watchdog and failure handling
+## 5. Experimental features (opt-in)
+
+A dedicated tab collects advanced options, all **disabled by default**: anyone who doesn't touch them gets the legacy behavior described in the previous sections.
+
+**Configurable connections per file.** The number of parallel HTTP Range connections per individual file (4 by default) becomes adjustable by the user within a preset range. Increasing it speeds up a single file only if the pool has enough good proxies available: more connections mean more proxies "consumed" in parallel, so on a poor pool the real-world gain can be null or negative (more contention, more failed attempts).
+
+**Speed-based proxy selection.** As an alternative to round-robin selection by score (the default), the pool can prefer proxies with the highest observed throughput, measured with an exponential moving average. Rotation still happens among the best ones (not always the single fastest one), to avoid exposing a fast proxy to a Mega rate-limit concentrated on a single IP.
+
+---
+
+## 6. Watchdog and failure handling
 
 Free proxies fail often and in different ways; the program is built to absorb them without stopping. Every chunk transfer attempt is watched by two limits.
 
@@ -76,21 +86,21 @@ The many failed attempts visible during use are therefore expected behavior, not
 
 ---
 
-## 6. Pool maintenance
+## 7. Pool maintenance
 
-Free proxies wear out: one that was valid a few minutes ago may no longer be. If the program only used the set collected at startup, it would eventually run dry. A **background resupplier** checks at regular intervals (every 30 seconds) how many proxies are alive and, if it drops below the threshold (50), starts a scrape and validation without interrupting downloads in progress. To catch silent degradation (proxies progressively slowing down without fully dying), it also forces a resupply if the last one happened more than 5 minutes ago.
+Free proxies wear out: one that was valid a few minutes ago may no longer be. If the program only used the set collected at startup, it would eventually run dry. A **background resupplier** checks at regular intervals (every 30 seconds) how many proxies are alive and, if it drops below the threshold (40), starts a scrape and validation without interrupting downloads in progress. To avoid bursts of resupplies when the pool oscillates right around the threshold, the resupplier "disarms" itself after each run and only re-arms once alive proxies climb back above a higher threshold (80). To catch silent degradation (proxies progressively slowing down without fully dying), it also forces a resupply if the last one happened more than 5 minutes ago.
 
 If the pool empties at a critical moment, it's the download itself that requests an immediate resupply and waits as long as needed: at those times you may see a pause, during which the program is rebuilding the pool before continuing. All of this is automatic and requires no intervention.
 
 ---
 
-## 7. Memory between sessions (warm start)
+## 8. Memory between sessions (warm start)
 
 Building the pool for the first time takes a while (roughly half a minute to a couple of minutes). To avoid repeating that on every launch, the program persists the best proxies to disk and reloads them on the next launch, quickly re-validating them: proxies still alive are immediately available (a "warm" start), while a full search still starts in the background. Cache entries past their validity window (6 hours) are discarded on load. From the second session onward, startup is therefore noticeably faster.
 
 ---
 
-## 8. Session controls and resume
+## 9. Session controls and resume
 
 During a session, the available controls are pause/resume and cancel, both globally and per individual file from the table. Pausing does not lose the proxies: on resume, work continues from where it was suspended. Canceling a single file can optionally also remove its already-downloaded data from disk.
 
@@ -98,13 +108,15 @@ Resume also covers involuntary interruptions (program closed, blackout, error). 
 
 ---
 
-## 9. Output, history, and logs
+## 10. Output, history, and logs
 
 Downloaded files are saved in dedicated subfolders inside the project's `downloads` folder. The program also keeps a few logs in JSON Lines format: the history of completed downloads (deduplicated by Mega handle, used to warn when a link already downloaded is re-entered), the log of abandoned links, per-source proxy metrics, and a general technical activity log. They are not needed for normal use, but are available for diagnostics.
 
+A **passive diagnostics suite**, always on, complements these logs: native crash tracebacks, multi-thread exception capture, a periodic heartbeat with memory usage, and session start/clean-exit markers. In case of a crash, the command-line tool `tools/analyze_crashlog.py` reads these logs and produces a readable HTML report, useful for reconstructing what the program was doing shortly before the problem.
+
 ---
 
-## 10. Key parameters and defaults
+## 11. Key parameters and defaults
 
 The values below are factory defaults; the configurable ones are noted accordingly.
 
@@ -119,13 +131,13 @@ The values below are factory defaults; the configurable ones are noted according
 | Per-segment attempt budget | 180 s | absolute limit, independent of throughput |
 | Maximum duration per file | 60 min | configurable; beyond the limit the file is abandoned |
 | Failed attempts before abandoning | 15 | per individual link, does not reset between cycles |
-| Pool refresh | every 30 s | refill if alive proxies < 50; forced refresh after 5 min |
+| Pool refresh | every 30 s | refill if alive proxies < 40 (re-arms at 80); forced refresh after 5 min |
 | Proxy cache validity | 6 hours | older entries discarded at startup |
 | Proxy score | 0 / +5 / −10 / dead below −20 | initial / success / failure / threshold |
 
 ---
 
-## 11. Expected behaviors
+## 12. Expected behaviors
 
 Some behaviors may look like anomalies but are part of normal operation:
 
@@ -137,7 +149,7 @@ Some behaviors may look like anomalies but are part of normal operation:
 
 ---
 
-## 12. Known limitations
+## 13. Known limitations
 
 - Free proxies have a high mortality rate (~70%): validation physiologically discards most of them.
 - Speed is determined by the proxies, not the program.

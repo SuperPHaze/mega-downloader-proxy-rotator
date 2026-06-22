@@ -22,9 +22,9 @@ Ogni sessione di download si articola in tre fasi che operano in parallelo una v
 
 **Approvvigionamento del pool.** Prima di scaricare, il programma costruisce un insieme di proxy funzionanti: raccoglie liste da numerose fonti pubbliche e le sottopone a una validazione a due stadi (sezione 3). Se è disponibile una cache da una sessione precedente, parte "a caldo" da quella e valida in background.
 
-**Download.** Il file viene risolto e diviso in una coda di chunk a dimensione fissa, scaricati da più connessioni HTTP Range parallele, ciascuna su un proxy diverso, decifrati in streaming e riassemblati (sezioni 4 e 5).
+**Download.** Il file viene risolto e diviso in una coda di chunk a dimensione fissa, scaricati da più connessioni HTTP Range parallele, ciascuna su un proxy diverso, decifrati in streaming e riassemblati (sezioni 4 e 6).
 
-**Mantenimento del pool.** Per tutta la durata del download un componente in background monitora la dimensione e la qualità del pool e lo rifornisce quando i proxy si esauriscono o si degradano (sezione 6).
+**Mantenimento del pool.** Per tutta la durata del download un componente in background monitora la dimensione e la qualità del pool e lo rifornisce quando i proxy si esauriscono o si degradano (sezione 7).
 
 ---
 
@@ -32,7 +32,7 @@ Ogni sessione di download si articola in tre fasi che operano in parallelo una v
 
 Le liste pubbliche di proxy sono ampie e in larga parte composte da indirizzi non più operativi. Usarle senza filtro produrrebbe fallimenti continui. Il programma applica quindi una **validazione a due stadi**, dimensionata per scartare in fretta i candidati inutili e spendere le risorse di test più costose solo su quelli promettenti.
 
-**Stadio 1 — raggiungibilità.** Pre-filtro veloce e ad alta concorrenza (fino a 200 worker, timeout 4 s) contro un endpoint di connettività ad alta affidabilità (`generate_204` di Google). Verifica solo che il proxy regga un round-trip HTTP; non giudica Mega. Serve a eliminare i proxy morti senza sprecare un test sulla capacità limitata dello stadio 2.
+**Stadio 1 — raggiungibilità.** Pre-filtro veloce e ad alta concorrenza (fino a 100 worker, timeout 4 s) contro un endpoint di connettività ad alta affidabilità (`generate_204` di Google). Verifica solo che il proxy regga un round-trip HTTP; non giudica Mega. Serve a eliminare i proxy morti senza sprecare un test sulla capacità limitata dello stadio 2.
 
 **Stadio 2 — raggiungibilità di Mega.** I superstiti vengono provati, con concorrenza moderata (60 worker) perché Mega rate-limita, contro l'host dell'API di download di Mega — lo stesso usato dalla risoluzione reale dei link, non la homepage. Il criterio di successo è qualsiasi risposta HTTP ricevuta dall'host, anche un errore applicativo: significa che il round-trip è arrivato a destinazione. Un criterio più severo scarterebbe proxy perfettamente validi per il download.
 
@@ -60,7 +60,17 @@ La scrittura segue il pattern **`.part` + rename atomico**: il trasferimento avv
 
 ---
 
-## 5. Watchdog e gestione dei fallimenti
+## 5. Funzioni sperimentali (opt-in)
+
+Una scheda dedicata raccoglie opzioni avanzate, tutte **disattivate di default**: chi non le tocca ottiene il comportamento storico descritto nelle sezioni precedenti.
+
+**Connessioni per file configurabili.** Il numero di connessioni HTTP Range parallele per singolo file (4 di default) diventa regolabile dall'utente entro un intervallo prefissato. Alzarlo accelera il singolo file solo se il pool dispone di proxy buoni in numero sufficiente: più connessioni significano più proxy "consumati" in parallelo, quindi su un pool povero il guadagno reale può essere nullo o negativo (più contesa, più tentativi falliti).
+
+**Selezione dei proxy per velocità.** In alternativa alla selezione round-robin per punteggio (il default), il pool può preferire i proxy con il throughput osservato più alto, misurato con una media mobile esponenziale. La rotazione resta comunque fra i migliori (non sempre lo stesso singolo proxy), per non esporre un proxy veloce a un rate-limit di Mega concentrato su un solo IP.
+
+---
+
+## 6. Watchdog e gestione dei fallimenti
 
 I proxy gratuiti falliscono spesso e in modi diversi; il programma è costruito per assorbirli senza fermarsi. Ogni tentativo di trasferimento di un chunk è sorvegliato da due limiti.
 
@@ -76,21 +86,21 @@ I numerosi tentativi falliti visibili durante l'uso sono quindi un comportamento
 
 ---
 
-## 6. Mantenimento del pool
+## 7. Mantenimento del pool
 
-I proxy gratuiti si consumano: uno valido pochi minuti fa può non esserlo più. Se il programma usasse solo l'insieme raccolto all'avvio, finirebbe per restare a secco. Un **rifornitore in background** controlla a intervalli regolari (ogni 30 secondi) il numero di proxy vivi e, se scende sotto la soglia (50), avvia uno scrape e una validazione senza interrompere i download in corso. Per intercettare il degrado silenzioso (proxy che rallentano progressivamente senza morire del tutto), forza comunque un rifornimento se l'ultimo è avvenuto da più di 5 minuti.
+I proxy gratuiti si consumano: uno valido pochi minuti fa può non esserlo più. Se il programma usasse solo l'insieme raccolto all'avvio, finirebbe per restare a secco. Un **rifornitore in background** controlla a intervalli regolari (ogni 30 secondi) il numero di proxy vivi e, se scende sotto la soglia (40), avvia uno scrape e una validazione senza interrompere i download in corso. Per evitare raffiche di rifornimenti quando il pool oscilla appena intorno alla soglia, il rifornitore si "disarma" dopo ogni intervento e si riarma solo quando i proxy vivi tornano sopra una soglia più alta (80). Per intercettare il degrado silenzioso (proxy che rallentano progressivamente senza morire del tutto), forza comunque un rifornimento se l'ultimo è avvenuto da più di 5 minuti.
 
 Se il pool si svuota in un momento critico, è il download stesso a richiedere un rifornimento e ad attendere il tempo necessario: in quei frangenti si può osservare una pausa, durante la quale il programma sta ricostruendo il pool prima di proseguire. Il tutto è automatico e non richiede intervento.
 
 ---
 
-## 7. Memoria tra sessioni (avvio a caldo)
+## 8. Memoria tra sessioni (avvio a caldo)
 
 La prima costruzione del pool richiede tempo (indicativamente da mezzo minuto a un paio di minuti). Per evitare di ripeterla a ogni avvio, il programma persiste su disco i proxy migliori e li ricarica all'apertura successiva, riconvalidandoli rapidamente: i proxy ancora vivi sono subito disponibili (avvio "a caldo"), mentre una ricerca completa riparte comunque in background. Le voci della cache oltre il tempo di validità (6 ore) vengono scartate al caricamento. Dalla seconda sessione in poi l'avvio è quindi sensibilmente più rapido.
 
 ---
 
-## 8. Controlli di sessione e resume
+## 9. Controlli di sessione e resume
 
 Durante una sessione i controlli disponibili sono pausa/ripresa e annullo, sia globali sia per singolo file dalla tabella. La pausa non comporta la perdita dei proxy: alla ripresa il lavoro riparte dal punto in cui era stato sospeso. L'annullo di un singolo file può, a scelta, rimuoverne anche i dati già scaricati dal disco.
 
@@ -98,13 +108,15 @@ Il resume copre anche le interruzioni non volontarie (chiusura del programma, bl
 
 ---
 
-## 9. Output, storico e log
+## 10. Output, storico e log
 
 I file scaricati vengono salvati in sottocartelle dedicate dentro la cartella `downloads` del progetto. Il programma mantiene inoltre alcuni log in formato JSON Lines: lo storico dei download completati (con deduplica per handle Mega, usato per avvisare quando si reinserisce un link già scaricato), il registro dei link abbandonati, le metriche per-fonte dei proxy e un log tecnico generale dell'attività. Non servono per l'uso ordinario, ma sono disponibili per la diagnostica.
 
+Una **suite di diagnostica passiva**, sempre attiva, integra questi log: traceback dei crash nativi, cattura delle eccezioni su tutti i thread, un heartbeat periodico con uso di memoria e marcatori di avvio/chiusura della sessione. In caso di crash, lo strumento da riga di comando `tools/analyze_crashlog.py` legge questi log e produce un report HTML leggibile, utile per ricostruire cosa stava succedendo nel programma poco prima del problema.
+
 ---
 
-## 10. Parametri principali e default
+## 11. Parametri principali e default
 
 I valori sotto sono i default di fabbrica; quelli regolabili sono indicati nelle note.
 
@@ -119,13 +131,13 @@ I valori sotto sono i default di fabbrica; quelli regolabili sono indicati nelle
 | Budget per tentativo di chunk | 180 s | limite assoluto, indipendente dal throughput |
 | Durata massima per file | 60 min | configurabile; oltre il limite il file è abbandonato |
 | Tentativi falliti prima dell'abbandono | 15 | per singolo link, non si resetta tra cicli |
-| Refresh pool | ogni 30 s | refill se proxy vivi < 50; refresh forzato oltre 5 min |
+| Refresh pool | ogni 30 s | refill se proxy vivi < 40 (si riarma a 80); refresh forzato oltre 5 min |
 | Validità cache proxy | 6 ore | voci più vecchie scartate all'avvio |
 | Punteggio proxy | 0 / +5 / −10 / morto sotto −20 | iniziale / successo / fallimento / soglia |
 
 ---
 
-## 11. Comportamenti attesi
+## 12. Comportamenti attesi
 
 Alcuni comportamenti possono sembrare anomalie ma sono parte del normale funzionamento:
 
@@ -137,7 +149,7 @@ Alcuni comportamenti possono sembrare anomalie ma sono parte del normale funzion
 
 ---
 
-## 12. Limiti noti
+## 13. Limiti noti
 
 - I proxy gratuiti hanno mortalità elevata (~70%): la validazione ne scarta fisiologicamente la maggior parte.
 - La velocità è determinata dai proxy, non dal programma.

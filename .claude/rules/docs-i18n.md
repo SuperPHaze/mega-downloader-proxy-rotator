@@ -1,5 +1,5 @@
 ---
-paths: ["README*.md", "Docs/**/*.md", "index*.html", "install.ps1", "package.ps1"]
+paths: ["README*.md", "CHANGELOG*.md", "Docs/**/*.md", "index*.html", "install.ps1", "package.ps1"]
 ---
 
 # Regole di internazionalizzazione (i18n) di documentazione e script
@@ -13,9 +13,9 @@ paths: ["README*.md", "Docs/**/*.md", "index*.html", "install.ps1", "package.ps1
   prompt riusabile interno `Docs/prompts/sync-translations.md` (non pubblicato, gitignorato) con Claude Code, e rivedere il diff prima
   del commit. Questo evita discordanze tra le due lingue.
 - Coppie fonte→generato: `README.it.md`→`README.md`; `Docs/GUIDA_OPERATIVA.md`→
-  `Docs/OPERATING_GUIDE.md`; (futuro) `index.it.html`→`index.html`. Per gli script
-  `install.ps1`/`package.ps1` la fonte è il 2° argomento di `L` (italiano), l'inglese (1° arg)
-  è generato.
+  `Docs/OPERATING_GUIDE.md`; `CHANGELOG.it.md`→`CHANGELOG.md`; (futuro) `index.it.html`→`index.html`.
+  Per gli script `install.ps1`/`package.ps1` la fonte è il 2° argomento di `L` (italiano), l'inglese
+  (1° arg) è generato.
 - CLAUDE.md, i file in `.claude/rules/` e la documentazione interna di sviluppo restano in
   **italiano** e NON si traducono.
 

@@ -1,0 +1,45 @@
+# Changelog
+
+**English** · [Italiano](CHANGELOG.it.md)
+
+All notable changes to this project. Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [SemVer](https://semver.org/).
+
+## [Unreleased]
+
+## [1.8.3] — 2026-06-22
+
+### Added
+- **Experimental Features** — new dedicated panel, all options **disabled by default**:
+  - **configurable** parallel connections per file (default 4);
+  - **speed-based proxy selection**: the pool measures the real throughput of each proxy and prefers the fastest ones, rotating among the best to avoid getting them rate-limited by Mega.
+- **Crash diagnostics suite** (passive, always on): native crash tracebacks (`faulthandler`), multi-thread exception capture, periodic heartbeat with memory usage, session markers (start / clean exit), Qt message routing into the log.
+- **Crash log analyzer** with HTML report (`tools/analyze_crashlog.py`).
+
+### Fixed
+- Version number reverted to 1.8.3
+- **Stabilized proxy validation concurrency**, the cause of a native crash (access violation) under load: Stage 1 worker cap lowered (200 → 100) and an armed/disarmed hysteresis added to the background refresher to eliminate repeated refill bursts (observed up to 66 in a single session, with peaks of ~200 threads). Download connections are untouched: no impact on speed.
+- **Fixed the diagnostic heartbeat's memory probe**: the Windows fallback (ctypes/psapi) didn't set `restype`/`argtypes` on the system functions, causing a silent handle error and always reporting `mem_rss=n/d` in the logs. It now reports a real number.
+- **Fixed a native crash (access violation) in `SessionState.is_cancelled`** under high concurrency: dozens of download threads (`ThreadPoolExecutor`, not `QThread`) hammering the shared state through Qt primitives (`QMutex`/`QWaitCondition`) could corrupt memory. Migrated to `threading.Lock`/`threading.Condition` (stdlib); API and pause/cancel semantics unchanged.
+
+### Changed
+- **Logging discipline**: reclassified from ERROR to WARNING the expected/transient failures of free proxies (chunks failed after exhausting retries, link abandoned after the attempt cap) — these are physiological, not bugs. Added a `CONFIG` line at session start with the active operating parameters (connections, chunk size, speed-based selection, parallel files, validation workers) to correlate configuration with crashes in logs collected from users. Formalized the rule in `.claude/rules/logging.md`.
+
+## [1.8.2] — 2026-06-21
+
+### Added
+- **Bilingual EN/IT documentation** with language selector: README and operating guide.
+- **Bilingual website** (English by default + Italian) with language toggle.
+- **Bilingual** `install.ps1` and `package.ps1` script messages (English by default, `-Lang IT` for Italian).
+
+### Changed
+- Official name unified throughout the project and in the window title: **"Mega Downloader Proxy Rotator (MDPR)"**.
+- Terminology unified on **"chunk"** across documents and the website.
+- Operating guide rewritten with values aligned to the code.
+
+### Notes
+- Republished the repository with clean git history.
+
+## [1.8.1]
+
+### Added
+- First public release. Engine: fixed-size chunk queue downloaded via parallel HTTP Range connections on different proxies, two-stage validated proxy pool with reputation scoring, cache for "hot" startup, streaming AES decryption, tabbed GUI with light/dark themes, download history with duplicate warnings, CLI mode.

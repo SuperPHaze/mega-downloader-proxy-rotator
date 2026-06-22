@@ -5,10 +5,12 @@ downloads/
 .DS_Store
 dist/
 app.log*
+crash.log*
 failed_links.log*
 proxy_sources_stats.log*
 download_history.log*
 proxy_cache.json
+crash_report.html
 
 # Output di debug / monitor
 /monitor_speed.*
@@ -32,6 +34,7 @@ Docs/publishing/
 Docs/archivio/
 Docs/RELAZIONE_TECNICA.md
 Docs/scansione-concorrenti.md
+Docs/design-*.md
 Docs/*.docx
 ONBOARDING.md
 

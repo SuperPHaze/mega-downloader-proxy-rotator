@@ -11,13 +11,13 @@
 
 
 
-https://github.com/user-attachments/assets/c81f2962-7f5d-49f1-b0ad-cf095026dd67
+https://github.com/user-attachments/assets/b4e0839b-6545-4614-9437-22f5ee564264
 
 
 
 
 
-![version](https://img.shields.io/badge/version-1.8.2-blue)
+![version](https://img.shields.io/badge/version-1.8.3-blue)
 ![python](https://img.shields.io/badge/python-3.11%E2%80%933.14-blue)
 ![platform](https://img.shields.io/badge/platform-Windows%2010%2F11-lightgrey)
 ![gui](https://img.shields.io/badge/GUI-PyQt6-green)
@@ -48,6 +48,8 @@ App **desktop per Windows** (Python + PyQt6) che scarica file da Mega.nz instrad
 - **Limite di tempo per file** configurabile; oltre la soglia il file viene abbandonato.
 - **Storico download** con avviso sui link già scaricati (dedup per handle Mega).
 - **Watchdog per chunk**: scarta i proxy troppo lenti o che non finiscono in tempo.
+- **Funzioni sperimentali** (opt-in, disattivate di default): connessioni parallele per file regolabili e selezione dei proxy per velocità osservata.
+- **Diagnostica crash passiva** sempre attiva (heartbeat di memoria, traceback multi-thread) con un analizzatore dei log (`tools/analyze_crashlog.py`) che produce un report HTML.
 - **Interfaccia** a schede con cruscotto (velocità, ETA, stato del pool), tema chiaro/scuro, pausa/ripresa/annullo globali e per singolo job.
 - **Modalità CLI** per macchine headless.
 
