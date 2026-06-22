@@ -48,7 +48,7 @@ Le penalità distinguono la causa: un rifiuto esplicito del CDN di Mega per satu
 
 ## 4. Il download: chunk paralleli, decifratura, scrittura atomica
 
-Un download diretto da Mega procede in un unico flusso, veloce quanto la singola connessione che lo serve: con un proxy gratuito lento, il download è lento. MDPR aggira il limite dividendo il file in **chunk a dimensione fissa** (8 MB di default) e scaricandoli con **più connessioni HTTP Range in parallelo** (4 di default), ciascuna instradata su un proxy diverso. I chunk completati vengono riassemblati nell'ordine corretto.
+Un download diretto da Mega procede in un unico flusso, veloce quanto la singola connessione che lo serve: con un proxy gratuito lento, il download è lento. MDPR aggira il limite dividendo il file in **chunk a dimensione fissa** (32 MB di default) e scaricandoli con **più connessioni HTTP Range in parallelo** (10 di default), ciascuna instradata su un proxy diverso. I chunk completati vengono riassemblati nell'ordine corretto.
 
 La rotazione è quindi per-chunk, non per-file: se un proxy cade, si perde al più il chunk in corso, non l'intero trasferimento. I file più piccoli della soglia di parallelizzazione (1 MiB) vengono scaricati in modo seriale, perché lo split non porterebbe vantaggi.
 
@@ -60,13 +60,9 @@ La scrittura segue il pattern **`.part` + rename atomico**: il trasferimento avv
 
 ---
 
-## 5. Funzioni sperimentali (opt-in)
+## 5. Funzioni sperimentali
 
-Una scheda dedicata raccoglie opzioni avanzate, tutte **disattivate di default**: chi non le tocca ottiene il comportamento storico descritto nelle sezioni precedenti.
-
-**Connessioni per file configurabili.** Il numero di connessioni HTTP Range parallele per singolo file (4 di default) diventa regolabile dall'utente entro un intervallo prefissato. Alzarlo accelera il singolo file solo se il pool dispone di proxy buoni in numero sufficiente: più connessioni significano più proxy "consumati" in parallelo, quindi su un pool povero il guadagno reale può essere nullo o negativo (più contesa, più tentativi falliti).
-
-**Selezione dei proxy per velocità.** In alternativa alla selezione round-robin per punteggio (il default), il pool può preferire i proxy con il throughput osservato più alto, misurato con una media mobile esponenziale. La rotazione resta comunque fra i migliori (non sempre lo stesso singolo proxy), per non esporre un proxy veloce a un rate-limit di Mega concentrato su un solo IP.
+A partire dalla versione 1.9.0 il pannello "Funzioni Sperimentali" è presente nell'interfaccia ma vuoto: nessuna leva è più configurabile dall'utente. Restano internamente disponibili (per riuso futuro) il numero di connessioni HTTP Range parallele per file e la selezione dei proxy per throughput osservato, ma sono fissati ai valori di default e non più esposti nella GUI.
 
 ---
 
@@ -122,8 +118,8 @@ I valori sotto sono i default di fabbrica; quelli regolabili sono indicati nelle
 
 | Parametro | Default | Note |
 |---|---|---|
-| Dimensione chunk | 8 MB | configurabile; chunk più piccoli resistono meglio al cambio proxy ma generano più richieste |
-| Connessioni parallele per file | 4 | richieste HTTP Range simultanee, una per proxy |
+| Dimensione chunk | 32 MB | configurabile; chunk più piccoli resistono meglio al cambio proxy ma generano più richieste |
+| Connessioni parallele per file | 10 | richieste HTTP Range simultanee, una per proxy |
 | Download contemporanei | 1 | configurabile, range consigliato 1–5 |
 | Soglia minima di parallelizzazione | 1 MiB | sotto questa dimensione il file va in seriale |
 | Tentativi per chunk | 8 | prima di considerare il chunk fallito |

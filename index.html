@@ -237,7 +237,7 @@
       </div>
       <p class="lead">A desktop app that splits the download into many small chunks and routes each one through a different proxy, in parallel. So the daily per-IP limit that blocks multi-GB files no longer stops you halfway through.</p>
       <div class="badges">
-        <span class="badge">version <b>1.8.3</b></span>
+        <span class="badge">version <b>1.9.0</b></span>
         <span class="badge">license <b>MIT</b></span>
         <span class="badge"><b>Python</b> + PyQt6</span>
         <span class="badge"><b>Windows</b> 10/11</span>
@@ -345,7 +345,7 @@
         <div style="color:var(--muted);font-size:.95rem;margin-top:7px">parallel checks in the first filter</div>
       </div>
       <div style="text-align:center;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:26px 22px;box-shadow:var(--shadow-sm)">
-        <div style="font-family:var(--display);font-weight:800;font-size:clamp(1.7rem,3vw,2.2rem);color:var(--coral);line-height:1">8 MB × 4</div>
+        <div style="font-family:var(--display);font-weight:800;font-size:clamp(1.7rem,3vw,2.2rem);color:var(--coral);line-height:1">32 MB × 10</div>
         <div style="color:var(--muted);font-size:.95rem;margin-top:7px">chunks over parallel connections, one proxy each</div>
       </div>
       <div style="text-align:center;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:26px 22px;box-shadow:var(--shadow-sm)">
@@ -369,7 +369,7 @@
       <p class="lead" style="margin:0 auto">The technical choices that keep downloads fast and reliable despite the inherent instability of free proxies. The specs, in short.</p>
     </div>
     <div class="hoodgrid">
-      <div class="hcard reveal"><h3>🧱 Fixed-size chunk queue</h3><p>The file is split into 8 MB chunks, downloaded with parallel <code>HTTP Range</code> requests — 4 connections by default, up to 5 files at once. The fixed size makes resume valid regardless of the number of connections; a dropped proxy costs at most one chunk.</p></div>
+      <div class="hcard reveal"><h3>🧱 Fixed-size chunk queue</h3><p>The file is split into 32 MB chunks, downloaded with parallel <code>HTTP Range</code> requests — 10 connections by default, up to 5 files at once. The fixed size makes resume valid regardless of the number of connections; a dropped proxy costs at most one chunk.</p></div>
       <div class="hcard reveal"><h3>🔄 Per-chunk rotation + watchdog</h3><p>Rotation is per-chunk, not per-file: each chunk uses a different proxy from the pool. A watchdog aborts attempts below 200 KB/s or past 180 s and retries them elsewhere, so slow or blocked proxies don't drag down the whole download.</p></div>
       <div class="hcard reveal"><h3>✅ Two-stage validation</h3><p>Stage 1 — HTTP reachability, up to 100 parallel checks with aggressive timeouts. Stage 2 — reachability of Mega's API host. Out of up to 1,000 candidates, usually only a few dozen get through: about 70% are discarded.</p></div>
       <div class="hcard reveal"><h3>🏅 Scored pool</h3><p>Every proxy has a score: +5 on success, −10 on failure, discarded below threshold. Hard penalties for CDN rejections (403/509/503), soft ones for transient errors; ties are broken by lower latency. A background refresher regenerates it without stopping downloads.</p></div>
@@ -446,7 +446,7 @@
 <!-- ============ FOOTER ============ -->
 <footer>
   <div class="wrap">
-    <div>Mega Downloader Proxy Rotator (MDPR) · v1.8.3 · created by <b>SuperPHaze</b></div>
+    <div>Mega Downloader Proxy Rotator (MDPR) · v1.9.0 · created by <b>SuperPHaze</b></div>
     <div>MIT License · <a href="https://github.com/SuperPHaze/mega-downloader-proxy-rotator">GitHub</a></div>
   </div>
 </footer>

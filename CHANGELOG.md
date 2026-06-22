@@ -6,15 +6,19 @@ All notable changes to this project. Format based on [Keep a Changelog](https://
 
 ## [Unreleased]
 
+## [1.9.0] — 2026-06-22
+
 ### Added
 - **Universal structured logging** (`logs/events.jsonl`, JSON Lines at DEBUG level): every logging record is also written in structured form, with no upstream filtering. Primary source for the new diagnostics.
 - **New `tools/report.py` tool**: reads `logs/events.jsonl` and `logs/crash.log` (read-only, streaming) and generates an HTML report in `logs/reports/` with sessions, heartbeat timeline, errors/anomalies, download events, and native crashes.
 
 ### Changed
 - **All logs, the crash log, and generated reports are consolidated into the `logs/` folder** (previously scattered in the project root): `app.log`, `crash.log`, `failed_links.log`, `download_history.log`, `proxy_sources_stats.log`, `events.jsonl`, `reports/`.
+- **New download defaults**: chunk size 8 → **32 MB**, parallel connections per file 4 → **10**. Parallel files remains 1; speed-based proxy selection remains disabled ("score" mode).
 
 ### Removed
 - `tools/analyze_crashlog.py`, replaced by `tools/report.py` (primary source events.jsonl instead of app.log/crash.log).
+- **Experimental features retired from the interface**: the "connections per file" and "speed-based selection" controls have been removed from the "Experimental Features" panel, which remains present but empty (placeholder). The download engine (`selection_mode` and `connections_per_file` parameters) was not touched: it remains available for future reuse. Any experimental preferences saved by previous versions are now ignored.
 
 ## [1.8.3] — 2026-06-22
 

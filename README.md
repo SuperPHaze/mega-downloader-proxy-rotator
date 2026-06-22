@@ -17,7 +17,7 @@ https://github.com/user-attachments/assets/b4e0839b-6545-4614-9437-22f5ee564264
 
 
 
-![version](https://img.shields.io/badge/version-1.8.3-blue)
+![version](https://img.shields.io/badge/version-1.9.0-blue)
 ![python](https://img.shields.io/badge/python-3.11%E2%80%933.14-blue)
 ![platform](https://img.shields.io/badge/platform-Windows%2010%2F11-lightgrey)
 ![gui](https://img.shields.io/badge/GUI-PyQt6-green)
@@ -42,13 +42,13 @@ A **Windows desktop app** (Python + PyQt6) that downloads files from Mega.nz by 
 
 ## 🧩 Features
 
-- Queue of **fixed-size fragments** (8 MB by default) pulled by 4 parallel HTTP Range connections (configurable), with up to 5 files at once.
+- Queue of **fixed-size fragments** (32 MB by default) pulled by 10 parallel HTTP Range connections (configurable), with up to 5 files at once.
 - **Streaming decryption** to disk (constant RAM even for multi-GB files), `.part` pattern + atomic rename.
 - **Resume** of interrupted downloads and **restart** of failed/abandoned/cancelled ones (only the missing fragments are re-fetched).
 - **Configurable per-file time limit**; past the threshold the file is abandoned.
 - **Download history** with a warning for links already downloaded (deduplicated by Mega handle).
 - **Per-fragment watchdog**: drops proxies that are too slow or fail to finish in time.
-- **Experimental features** (opt-in, disabled by default): adjustable parallel connections per file and proxy selection by observed speed.
+- **"Experimental Features" panel** present but empty in this version (no levers configurable from the interface).
 - **Passive crash diagnostics**, always on (memory heartbeat, multi-thread tracebacks), universal structured logging (`logs/events.jsonl`), and an HTML report generator (`tools/report.py`).
 - **Tabbed interface** with a dashboard (speed, ETA, pool status), light/dark theme, global and per-job pause/resume/cancel.
 - **CLI mode** for headless machines.
