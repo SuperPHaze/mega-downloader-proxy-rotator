@@ -1,8 +1,8 @@
-# Cruscotto "spinta", versione compatta: zona velocita' (valore guida +
-# sparkline + sub-info media/picco/minima/ETA/tempo) e zona download
-# (totale + barra segmentata + conteggi), separate da una linea verticale
-# interna. Aggiornamento event-driven dal modello + tick 1s per
-# tempo/ETA/campionamento.
+# Cruscotto "spinta", versione compatta: zona velocita' (gauge radiale con
+# velocita' corrente come % del picco di sessione + sub-info picco/media/
+# minima/ETA/tempo) e zona download (totale + barra segmentata + conteggi),
+# separate da una linea verticale interna. Aggiornamento event-driven dal
+# modello + tick 1s per tempo/ETA/campionamento.
 from __future__ import annotations
 
 import time
@@ -13,9 +13,9 @@ from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 from src.gui import style as _style
 from src.gui.jobs_model import JobsModel
+from src.gui.radial_gauge import RadialGauge, gauge_fraction
 from src.gui.segment_bar import SegmentBar
 from src.gui.session_speed import SessionSpeedStats, is_plausible_bps
-from src.gui.sparkline import Sparkline
 
 
 def _fmt_eta(remaining_bytes: int, bps: float) -> str:
@@ -35,6 +35,15 @@ def _fmt_speed(bps: float) -> str:
     if bps >= 1_048_576:
         return f"{bps / 1_048_576:.1f} MB/s"
     return f"{bps / 1024:.0f} KB/s"
+
+
+def _fmt_speed_parts(bps: float) -> tuple[str, str]:
+    """Come _fmt_speed, ma valore e unita' separati (per il centro del gauge)."""
+    if bps < 1:
+        return "—", ""
+    if bps >= 1_048_576:
+        return f"{bps / 1_048_576:.1f}", "MB/s"
+    return f"{bps / 1024:.0f}", "KB/s"
 
 
 def _micro_label(text: str) -> QLabel:
@@ -88,18 +97,26 @@ class StatsBar(QWidget):
         self._speed_micro = _micro_label("Velocità")
         v.addWidget(self._speed_micro)
 
-        self._speed_value = QLabel("—")
-        fv = QFont("Consolas", 16)
-        fv.setWeight(QFont.Weight.Medium)
-        self._speed_value.setFont(fv)
-        v.addWidget(self._speed_value)
+        gauge_row = QHBoxLayout()
+        gauge_row.setContentsMargins(0, 0, 0, 0)
+        gauge_row.setSpacing(8)
 
-        self._speed_spark = Sparkline(color_key="accent_info")
-        self._speed_spark.setMinimumSize(56, 22)
-        v.addWidget(self._speed_spark)
+        self._speed_gauge = RadialGauge(color_key="accent_info")
+        gauge_row.addWidget(self._speed_gauge, 0)
+
+        info_col = QVBoxLayout()
+        info_col.setContentsMargins(0, 0, 0, 0)
+        info_col.setSpacing(2)
+
+        self._speed_pct = QLabel("—")
+        info_col.addWidget(self._speed_pct)
 
         self._speed_substats = _sub_label()
-        v.addWidget(self._speed_substats)
+        info_col.addWidget(self._speed_substats)
+        info_col.addStretch(1)
+
+        gauge_row.addLayout(info_col, 1)
+        v.addLayout(gauge_row)
 
         self._speed_eta_time = _sub_label()
         v.addWidget(self._speed_eta_time)
@@ -131,7 +148,7 @@ class StatsBar(QWidget):
     def start_clock(self) -> None:
         self._t0 = time.time()
         self._speed_stats.reset()
-        self._speed_spark.reset()
+        self._speed_gauge.reset()
         self._update_eta_time_line()
 
     # ---- refresh dati --------------------------------------------------------
@@ -143,10 +160,7 @@ class StatsBar(QWidget):
 
         bps = float(agg.get("total_speed", 0.0))
         rem = int(agg.get("total_remaining_bytes", 0))
-        self._speed_value.setText(_fmt_speed(bps))
-        self._speed_value.setStyleSheet(
-            f"color: {p['accent_info'] if bps > 0 else p['text_dim']};"
-        )
+        self._refresh_speed_gauge(bps)
         self._refresh_speed_substats()
         self._eta_text = _fmt_eta(rem, bps)
         self._update_eta_time_line()
@@ -173,14 +187,23 @@ class StatsBar(QWidget):
         )
         self._job_counts.setStyleSheet(f"color: {p['text_dim']};")
 
+    def _refresh_speed_gauge(self, bps: float) -> None:
+        p = _style.CURRENT_PALETTE
+        peak = self._speed_stats.peak or 0.0
+        frac = gauge_fraction(bps, peak)
+        value_text, unit_text = _fmt_speed_parts(bps)
+        self._speed_gauge.set_value(frac, value_text, unit_text)
+        self._speed_pct.setText(f"{round(frac * 100)}% del picco" if peak > 0 else "—")
+        self._speed_pct.setStyleSheet(f"font-size: 13px; color: {p['text']};")
+
     def _refresh_speed_substats(self) -> None:
         p = _style.CURRENT_PALETTE
         avg = self._speed_stats.average
         peak = self._speed_stats.peak
         minimum = self._speed_stats.minimum
         self._speed_substats.setText(
-            f"med {_fmt_speed(avg)} · pic "
-            f"{_fmt_speed(peak) if peak is not None else '—'} · min "
+            f"picco {_fmt_speed(peak) if peak is not None else '—'} · "
+            f"media {_fmt_speed(avg)} · min "
             f"{_fmt_speed(minimum) if minimum is not None else '—'}"
         )
         self._speed_substats.setStyleSheet(f"color: {p['text_dim']};")
@@ -200,10 +223,13 @@ class StatsBar(QWidget):
     def _on_tick(self) -> None:
         bps = float(self.model.aggregates().get("total_speed", 0.0))
         # Stessa guardia anti-spike di SessionSpeedStats: un campione assurdo
-        # non deve finire ne' nelle statistiche ne' nel grafico sparkline.
+        # non deve finire ne' nelle statistiche ne' nel gauge.
         if is_plausible_bps(bps):
             self._speed_stats.sample(bps)
-            self._speed_spark.add_sample(bps)
+        # Il picco di sessione si aggiorna qui (ogni secondo): il gauge va
+        # rinfrescato anche fuori dal segnale aggregates_changed, altrimenti
+        # la % resterebbe ferma alla vecchia frazione del picco precedente.
+        self._refresh_speed_gauge(bps)
         self._refresh_speed_substats()
         self._update_eta_time_line()
 
@@ -225,6 +251,6 @@ class StatsBar(QWidget):
     def refresh_theme(self) -> None:
         self._restyle_separator()
         self._restyle_micro_labels()
-        self._speed_spark.refresh_theme()
+        self._speed_gauge.refresh_theme()
         self._job_segment.refresh_theme()
         self.refresh()

@@ -39,12 +39,12 @@ src/
     ├── link_panel.py      # gestore lista link (nascosto nell'UI, API get_links/open_paste_dialog)
     ├── paste_links_dialog.py # dialog modale incolla/edita lista link
     ├── jobs_model.py      # JobsModel (QAbstractTableModel) + Job (throughput/file_name/output_path)
-    ├── jobs_panel.py      # lista job a righe-card (QScrollArea + _JobCard widget per riga); filtri "Mostra:" a pulsanti esclusivi (QButtonGroup)
+    ├── jobs_panel.py      # lista job a righe-card (QScrollArea + _JobCard widget per riga); filtri a pulsanti esclusivi (QButtonGroup), senza etichetta
     ├── job_detail_dialog.py # dialog non-modale dettaglio job (doppio clic)
-    ├── sparkline.py       # Sparkline: micro-grafico a linea riusabile; matematica pura in sparkline_points() (no Qt, testabile)
+    ├── radial_gauge.py    # RadialGauge: anello/donut riusabile (velocita' come % del picco); matematica pura in gauge_fraction() (no Qt, testabile)
     ├── segment_bar.py     # SegmentBar: barra orizzontale a segmenti proporzionali riusabile; matematica pura in segment_widths() (no Qt, testabile)
     ├── session_speed.py   # SessionSpeedStats: media/picco/minima di sessione (puro, no Qt/I/O), campionato 1x/s da StatsBar
-    ├── stats_bar.py       # cruscotto "spinta" compatto: zona velocita' (valore + Sparkline + media/picco/minima/ETA/tempo) e zona Download (totale + SegmentBar + conteggi), separate da una linea verticale interna
+    ├── stats_bar.py       # cruscotto "spinta" compatto: zona velocita' (RadialGauge con % del picco + picco/media/minima/ETA/tempo) e zona Download (totale + SegmentBar + conteggi), separate da una linea verticale interna
     ├── proxy_bar.py       # ProxyBar: zona proxy in stile "conservativo" — riga di card compatte (vivi/validazione/scartati/ricariche/ultimo refill), niente sparkline; popolata da pool_size_changed/setup_progress/proxy_stats dell'orchestrator
     ├── controls.py        # barra comandi: Avvia/Pausa/Annulla/Paralleli/Incolla/Tema/Info (in menu Impostazioni)
     ├── experimental_dialog.py # ExperimentalFeaturesDialog: dalla 1.9.0 segnaposto vuoto (nessuna leva attiva in UI); motore (selection_mode/connections_per_file) invariato

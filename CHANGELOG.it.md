@@ -6,8 +6,12 @@ Tutte le modifiche rilevanti del progetto. Formato basato su [Keep a Changelog](
 
 ## [Non rilasciato]
 
+### Modificato
+- **Tab Velocità ridisegnato con anello radiale** (`RadialGauge`): la velocità corrente come % del picco di sessione, valore al centro dell'anello; rimossa la sparkline della velocità (widget e test ora inutilizzati).
+- **Barra filtri job**: tolta l'etichetta "Mostra:" davanti ai pulsanti esclusivi.
+
 ### Corretto
-- **Picco di velocità di sessione**: eliminato lo spike da GB sui download ripresi (il campionatore partiva da `prev_bytes=0` contando i byte già scaricati). Aggiunta una guardia anti-campione-assurdo (non finito, negativo o sopra un tetto di sicurezza) sia su `SessionSpeedStats` che sulla sparkline del cruscotto.
+- **Picco di velocità di sessione**: eliminato lo spike da GB sui download ripresi (il campionatore partiva da `prev_bytes=0` contando i byte già scaricati). Aggiunta una guardia anti-campione-assurdo (non finito, negativo o sopra un tetto di sicurezza) sia su `SessionSpeedStats` che sul feed di velocità del cruscotto.
 
 ## [1.10.0] — 2026-06-24
 

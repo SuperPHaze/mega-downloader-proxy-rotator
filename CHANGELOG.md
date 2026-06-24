@@ -6,8 +6,12 @@ All notable changes to this project. Format based on [Keep a Changelog](https://
 
 ## [Unreleased]
 
+### Changed
+- **Speed tab redesigned with a radial gauge** (`RadialGauge`): current speed as a % of the session peak, value shown at the ring's center; removed the speed sparkline (widget and test now unused).
+- **Job filter bar**: removed the "Mostra:" ("Show:") label in front of the exclusive buttons.
+
 ### Fixed
-- **Session speed peak**: removed the GB-scale spike on resumed downloads (the sampler started from `prev_bytes=0`, counting already-downloaded bytes). Added a guard against implausible samples (non-finite, negative, or above a safety ceiling) on both `SessionSpeedStats` and the dashboard sparkline.
+- **Session speed peak**: removed the GB-scale spike on resumed downloads (the sampler started from `prev_bytes=0`, counting already-downloaded bytes). Added a guard against implausible samples (non-finite, negative, or above a safety ceiling) on both `SessionSpeedStats` and the dashboard's speed feed.
 
 ## [1.10.0] — 2026-06-24
 
