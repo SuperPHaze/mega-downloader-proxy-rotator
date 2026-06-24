@@ -4,28 +4,19 @@
 
 Tutte le modifiche rilevanti del progetto. Formato basato su [Keep a Changelog](https://keepachangelog.com/it/1.1.0/); versioni secondo [SemVer](https://semver.org/lang/it/).
 
-## [Non rilasciato]
-
-### Modificato
-- **Tab Velocità ridisegnato con anello radiale** (`RadialGauge`): la velocità corrente come % del picco di sessione, valore al centro dell'anello; rimossa la sparkline della velocità (widget e test ora inutilizzati).
-- **Barra filtri job**: tolta l'etichetta "Mostra:" davanti ai pulsanti esclusivi.
-
-### Corretto
-- **Picco di velocità di sessione**: eliminato lo spike da GB sui download ripresi (il campionatore partiva da `prev_bytes=0` contando i byte già scaricati). Aggiunta una guardia anti-campione-assurdo (non finito, negativo o sopra un tetto di sicurezza) sia su `SessionSpeedStats` che sul feed di velocità del cruscotto.
-
 ## [1.10.0] — 2026-06-24
 
 ### Aggiunto
-- **Cruscotto con micro-grafici**: sparkline della velocità e della dimensione del pool proxy nel tempo, barra segmentata per lo stato dei job (in corso/in coda/completati/falliti, proporzionale).
 - **Metriche di velocità di sessione**: media, picco e minima (sui campioni con download attivo) accanto alla velocità istantanea, nel cruscotto.
-- **Zona proxy** dedicata (nuovo widget `ProxyBar`), con salute del pool: proxy vivi (+ sparkline), esito validazione, proxy scartati in sessione (transizioni vivo→morto), numero di ricariche del pool e tempo dall'ultima ricarica.
+- **Barra segmentata** per lo stato dei job (in corso/in coda/completati/falliti, proporzionale).
+- **Zona proxy** dedicata (nuovo widget `ProxyBar`), con salute del pool a card compatte: proxy vivi, esito validazione, proxy scartati in sessione (transizioni vivo→morto), numero di ricariche del pool e tempo dall'ultima ricarica.
 
 ### Modificato
-- **Cruscotto riorganizzato su un'unica riga a 3 zone** (velocità · job · proxy), separate da linee verticali: un valore guida grande per zona con micro-grafico a colpo d'occhio, testo di dettaglio ridotto e compatto sotto. Le informazioni di pool/validazione si sono spostate nella zona proxy; il dato "Completati" è coperto dalla barra segmentata e dai conteggi della zona job.
-- **Filtri della lista job da tendina a pulsanti**: "In corso" / "Completati" / "Non completati" come pulsanti a selezione esclusiva, stesso comportamento di filtro di prima.
-- **Cruscotto: zone più compatte; zona "Job" rinominata "Download"; zona proxy ridisegnata a card** (vivi/validazione/scartati/ricariche/ultimo refill), rimossa la sparkline del pool.
+- **Cruscotto riorganizzato su un'unica riga a 3 zone** (velocità · download · proxy), compatte e separate da linee verticali interne: zona velocità con **anello radiale** (`RadialGauge`, velocità corrente come % del picco di sessione, valore al centro) più picco/media/minima/ETA/tempo; zona "Download" (rinominata da "Job") con totale, barra segmentata e conteggi; zona proxy a card.
+- **Filtri della lista job da tendina a pulsanti**: "In corso" / "Completati" / "Non completati" come pulsanti a selezione esclusiva, senza etichetta "Mostra:".
 
 ### Corretto
+- **Picco di velocità di sessione**: eliminato lo spike da GB sui download ripresi (il campionatore partiva da `prev_bytes=0` contando i byte già scaricati). Aggiunta una guardia anti-campione-assurdo (non finito, negativo o sopra un tetto di sicurezza) sia su `SessionSpeedStats` che sul feed di velocità del cruscotto.
 - **Smoke test dell'installer** (`install.ps1`): eseguito da file temporaneo invece che via `python -c`, risolto `SyntaxError` dovuto al passaggio dello script multi-riga in PowerShell.
 
 ## [1.9.0] — 2026-06-22

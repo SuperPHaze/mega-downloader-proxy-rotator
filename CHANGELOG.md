@@ -4,28 +4,19 @@
 
 All notable changes to this project. Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [SemVer](https://semver.org/).
 
-## [Unreleased]
-
-### Changed
-- **Speed tab redesigned with a radial gauge** (`RadialGauge`): current speed as a % of the session peak, value shown at the ring's center; removed the speed sparkline (widget and test now unused).
-- **Job filter bar**: removed the "Mostra:" ("Show:") label in front of the exclusive buttons.
-
-### Fixed
-- **Session speed peak**: removed the GB-scale spike on resumed downloads (the sampler started from `prev_bytes=0`, counting already-downloaded bytes). Added a guard against implausible samples (non-finite, negative, or above a safety ceiling) on both `SessionSpeedStats` and the dashboard's speed feed.
-
 ## [1.10.0] — 2026-06-24
 
 ### Added
-- **Dashboard micro-charts**: a sparkline for speed and proxy pool size over time, and a segmented bar for job status (running/queued/completed/failed, proportional).
 - **Session speed metrics**: average, peak, and minimum (over samples taken while a download is active) alongside the instantaneous speed, in the dashboard.
-- **Dedicated proxy zone** (new `ProxyBar` widget), with pool health: alive proxies (+ sparkline), validation outcome, proxies discarded this session (alive→dead transitions), number of pool refills, and time since the last refill.
+- **Segmented bar** for job status (running/queued/completed/failed, proportional).
+- **Dedicated proxy zone** (new `ProxyBar` widget), with pool health as compact cards: alive proxies, validation outcome, proxies discarded this session (alive→dead transitions), number of pool refills, and time since the last refill.
 
 ### Changed
-- **Dashboard reorganized into a single row with 3 zones** (speed · jobs · proxy), separated by vertical lines: one large headline value per zone with an at-a-glance micro-chart, with compact detail text underneath. Pool/validation info moved into the proxy zone; the "Completed" figure is now covered by the segmented bar and counters in the job zone.
-- **Job list filters changed from a dropdown to buttons**: "Running" / "Completed" / "Not completed" as mutually-exclusive buttons, same filtering behavior as before.
-- **Dashboard: more compact zones; the "Jobs" zone renamed to "Downloads"; proxy zone redesigned as cards** (alive/validation/discarded/refills/last refill), pool sparkline removed.
+- **Dashboard reorganized into a single row with 3 zones** (speed · downloads · proxy), compact and separated by inner vertical lines: speed zone with a **radial gauge** (`RadialGauge`, current speed as a % of the session peak, value shown at the ring's center) plus peak/average/minimum/ETA/elapsed time; "Downloads" zone (renamed from "Jobs") with total, segmented bar, and counters; proxy zone as cards.
+- **Job list filters changed from a dropdown to buttons**: "Running" / "Completed" / "Not completed" as mutually-exclusive buttons, with no "Show:" label.
 
 ### Fixed
+- **Session speed peak**: removed the GB-scale spike on resumed downloads (the sampler started from `prev_bytes=0`, counting already-downloaded bytes). Added a guard against implausible samples (non-finite, negative, or above a safety ceiling) on both `SessionSpeedStats` and the dashboard's speed feed.
 - **Installer smoke test** (`install.ps1`): now run from a temporary file instead of `python -c`, fixing a `SyntaxError` caused by how PowerShell passed the multi-line script.
 
 ## [1.9.0] — 2026-06-22
