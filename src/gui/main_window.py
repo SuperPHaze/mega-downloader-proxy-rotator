@@ -33,6 +33,7 @@ from src.gui.preferences import (
     load_dark_theme,
     save_dark_theme,
 )
+from src.gui.proxy_bar import ProxyBar
 from src.gui.stats_bar import StatsBar
 from src.gui import style as _style
 from src.gui.style import LIGHT_QSS, apply_theme
@@ -85,10 +86,12 @@ class MainWindow(QMainWindow):
 
         self.jobs_panel = JobsPanel()
         self.stats_bar = StatsBar(self.jobs_panel.model)
+        self.proxy_bar = ProxyBar()
 
         layout.addWidget(self.update_banner, 0)
         layout.addWidget(self.controls, 0)
         layout.addWidget(self.stats_bar, 0)
+        layout.addWidget(self.proxy_bar, 0)
         layout.addWidget(self.jobs_panel, 1)
 
         self.setCentralWidget(central)
@@ -195,7 +198,7 @@ class MainWindow(QMainWindow):
         self._links_by_id = {i: u for i, u in enumerate(links)}
         self._pending_delete.clear()
         self.stats_bar.start_clock()
-        self.stats_bar.reset_pool_stats()
+        self.proxy_bar.reset()
         self._set_status("Raccolta proxy in corso…")
         self._expected_files = len(links)
         self._completed_files = 0
@@ -225,7 +228,7 @@ class MainWindow(QMainWindow):
         self.orchestrator.pool_ready.connect(
             lambda n: (
                 self._set_status(f"Proxy validi: {n}. Download avviato."),
-                self.stats_bar.on_validation_done(),
+                self.proxy_bar.on_validation_done(),
             ),
             qc,
         )
@@ -236,11 +239,12 @@ class MainWindow(QMainWindow):
         self.orchestrator.setup_progress.connect(
             lambda d, t, a: (
                 self._set_status(f"Validazione proxy: {d}/{t} (vivi: {a})"),
-                self.stats_bar.on_validation_progress(d, t, a),
+                self.proxy_bar.on_validation_progress(d, t, a),
             ),
             qc,
         )
-        self.orchestrator.pool_size_changed.connect(self.stats_bar.on_pool_size, qc)
+        self.orchestrator.pool_size_changed.connect(self.proxy_bar.on_pool_size, qc)
+        self.orchestrator.proxy_stats.connect(self.proxy_bar.on_proxy_stats, qc)
         self.orchestrator.start(
             links,
             concurrency=concurrency,
@@ -385,6 +389,7 @@ class MainWindow(QMainWindow):
         # Aggiorna i widget che usano colori inline (badge, card, KPI).
         self.jobs_panel.refresh_theme()
         self.stats_bar.refresh_theme()
+        self.proxy_bar.refresh_theme()
 
     # ---- riavvio job ----------------------------------------------------
 
