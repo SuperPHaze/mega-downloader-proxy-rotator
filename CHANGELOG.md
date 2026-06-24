@@ -9,11 +9,12 @@ All notable changes to this project. Format based on [Keep a Changelog](https://
 ## [1.10.0] — 2026-06-24
 
 ### Added
+- **Dashboard micro-charts**: a sparkline for speed and proxy pool size over time, and a segmented bar for job status (running/queued/completed/failed, proportional).
 - **Session speed metrics**: average, peak, and minimum (over samples taken while a download is active) alongside the instantaneous speed, in the dashboard.
-- **Dedicated proxy section** (new `ProxyBar` widget), with pool health: alive proxies, validation outcome, proxies discarded this session (alive→dead transitions), number of pool refills, and time since the last refill.
+- **Dedicated proxy zone** (new `ProxyBar` widget), with pool health: alive proxies (+ sparkline), validation outcome, proxies discarded this session (alive→dead transitions), number of pool refills, and time since the last refill.
 
 ### Changed
-- **Dashboard reorganized into a single row split by a vertical separator**: the download zone (instantaneous/average/peak/minimum speed/ETA/time on the left, job counters on the right) and, right after the separator, the new proxy zone. The "Proxy pool" and "Validation" cards moved into the proxy zone; the "Completed" card was removed (covered by total/running/queued/failed).
+- **Dashboard reorganized into a single row with 3 zones** (speed · jobs · proxy), separated by vertical lines: one large headline value per zone with an at-a-glance micro-chart, with compact detail text underneath. Pool/validation info moved into the proxy zone; the "Completed" figure is now covered by the segmented bar and counters in the job zone.
 - **Job list filters changed from a dropdown to buttons**: "Running" / "Completed" / "Not completed" as mutually-exclusive buttons, same filtering behavior as before.
 
 ## [1.9.0] — 2026-06-22

@@ -50,7 +50,7 @@ A **Windows desktop app** (Python + PyQt6) that downloads files from Mega.nz by 
 - **Per-fragment watchdog**: drops proxies that are too slow or fail to finish in time.
 - **"Experimental Features" panel** present but empty in this version (no levers configurable from the interface).
 - **Passive crash diagnostics**, always on (memory heartbeat, multi-thread tracebacks), universal structured logging (`logs/events.jsonl`), and an HTML report generator (`tools/report.py`).
-- **Tabbed interface** with a dashboard (instantaneous/average/peak/minimum session speed, ETA, time, job counters) and a dedicated proxy section (alive, validation, discarded, refills), button-based job filters, light/dark theme, global and per-job pause/resume/cancel.
+- **Tabbed interface** with a 3-zone dashboard (speed, jobs, proxy) and at-a-glance micro-charts — speed and pool size sparklines, a segmented bar for job status — button-based job filters, light/dark theme, global and per-job pause/resume/cancel.
 - **CLI mode** for headless machines.
 
 ## ⚡ Quick install (Windows 10/11)

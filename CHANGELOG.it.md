@@ -9,11 +9,12 @@ Tutte le modifiche rilevanti del progetto. Formato basato su [Keep a Changelog](
 ## [1.10.0] — 2026-06-24
 
 ### Aggiunto
+- **Cruscotto con micro-grafici**: sparkline della velocità e della dimensione del pool proxy nel tempo, barra segmentata per lo stato dei job (in corso/in coda/completati/falliti, proporzionale).
 - **Metriche di velocità di sessione**: media, picco e minima (sui campioni con download attivo) accanto alla velocità istantanea, nel cruscotto.
-- **Sezione proxy** dedicata (nuovo widget `ProxyBar`), con salute del pool: proxy vivi, esito validazione, proxy scartati in sessione (transizioni vivo→morto), numero di ricariche del pool e tempo dall'ultima ricarica.
+- **Zona proxy** dedicata (nuovo widget `ProxyBar`), con salute del pool: proxy vivi (+ sparkline), esito validazione, proxy scartati in sessione (transizioni vivo→morto), numero di ricariche del pool e tempo dall'ultima ricarica.
 
 ### Modificato
-- **Cruscotto riorganizzato su un'unica riga divisa da un separatore verticale**: zona download (velocità istantanea/media/picco/minima/ETA/tempo a sinistra, contatori job a destra) e, subito dopo il separatore, la nuova zona proxy. Le card "Pool proxy" e "Validazione" si sono spostate nella zona proxy; rimossa la card "Completati" (coperta da totali/in corso/in coda/falliti).
+- **Cruscotto riorganizzato su un'unica riga a 3 zone** (velocità · job · proxy), separate da linee verticali: un valore guida grande per zona con micro-grafico a colpo d'occhio, testo di dettaglio ridotto e compatto sotto. Le informazioni di pool/validazione si sono spostate nella zona proxy; il dato "Completati" è coperto dalla barra segmentata e dai conteggi della zona job.
 - **Filtri della lista job da tendina a pulsanti**: "In corso" / "Completati" / "Non completati" come pulsanti a selezione esclusiva, stesso comportamento di filtro di prima.
 
 ## [1.9.0] — 2026-06-22

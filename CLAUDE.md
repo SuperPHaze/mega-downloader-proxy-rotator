@@ -33,7 +33,7 @@ src/
 │   ├── mega_client.py     # MegaClient seriale (single-stream via proxy)
 │   ├── parallel_client.py # ParallelMegaDownloader (coda chunk a dimensione fissa, HTTP Range N parallele)
 │   ├── worker.py          # DownloadWorker(QThread) — 1 link, N cicli
-│   └── orchestrator.py    # DownloadOrchestrator(QObject) — coordina tutto
+│   └── orchestrator.py    # DownloadOrchestrator(QObject) — coordina tutto; segnale proxy_stats(discarded, refill_count, seconds_since_last_refill) emesso insieme a pool_size_changed nel poll periodico
 └── gui/
     ├── main_window.py     # MainWindow (QMainWindow)
     ├── link_panel.py      # gestore lista link (nascosto nell'UI, API get_links/open_paste_dialog)
@@ -41,10 +41,11 @@ src/
     ├── jobs_model.py      # JobsModel (QAbstractTableModel) + Job (throughput/file_name/output_path)
     ├── jobs_panel.py      # lista job a righe-card (QScrollArea + _JobCard widget per riga); filtri "Mostra:" a pulsanti esclusivi (QButtonGroup)
     ├── job_detail_dialog.py # dialog non-modale dettaglio job (doppio clic)
-    ├── kpi_card.py        # KpiCard: card metrica riutilizzabile (etichetta + valore), usata da StatsBar e ProxyBar
+    ├── sparkline.py       # Sparkline: micro-grafico a linea riusabile; matematica pura in sparkline_points() (no Qt, testabile)
+    ├── segment_bar.py     # SegmentBar: barra orizzontale a segmenti proporzionali riusabile; matematica pura in segment_widths() (no Qt, testabile)
     ├── session_speed.py   # SessionSpeedStats: media/picco/minima di sessione (puro, no Qt/I/O), campionato 1x/s da StatsBar
-    ├── stats_bar.py       # cruscotto velocita' (istantanea/media/picco/minima/ETA/tempo) + contatori job (totali/in corso/in coda/falliti)
-    ├── proxy_bar.py       # ProxyBar: sezione proxy (vivi/validazione/scartati/ricariche/ultimo refill), popolata da pool_size_changed/setup_progress/proxy_stats dell'orchestrator
+    ├── stats_bar.py       # cruscotto "spinta": zona velocita' (valore + Sparkline + media/picco/minima/ETA/tempo) e zona job (totale + SegmentBar + conteggi), separate da una linea verticale interna
+    ├── proxy_bar.py       # ProxyBar: zona proxy "spinta" (N vivi + Sparkline dimensione pool + riga compatta validazione/scartati/ricariche/ultimo refill), popolata da pool_size_changed/setup_progress/proxy_stats dell'orchestrator
     ├── controls.py        # barra comandi: Avvia/Pausa/Annulla/Paralleli/Incolla/Tema/Info (in menu Impostazioni)
     ├── experimental_dialog.py # ExperimentalFeaturesDialog: dalla 1.9.0 segnaposto vuoto (nessuna leva attiva in UI); motore (selection_mode/connections_per_file) invariato
     ├── preferences.py     # carica/salva preferenze utente (tema, check aggiornamenti all'avvio) in preferences.json
