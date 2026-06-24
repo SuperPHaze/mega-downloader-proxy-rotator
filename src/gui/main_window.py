@@ -100,11 +100,12 @@ class MainWindow(QMainWindow):
         self._dashboard_separator.setFrameShape(QFrame.Shape.NoFrame)
         self._dashboard_separator.setFixedWidth(1)
         self._restyle_dashboard_separator()
-        dashboard_row.addWidget(self.stats_bar, 0)
+        # Stretch 2:1 fra StatsBar (2 zone interne: velocita'+job) e ProxyBar
+        # (1 zona): lo spazio extra si distribuisce in proporzione cosi' le
+        # tre zone del cruscotto ottengono larghezza comparabile, utile alle
+        # sparkline/barra segmentata che crescono in orizzontale.
+        dashboard_row.addWidget(self.stats_bar, 2)
         dashboard_row.addWidget(self._dashboard_separator, 0)
-        # Stretch factor 1: ProxyBar si espande nello spazio orizzontale
-        # residuo; il suo addStretch(1) interno (vedi proxy_bar.py) assorbe
-        # quello spazio subito dopo l'ultima card, non l'outer layout.
         dashboard_row.addWidget(self.proxy_bar, 1)
 
         layout.addWidget(self.update_banner, 0)
