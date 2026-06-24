@@ -1,21 +1,17 @@
-# Cruscotto KPI: velocita', ETA, pool proxy, completati, tempo.
-# Aggiornamento event-driven dal modello + tick 1s per tempo/ETA.
+# Cruscotto KPI: velocita' (istantanea/media/picco/minima di sessione),
+# ETA, tempo a sinistra; contatori job a destra.
+# Aggiornamento event-driven dal modello + tick 1s per tempo/ETA/campionamento.
 from __future__ import annotations
 
 import time
 
 from PyQt6.QtCore import QTimer
-from PyQt6.QtGui import QFont
-from PyQt6.QtWidgets import (
-    QFrame,
-    QHBoxLayout,
-    QLabel,
-    QVBoxLayout,
-    QWidget,
-)
+from PyQt6.QtWidgets import QHBoxLayout, QWidget
 
 from src.gui import style as _style
 from src.gui.jobs_model import JobsModel
+from src.gui.kpi_card import KpiCard
+from src.gui.session_speed import SessionSpeedStats
 
 
 def _fmt_eta(remaining_bytes: int, bps: float) -> str:
@@ -37,98 +33,51 @@ def _fmt_speed(bps: float) -> str:
     return f"{bps / 1024:.0f} KB/s"
 
 
-class _KpiCard(QFrame):
-    """Piccola card metrica: etichetta sopra, numero grande sotto."""
-
-    def __init__(self, label: str) -> None:
-        super().__init__()
-        self.setFrameShape(QFrame.Shape.StyledPanel)
-        p = _style.CURRENT_PALETTE
-        self.setStyleSheet(
-            f"QFrame {{ background-color: {p['panel_alt']}; "
-            f"border: 1px solid {p['border']}; border-radius: 6px; }}"
-        )
-        v = QVBoxLayout(self)
-        v.setContentsMargins(10, 4, 10, 4)
-        v.setSpacing(0)
-
-        self._lbl = QLabel(label.upper())
-        self._lbl.setStyleSheet(
-            f"color: {p['text_dim']}; font-size: 8pt; letter-spacing: 1px; border: none;"
-        )
-        f = QFont("Segoe UI", 8)
-        self._lbl.setFont(f)
-
-        self._val = QLabel("—")
-        fv = QFont("Consolas", 13)
-        fv.setBold(True)
-        self._val.setFont(fv)
-        self._val.setStyleSheet(f"color: {p['text']}; border: none;")
-
-        v.addWidget(self._lbl)
-        v.addWidget(self._val)
-
-    def set_value(self, v: str) -> None:
-        if self._val.text() != v:
-            self._val.setText(v)
-
-    def set_color(self, color: str) -> None:
-        self._val.setStyleSheet(f"color: {color}; border: none;")
-
-    def refresh_theme(self) -> None:
-        p = _style.CURRENT_PALETTE
-        self.setStyleSheet(
-            f"QFrame {{ background-color: {p['panel_alt']}; "
-            f"border: 1px solid {p['border']}; border-radius: 6px; }}"
-        )
-        self._lbl.setStyleSheet(
-            f"color: {p['text_dim']}; font-size: 8pt; letter-spacing: 1px; border: none;"
-        )
-
-
 class StatsBar(QWidget):
     def __init__(self, model: JobsModel) -> None:
         super().__init__()
         self.model = model
         self._t0: float | None = None
+        self._speed_stats = SessionSpeedStats()
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(6, 4, 6, 4)
         layout.setSpacing(8)
 
-        self.k_speed = _KpiCard("Velocità")
-        self.k_eta = _KpiCard("ETA")
-        self.k_pool = _KpiCard("Pool proxy")
-        self.k_done = _KpiCard("Completati")
-        self.k_time = _KpiCard("Tempo")
+        # Sinistra: velocita'/tempo.
+        self.k_speed = KpiCard("Velocità")
+        self.k_avg = KpiCard("Media")
+        self.k_peak = KpiCard("Picco")
+        self.k_min = KpiCard("Minima")
+        self.k_eta = KpiCard("ETA")
+        self.k_time = KpiCard("Tempo")
 
-        # KPI secondari compatti (senza card, inline).
-        self.k_total = _KpiCard("Totali")
-        self.k_queue = _KpiCard("In coda")
-        self.k_run = _KpiCard("In corso")
-        self.k_fail = _KpiCard("Falliti")
-        self.k_validation = _KpiCard("Validazione")
-        self.k_validation.set_value("—")
+        # Destra: contatori job.
+        self.k_total = KpiCard("Totali")
+        self.k_run = KpiCard("In corso")
+        self.k_queue = KpiCard("In coda")
+        self.k_fail = KpiCard("Falliti")
 
         for w in (
-            self.k_speed, self.k_eta, self.k_pool, self.k_done, self.k_time,
+            self.k_speed, self.k_avg, self.k_peak, self.k_min, self.k_eta, self.k_time,
         ):
             layout.addWidget(w)
 
         layout.addStretch(1)
 
-        for w in (self.k_total, self.k_queue, self.k_run, self.k_fail, self.k_validation):
+        for w in (self.k_total, self.k_run, self.k_queue, self.k_fail):
             layout.addWidget(w)
 
         self.model.aggregates_changed.connect(self.refresh)
         self._tick = QTimer(self)
         self._tick.setInterval(1000)
-        self._tick.timeout.connect(self._update_time)
+        self._tick.timeout.connect(self._on_tick)
         self._tick.start()
         self.refresh()
 
     def start_clock(self) -> None:
         self._t0 = time.time()
+        self._speed_stats.reset()
         self._update_time()
 
     def refresh(self) -> None:
@@ -136,7 +85,7 @@ class StatsBar(QWidget):
         agg = self.model.aggregates()
         total = agg["total"]
 
-        # Velocita' e ETA.
+        # Velocita' istantanea ed ETA.
         bps = float(agg.get("total_speed", 0.0))
         rem = int(agg.get("total_remaining_bytes", 0))
         self.k_speed.set_value(_fmt_speed(bps))
@@ -144,15 +93,13 @@ class StatsBar(QWidget):
         self.k_eta.set_value(_fmt_eta(rem, bps))
         self.k_eta.set_color(p["text"] if bps > 0 else p["text_dim"])
 
-        # Completati X/N.
-        done = agg["completed"]
-        self.k_done.set_value(f"{done}/{total}" if total else "—")
-        self.k_done.set_color(p["accent_ok"] if done > 0 else p["text_dim"])
+        # Statistiche di sessione (media/picco/minima).
+        self._refresh_speed_stats()
 
-        # KPI secondari.
+        # Contatori job.
         self.k_total.set_value(str(total))
-        self.k_queue.set_value(str(agg["queued"]))
         self.k_run.set_value(str(agg["running"]))
+        self.k_queue.set_value(str(agg["queued"]))
         fail = agg["failed"] + agg["cancelled"] + agg["abandoned"]
         self.k_fail.set_value(str(fail))
         if fail > 0:
@@ -160,42 +107,31 @@ class StatsBar(QWidget):
         else:
             self.k_fail.set_color(p["text_dim"])
 
-    # ---- slot per pool/validazione ----------------------------------------
-
-    def on_pool_size(self, n: int) -> None:
+    def _refresh_speed_stats(self) -> None:
         p = _style.CURRENT_PALETTE
-        self.k_pool.set_value(str(n))
-        if n == 0:
-            self.k_pool.set_color(p["accent_fail"])
-        elif n < 5:
-            self.k_pool.set_color(p["accent_warn"])
-        else:
-            self.k_pool.set_color(p["accent_ok"])
-
-    def on_validation_progress(self, done: int, total: int, alive: int) -> None:
-        p = _style.CURRENT_PALETTE
-        self.k_validation.set_value(f"{done}/{total}")
-        self.k_validation.set_color(p["accent_warn"])
-
-    def on_validation_done(self) -> None:
-        p = _style.CURRENT_PALETTE
-        self.k_validation.set_value("OK")
-        self.k_validation.set_color(p["accent_ok"])
-
-    def reset_pool_stats(self) -> None:
-        p = _style.CURRENT_PALETTE
-        self.k_pool.set_value("—")
-        self.k_pool.set_color(p["text_dim"])
-        self.k_validation.set_value("—")
-        self.k_validation.set_color(p["text_dim"])
+        avg = self._speed_stats.average
+        peak = self._speed_stats.peak
+        minimum = self._speed_stats.minimum
+        self.k_avg.set_value(_fmt_speed(avg))
+        self.k_avg.set_color(p["accent_info"] if avg > 0 else p["text_dim"])
+        self.k_peak.set_value(_fmt_speed(peak) if peak is not None else "—")
+        self.k_peak.set_color(p["accent_info"] if peak else p["text_dim"])
+        self.k_min.set_value(_fmt_speed(minimum) if minimum is not None else "—")
+        self.k_min.set_color(p["accent_info"] if minimum else p["text_dim"])
 
     def refresh_theme(self) -> None:
         for w in (
-            self.k_speed, self.k_eta, self.k_pool, self.k_done, self.k_time,
-            self.k_total, self.k_queue, self.k_run, self.k_fail, self.k_validation,
+            self.k_speed, self.k_avg, self.k_peak, self.k_min, self.k_eta, self.k_time,
+            self.k_total, self.k_run, self.k_queue, self.k_fail,
         ):
             w.refresh_theme()
         self.refresh()
+
+    def _on_tick(self) -> None:
+        bps = float(self.model.aggregates().get("total_speed", 0.0))
+        self._speed_stats.sample(bps)
+        self._refresh_speed_stats()
+        self._update_time()
 
     def _update_time(self) -> None:
         p = _style.CURRENT_PALETTE
