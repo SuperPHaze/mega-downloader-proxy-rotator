@@ -24,7 +24,7 @@ src/
 │   ├── sources.py         # 32 fonti pubbliche (4 html, 25 plain, 3 json/jsonl)
 │   ├── scraper.py         # ProxyScraper.fetch_all() multi-source
 │   ├── validator.py       # 2-stage: stage1 alive + stage2 Mega
-│   ├── pool.py            # ProxyPool score-based round-robin
+│   ├── pool.py            # ProxyPool score-based round-robin; contatori di sessione per la GUI (discarded_count/refill_count/seconds_since_last_refill, alimentati da note_refill())
 │   ├── refresher.py       # BackgroundPoolRefresher (thread daemon)
 │   └── proxy_cache.py     # cache proxy persistente JSON (hot-start)
 ├── downloader/
@@ -39,9 +39,12 @@ src/
     ├── link_panel.py      # gestore lista link (nascosto nell'UI, API get_links/open_paste_dialog)
     ├── paste_links_dialog.py # dialog modale incolla/edita lista link
     ├── jobs_model.py      # JobsModel (QAbstractTableModel) + Job (throughput/file_name/output_path)
-    ├── jobs_panel.py      # lista job a righe-card (QScrollArea + _JobCard widget per riga)
+    ├── jobs_panel.py      # lista job a righe-card (QScrollArea + _JobCard widget per riga); filtri "Mostra:" a pulsanti esclusivi (QButtonGroup)
     ├── job_detail_dialog.py # dialog non-modale dettaglio job (doppio clic)
-    ├── stats_bar.py       # cruscotto KPI: velocita', ETA, pool, completati, tempo
+    ├── kpi_card.py        # KpiCard: card metrica riutilizzabile (etichetta + valore), usata da StatsBar e ProxyBar
+    ├── session_speed.py   # SessionSpeedStats: media/picco/minima di sessione (puro, no Qt/I/O), campionato 1x/s da StatsBar
+    ├── stats_bar.py       # cruscotto velocita' (istantanea/media/picco/minima/ETA/tempo) + contatori job (totali/in corso/in coda/falliti)
+    ├── proxy_bar.py       # ProxyBar: sezione proxy (vivi/validazione/scartati/ricariche/ultimo refill), popolata da pool_size_changed/setup_progress/proxy_stats dell'orchestrator
     ├── controls.py        # barra comandi: Avvia/Pausa/Annulla/Paralleli/Incolla/Tema/Info (in menu Impostazioni)
     ├── experimental_dialog.py # ExperimentalFeaturesDialog: dalla 1.9.0 segnaposto vuoto (nessuna leva attiva in UI); motore (selection_mode/connections_per_file) invariato
     ├── preferences.py     # carica/salva preferenze utente (tema, check aggiornamenti all'avvio) in preferences.json

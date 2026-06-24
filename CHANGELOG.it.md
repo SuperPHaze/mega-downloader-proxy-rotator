@@ -6,6 +6,14 @@ Tutte le modifiche rilevanti del progetto. Formato basato su [Keep a Changelog](
 
 ## [Non rilasciato]
 
+### Aggiunto
+- **Metriche di velocità di sessione**: media, picco e minima (sui campioni con download attivo) accanto alla velocità istantanea, nel cruscotto.
+- **Sezione proxy** dedicata (nuovo widget `ProxyBar`), con salute del pool: proxy vivi, esito validazione, proxy scartati in sessione (transizioni vivo→morto), numero di ricariche del pool e tempo dall'ultima ricarica.
+
+### Modificato
+- **Cruscotto riorganizzato in fasce**: velocità (istantanea/media/picco/minima/ETA/tempo) a sinistra, contatori job (totali/in corso/in coda/falliti) a destra. Le card "Pool proxy" e "Validazione" si sono spostate nella nuova sezione proxy; rimossa la card "Completati" (coperta da totali/in corso/in coda/falliti).
+- **Filtri della lista job da tendina a pulsanti**: "In corso" / "Completati" / "Non completati" come pulsanti a selezione esclusiva, stesso comportamento di filtro di prima.
+
 ## [1.9.0] — 2026-06-22
 
 ### Aggiunto
