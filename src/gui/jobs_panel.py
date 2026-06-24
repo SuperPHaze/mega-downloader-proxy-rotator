@@ -18,7 +18,7 @@ from PyQt6.QtCore import (
 from PyQt6.QtGui import QAction, QColor, QDesktopServices, QFont
 from PyQt6.QtWidgets import (
     QApplication,
-    QComboBox,
+    QButtonGroup,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -475,16 +475,26 @@ class JobsPanel(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        # Barra filtri.
+        # Barra filtri: pulsanti a selezione esclusiva (segmented control).
         filter_row = QHBoxLayout()
         filter_row.setContentsMargins(6, 4, 6, 4)
         filter_row.addWidget(QLabel("Mostra:"))
-        self.filter_combo = QComboBox()
-        self.filter_combo.addItem("In corso", FILTER_IN_PROGRESS)
-        self.filter_combo.addItem("Completati", FILTER_COMPLETED)
-        self.filter_combo.addItem("Non completati", FILTER_NOT_COMPLETED)
-        self.filter_combo.currentIndexChanged.connect(self._on_filter_changed)
-        filter_row.addWidget(self.filter_combo)
+        self._filter_group = QButtonGroup(self)
+        self._filter_group.setExclusive(True)
+        self._filter_buttons: dict[str, QPushButton] = {}
+        for category, label in (
+            (FILTER_IN_PROGRESS, "In corso"),
+            (FILTER_COMPLETED, "Completati"),
+            (FILTER_NOT_COMPLETED, "Non completati"),
+        ):
+            btn = QPushButton(label)
+            btn.setCheckable(True)
+            btn.setChecked(category == FILTER_IN_PROGRESS)
+            btn.clicked.connect(lambda _checked, c=category: self._on_filter_button_clicked(c))
+            self._filter_group.addButton(btn)
+            self._filter_buttons[category] = btn
+            filter_row.addWidget(btn)
+        self._style_filter_buttons()
         filter_row.addStretch(1)
         # Pulsante bulk per riavviare tutti i job falliti/abbandonati/annullati.
         self._restart_all_btn = QPushButton("Riavvia falliti (0)")
@@ -554,9 +564,26 @@ class JobsPanel(QWidget):
                 continue
             card.setVisible(job.status in allowed_statuses)
 
-    def _on_filter_changed(self, _idx: int) -> None:
-        self._filter_category = self.filter_combo.currentData() or FILTER_IN_PROGRESS
+    def _on_filter_button_clicked(self, category: str) -> None:
+        self._filter_category = category
+        self._style_filter_buttons()
         self._apply_filter()
+
+    def _style_filter_buttons(self) -> None:
+        p = _style.CURRENT_PALETTE
+        for category, btn in self._filter_buttons.items():
+            if category == self._filter_category:
+                btn.setStyleSheet(
+                    f"QPushButton {{ background-color: {p['primary']}; color: white; "
+                    f"border: 1px solid {p['primary']}; border-radius: 4px; "
+                    f"padding: 4px 10px; font-weight: bold; }}"
+                )
+            else:
+                btn.setStyleSheet(
+                    f"QPushButton {{ background-color: transparent; color: {p['text']}; "
+                    f"border: 1px solid {p['border']}; border-radius: 4px; padding: 4px 10px; }}"
+                    f"QPushButton:hover {{ background-color: {p['panel_alt']}; }}"
+                )
 
     def _on_aggregates_changed(self) -> None:
         n = self.model.restartable_count()
@@ -617,6 +644,7 @@ class JobsPanel(QWidget):
         self.model.set_file_info(file_id, file_name, path)
 
     def refresh_theme(self) -> None:
+        self._style_filter_buttons()
         self._empty.refresh_theme()
         for card in self._cards.values():
             card.refresh_theme()
