@@ -50,7 +50,7 @@ App **desktop per Windows** (Python + PyQt6) che scarica file da Mega.nz instrad
 - **Watchdog per chunk**: scarta i proxy troppo lenti o che non finiscono in tempo.
 - **Pannello "Funzioni sperimentali"** presente ma vuoto in questa versione (nessuna leva configurabile dall'interfaccia).
 - **Diagnostica crash passiva** sempre attiva (heartbeat di memoria, traceback multi-thread), log strutturato universale (`logs/events.jsonl`) e un generatore di report HTML (`tools/report.py`).
-- **Interfaccia** a schede con cruscotto a 3 zone (velocità, job, proxy) e micro-grafici a colpo d'occhio — sparkline di velocità e dimensione del pool, barra segmentata per lo stato dei job — filtri job a pulsanti, tema chiaro/scuro, pausa/ripresa/annullo globali e per singolo job.
+- **Interfaccia** a schede con cruscotto compatto a 3 zone (velocità, download, proxy) — sparkline di velocità, barra segmentata per lo stato dei download, card compatte per lo stato del pool proxy — filtri job a pulsanti, tema chiaro/scuro, pausa/ripresa/annullo globali e per singolo job.
 - **Modalità CLI** per macchine headless.
 
 ## ⚡ Installazione rapida (Windows 10/11)

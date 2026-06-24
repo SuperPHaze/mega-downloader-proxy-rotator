@@ -1,14 +1,12 @@
-# Zona proxy "spinta": valore guida (N vivi) + sparkline della dimensione
-# del pool nel tempo + sub-riga compatta (validazione/scartati/ricariche/
-# ultimo refill). Popolata da segnali dell'orchestrator (pool_size_changed,
-# setup_progress, proxy_stats).
+# Zona proxy "conservativa": riga di card compatte (Vivi, Validazione,
+# Scartati, Ricariche, Ultimo refill), niente sparkline. Popolata da segnali
+# dell'orchestrator (pool_size_changed, setup_progress, proxy_stats).
 from __future__ import annotations
 
 from PyQt6.QtGui import QFont
-from PyQt6.QtWidgets import QLabel, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 from src.gui import style as _style
-from src.gui.sparkline import Sparkline
 
 
 def _fmt_ago(seconds: float | None) -> str:
@@ -20,6 +18,42 @@ def _fmt_ago(seconds: float | None) -> str:
     return f"{secs // 60}m"
 
 
+class _MetricCard(QFrame):
+    """Card compatta: etichetta piccola sopra, valore sotto."""
+
+    def __init__(self, label: str) -> None:
+        super().__init__()
+        self.setMinimumWidth(58)
+        v = QVBoxLayout(self)
+        v.setContentsMargins(5, 3, 5, 3)
+        v.setSpacing(1)
+
+        self._label = QLabel(label.upper())
+        self._label.setFont(QFont("Segoe UI", 7))
+        v.addWidget(self._label)
+
+        self._value = QLabel("—")
+        fv = QFont("Consolas", 11)
+        fv.setWeight(QFont.Weight.Medium)
+        self._value.setFont(fv)
+        v.addWidget(self._value)
+
+    def set_value(self, text: str, color: str | None = None) -> None:
+        p = _style.CURRENT_PALETTE
+        self._value.setText(text)
+        self._value.setStyleSheet(f"color: {color or p['text']}; border: none;")
+
+    def restyle(self) -> None:
+        p = _style.CURRENT_PALETTE
+        self.setStyleSheet(
+            f"QFrame {{ background-color: {p['panel_alt']}; "
+            f"border: 0.5px solid {p['border']}; border-radius: {_style.RADIUS_MD}px; }}"
+        )
+        self._label.setStyleSheet(
+            f"color: {p['text_dim']}; letter-spacing: 0.5px; border: none;"
+        )
+
+
 class ProxyBar(QWidget):
     def __init__(self) -> None:
         super().__init__()
@@ -29,53 +63,56 @@ class ProxyBar(QWidget):
         self._since_seconds: float | None = None
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(6, 4, 6, 4)
-        layout.setSpacing(2)
+        layout.setContentsMargins(5, 4, 5, 4)
+        layout.setSpacing(3)
 
         self._micro = QLabel("PROXY")
         self._micro.setFont(QFont("Segoe UI", 8))
         layout.addWidget(self._micro)
-        p = _style.CURRENT_PALETTE
-        self._micro.setStyleSheet(
-            f"color: {p['text_dim']}; letter-spacing: 1px; border: none;"
+
+        cards_row = QHBoxLayout()
+        cards_row.setContentsMargins(0, 0, 0, 0)
+        cards_row.setSpacing(4)
+
+        self._card_alive = _MetricCard("Vivi")
+        self._card_validation = _MetricCard("Validazione")
+        self._card_discarded = _MetricCard("Scartati")
+        self._card_refills = _MetricCard("Ricariche")
+        self._card_since = _MetricCard("Ultimo refill")
+        self._cards = (
+            self._card_alive,
+            self._card_validation,
+            self._card_discarded,
+            self._card_refills,
+            self._card_since,
         )
+        for card in self._cards:
+            cards_row.addWidget(card)
+        layout.addLayout(cards_row)
 
-        self._alive_value = QLabel("—")
-        fv = QFont("Consolas", 16)
-        fv.setWeight(QFont.Weight.DemiBold)
-        self._alive_value.setFont(fv)
-        layout.addWidget(self._alive_value)
-
-        self._pool_spark = Sparkline(color_key="accent_ok")
-        layout.addWidget(self._pool_spark)
-
-        self._sub_line = QLabel()
-        self._sub_line.setFont(QFont("Consolas", 8))
-        layout.addWidget(self._sub_line)
-
+        self._restyle_micro()
+        self._restyle_cards()
         self.reset()
 
     # ---- slot da pool/validazione --------------------------------------------
 
     def on_pool_size(self, n: int) -> None:
         p = _style.CURRENT_PALETTE
-        self._alive_value.setText(f"{n} vivi")
         if n == 0:
             color = p["accent_fail"]
         elif n < 5:
             color = p["accent_warn"]
         else:
             color = p["accent_ok"]
-        self._alive_value.setStyleSheet(f"color: {color};")
-        self._pool_spark.add_sample(float(n))
+        self._card_alive.set_value(str(n), color)
 
     def on_validation_progress(self, done: int, total: int, _alive: int) -> None:
         self._validation_text = f"{done}/{total}"
-        self._refresh_sub_line()
+        self._card_validation.set_value(self._validation_text)
 
     def on_validation_done(self) -> None:
         self._validation_text = "OK"
-        self._refresh_sub_line()
+        self._card_validation.set_value(self._validation_text)
 
     # ---- slot da proxy_stats dell'orchestrator -------------------------------
 
@@ -85,34 +122,34 @@ class ProxyBar(QWidget):
         self._discarded = discarded_session
         self._refills = refill_count
         self._since_seconds = seconds_since_last_refill
-        self._refresh_sub_line()
-
-    def _refresh_sub_line(self) -> None:
-        p = _style.CURRENT_PALETTE
-        since = _fmt_ago(self._since_seconds)
-        self._sub_line.setText(
-            f"valid. {self._validation_text} · scartati {self._discarded} · "
-            f"ric. {self._refills} · {since}"
-        )
-        self._sub_line.setStyleSheet(f"color: {p['text_dim']};")
+        self._card_discarded.set_value(str(self._discarded))
+        self._card_refills.set_value(str(self._refills))
+        self._card_since.set_value(_fmt_ago(self._since_seconds))
 
     # ---- reset / tema ---------------------------------------------------------
 
     def reset(self) -> None:
         p = _style.CURRENT_PALETTE
-        self._alive_value.setText("—")
-        self._alive_value.setStyleSheet(f"color: {p['text_dim']};")
-        self._pool_spark.reset()
+        self._card_alive.set_value("—", p["text_dim"])
         self._validation_text = "—"
         self._discarded = 0
         self._refills = 0
         self._since_seconds = None
-        self._refresh_sub_line()
+        self._card_validation.set_value("—")
+        self._card_discarded.set_value("0")
+        self._card_refills.set_value("0")
+        self._card_since.set_value("—")
 
     def refresh_theme(self) -> None:
+        self._restyle_micro()
+        self._restyle_cards()
+
+    def _restyle_micro(self) -> None:
         p = _style.CURRENT_PALETTE
         self._micro.setStyleSheet(
             f"color: {p['text_dim']}; letter-spacing: 1px; border: none;"
         )
-        self._pool_spark.refresh_theme()
-        self._refresh_sub_line()
+
+    def _restyle_cards(self) -> None:
+        for card in self._cards:
+            card.restyle()

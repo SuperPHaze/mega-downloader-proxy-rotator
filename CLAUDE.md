@@ -44,8 +44,8 @@ src/
     ├── sparkline.py       # Sparkline: micro-grafico a linea riusabile; matematica pura in sparkline_points() (no Qt, testabile)
     ├── segment_bar.py     # SegmentBar: barra orizzontale a segmenti proporzionali riusabile; matematica pura in segment_widths() (no Qt, testabile)
     ├── session_speed.py   # SessionSpeedStats: media/picco/minima di sessione (puro, no Qt/I/O), campionato 1x/s da StatsBar
-    ├── stats_bar.py       # cruscotto "spinta": zona velocita' (valore + Sparkline + media/picco/minima/ETA/tempo) e zona job (totale + SegmentBar + conteggi), separate da una linea verticale interna
-    ├── proxy_bar.py       # ProxyBar: zona proxy "spinta" (N vivi + Sparkline dimensione pool + riga compatta validazione/scartati/ricariche/ultimo refill), popolata da pool_size_changed/setup_progress/proxy_stats dell'orchestrator
+    ├── stats_bar.py       # cruscotto "spinta" compatto: zona velocita' (valore + Sparkline + media/picco/minima/ETA/tempo) e zona Download (totale + SegmentBar + conteggi), separate da una linea verticale interna
+    ├── proxy_bar.py       # ProxyBar: zona proxy in stile "conservativo" — riga di card compatte (vivi/validazione/scartati/ricariche/ultimo refill), niente sparkline; popolata da pool_size_changed/setup_progress/proxy_stats dell'orchestrator
     ├── controls.py        # barra comandi: Avvia/Pausa/Annulla/Paralleli/Incolla/Tema/Info (in menu Impostazioni)
     ├── experimental_dialog.py # ExperimentalFeaturesDialog: dalla 1.9.0 segnaposto vuoto (nessuna leva attiva in UI); motore (selection_mode/connections_per_file) invariato
     ├── preferences.py     # carica/salva preferenze utente (tema, check aggiornamenti all'avvio) in preferences.json

@@ -1,7 +1,8 @@
-# Cruscotto "spinta": zona velocita' (valore guida + sparkline + sub-info
-# media/picco/minima/ETA/tempo) e zona job (totale + barra segmentata +
-# conteggi), separate da una linea verticale interna. Aggiornamento
-# event-driven dal modello + tick 1s per tempo/ETA/campionamento.
+# Cruscotto "spinta", versione compatta: zona velocita' (valore guida +
+# sparkline + sub-info media/picco/minima/ETA/tempo) e zona download
+# (totale + barra segmentata + conteggi), separate da una linea verticale
+# interna. Aggiornamento event-driven dal modello + tick 1s per
+# tempo/ETA/campionamento.
 from __future__ import annotations
 
 import time
@@ -57,8 +58,8 @@ class StatsBar(QWidget):
         self._eta_text = "—"
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(6, 4, 6, 4)
-        layout.setSpacing(10)
+        layout.setContentsMargins(5, 4, 5, 4)
+        layout.setSpacing(6)
 
         layout.addWidget(self._build_speed_zone(), 2)
         self._inner_separator = QFrame()
@@ -89,11 +90,12 @@ class StatsBar(QWidget):
 
         self._speed_value = QLabel("—")
         fv = QFont("Consolas", 16)
-        fv.setWeight(QFont.Weight.DemiBold)
+        fv.setWeight(QFont.Weight.Medium)
         self._speed_value.setFont(fv)
         v.addWidget(self._speed_value)
 
         self._speed_spark = Sparkline(color_key="accent_info")
+        self._speed_spark.setMinimumSize(56, 22)
         v.addWidget(self._speed_spark)
 
         self._speed_substats = _sub_label()
@@ -110,7 +112,7 @@ class StatsBar(QWidget):
         v.setContentsMargins(0, 0, 0, 0)
         v.setSpacing(2)
 
-        self._job_micro = _micro_label("Job")
+        self._job_micro = _micro_label("Download")
         v.addWidget(self._job_micro)
 
         self._job_total = QLabel("—")
@@ -155,7 +157,7 @@ class StatsBar(QWidget):
         failed_tot = agg["failed"] + agg["cancelled"] + agg["abandoned"]
 
         self._job_total.setText(
-            f"<span style='font-size:16pt;font-weight:600;color:{p['text']};'>{total}</span>"
+            f"<span style='font-size:13pt;font-weight:500;color:{p['text']};'>{total}</span>"
             f" <span style='font-size:8pt;color:{p['text_dim']};'>totali</span>"
         )
         self._job_segment.set_segments([
@@ -166,8 +168,8 @@ class StatsBar(QWidget):
         ])
         fail_color = p["accent_fail"] if failed_tot > 0 else p["text_dim"]
         self._job_counts.setText(
-            f"{running} in corso · {queued} in coda · {completed} fatti · "
-            f"<span style='color:{fail_color};'>{failed_tot} falliti</span>"
+            f"{running} corso · {queued} coda · {completed} ok · "
+            f"<span style='color:{fail_color};'>{failed_tot} fall.</span>"
         )
         self._job_counts.setStyleSheet(f"color: {p['text_dim']};")
 
@@ -177,7 +179,7 @@ class StatsBar(QWidget):
         peak = self._speed_stats.peak
         minimum = self._speed_stats.minimum
         self._speed_substats.setText(
-            f"media {_fmt_speed(avg)} · picco "
+            f"med {_fmt_speed(avg)} · pic "
             f"{_fmt_speed(peak) if peak is not None else '—'} · min "
             f"{_fmt_speed(minimum) if minimum is not None else '—'}"
         )
@@ -192,7 +194,7 @@ class StatsBar(QWidget):
             h, rem = divmod(sec, 3600)
             m, s = divmod(rem, 60)
             clock = f"{h:02d}:{m:02d}:{s:02d}"
-        self._speed_eta_time.setText(f"ETA {self._eta_text} · sessione {clock}")
+        self._speed_eta_time.setText(f"ETA {self._eta_text} · {clock}")
         self._speed_eta_time.setStyleSheet(f"color: {p['text_dim']};")
 
     def _on_tick(self) -> None:

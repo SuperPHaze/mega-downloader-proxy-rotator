@@ -100,7 +100,7 @@ class MainWindow(QMainWindow):
         self._dashboard_separator.setFrameShape(QFrame.Shape.NoFrame)
         self._dashboard_separator.setFixedWidth(1)
         self._restyle_dashboard_separator()
-        # Stretch 2:1 fra StatsBar (2 zone interne: velocita'+job) e ProxyBar
+        # Stretch 2:1 fra StatsBar (2 zone interne: velocita'+download) e ProxyBar
         # (1 zona): lo spazio extra si distribuisce in proporzione cosi' le
         # tre zone del cruscotto ottengono larghezza comparabile, utile alle
         # sparkline/barra segmentata che crescono in orizzontale.

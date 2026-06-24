@@ -16,6 +16,7 @@ Tutte le modifiche rilevanti del progetto. Formato basato su [Keep a Changelog](
 ### Modificato
 - **Cruscotto riorganizzato su un'unica riga a 3 zone** (velocità · job · proxy), separate da linee verticali: un valore guida grande per zona con micro-grafico a colpo d'occhio, testo di dettaglio ridotto e compatto sotto. Le informazioni di pool/validazione si sono spostate nella zona proxy; il dato "Completati" è coperto dalla barra segmentata e dai conteggi della zona job.
 - **Filtri della lista job da tendina a pulsanti**: "In corso" / "Completati" / "Non completati" come pulsanti a selezione esclusiva, stesso comportamento di filtro di prima.
+- **Cruscotto: zone più compatte; zona "Job" rinominata "Download"; zona proxy ridisegnata a card** (vivi/validazione/scartati/ricariche/ultimo refill), rimossa la sparkline del pool.
 
 ## [1.9.0] — 2026-06-22
 
