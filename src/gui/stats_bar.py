@@ -1,17 +1,20 @@
-# Cruscotto KPI: velocita' (istantanea/media/picco/minima di sessione),
-# ETA, tempo a sinistra; contatori job a destra.
-# Aggiornamento event-driven dal modello + tick 1s per tempo/ETA/campionamento.
+# Cruscotto "spinta": zona velocita' (valore guida + sparkline + sub-info
+# media/picco/minima/ETA/tempo) e zona job (totale + barra segmentata +
+# conteggi), separate da una linea verticale interna. Aggiornamento
+# event-driven dal modello + tick 1s per tempo/ETA/campionamento.
 from __future__ import annotations
 
 import time
 
 from PyQt6.QtCore import QTimer
-from PyQt6.QtWidgets import QHBoxLayout, QWidget
+from PyQt6.QtGui import QFont
+from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 from src.gui import style as _style
 from src.gui.jobs_model import JobsModel
-from src.gui.kpi_card import KpiCard
+from src.gui.segment_bar import SegmentBar
 from src.gui.session_speed import SessionSpeedStats
+from src.gui.sparkline import Sparkline
 
 
 def _fmt_eta(remaining_bytes: int, bps: float) -> str:
@@ -33,40 +36,38 @@ def _fmt_speed(bps: float) -> str:
     return f"{bps / 1024:.0f} KB/s"
 
 
+def _micro_label(text: str) -> QLabel:
+    lbl = QLabel(text.upper())
+    lbl.setFont(QFont("Segoe UI", 8))
+    return lbl
+
+
+def _sub_label() -> QLabel:
+    lbl = QLabel()
+    lbl.setFont(QFont("Consolas", 8))
+    return lbl
+
+
 class StatsBar(QWidget):
     def __init__(self, model: JobsModel) -> None:
         super().__init__()
         self.model = model
         self._t0: float | None = None
         self._speed_stats = SessionSpeedStats()
+        self._eta_text = "—"
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(6, 4, 6, 4)
-        layout.setSpacing(8)
+        layout.setSpacing(10)
 
-        # Sinistra: velocita'/tempo.
-        self.k_speed = KpiCard("Velocità")
-        self.k_avg = KpiCard("Media")
-        self.k_peak = KpiCard("Picco")
-        self.k_min = KpiCard("Minima")
-        self.k_eta = KpiCard("ETA")
-        self.k_time = KpiCard("Tempo")
+        layout.addWidget(self._build_speed_zone(), 2)
+        self._inner_separator = QFrame()
+        self._inner_separator.setFixedWidth(1)
+        layout.addWidget(self._inner_separator, 0)
+        layout.addWidget(self._build_job_zone(), 1)
 
-        # Destra: contatori job.
-        self.k_total = KpiCard("Totali")
-        self.k_run = KpiCard("In corso")
-        self.k_queue = KpiCard("In coda")
-        self.k_fail = KpiCard("Falliti")
-
-        for w in (
-            self.k_speed, self.k_avg, self.k_peak, self.k_min, self.k_eta, self.k_time,
-        ):
-            layout.addWidget(w)
-
-        layout.addStretch(1)
-
-        for w in (self.k_total, self.k_run, self.k_queue, self.k_fail):
-            layout.addWidget(w)
+        self._restyle_separator()
+        self._restyle_micro_labels()
 
         self.model.aggregates_changed.connect(self.refresh)
         self._tick = QTimer(self)
@@ -75,73 +76,150 @@ class StatsBar(QWidget):
         self._tick.start()
         self.refresh()
 
+    # ---- costruzione zone ---------------------------------------------------
+
+    def _build_speed_zone(self) -> QWidget:
+        zone = QWidget()
+        v = QVBoxLayout(zone)
+        v.setContentsMargins(0, 0, 0, 0)
+        v.setSpacing(2)
+
+        self._speed_micro = _micro_label("Velocità")
+        v.addWidget(self._speed_micro)
+
+        self._speed_value = QLabel("—")
+        fv = QFont("Consolas", 16)
+        fv.setWeight(QFont.Weight.DemiBold)
+        self._speed_value.setFont(fv)
+        v.addWidget(self._speed_value)
+
+        self._speed_spark = Sparkline(color_key="accent_info")
+        v.addWidget(self._speed_spark)
+
+        self._speed_substats = _sub_label()
+        v.addWidget(self._speed_substats)
+
+        self._speed_eta_time = _sub_label()
+        v.addWidget(self._speed_eta_time)
+
+        return zone
+
+    def _build_job_zone(self) -> QWidget:
+        zone = QWidget()
+        v = QVBoxLayout(zone)
+        v.setContentsMargins(0, 0, 0, 0)
+        v.setSpacing(2)
+
+        self._job_micro = _micro_label("Job")
+        v.addWidget(self._job_micro)
+
+        self._job_total = QLabel("—")
+        v.addWidget(self._job_total)
+
+        self._job_segment = SegmentBar()
+        v.addWidget(self._job_segment)
+
+        self._job_counts = _sub_label()
+        v.addWidget(self._job_counts)
+
+        return zone
+
+    # ---- ciclo di vita sessione ---------------------------------------------
+
     def start_clock(self) -> None:
         self._t0 = time.time()
         self._speed_stats.reset()
-        self._update_time()
+        self._speed_spark.reset()
+        self._update_eta_time_line()
+
+    # ---- refresh dati --------------------------------------------------------
 
     def refresh(self) -> None:
         p = _style.CURRENT_PALETTE
         agg = self.model.aggregates()
         total = agg["total"]
 
-        # Velocita' istantanea ed ETA.
         bps = float(agg.get("total_speed", 0.0))
         rem = int(agg.get("total_remaining_bytes", 0))
-        self.k_speed.set_value(_fmt_speed(bps))
-        self.k_speed.set_color(p["accent_info"] if bps > 0 else p["text_dim"])
-        self.k_eta.set_value(_fmt_eta(rem, bps))
-        self.k_eta.set_color(p["text"] if bps > 0 else p["text_dim"])
+        self._speed_value.setText(_fmt_speed(bps))
+        self._speed_value.setStyleSheet(
+            f"color: {p['accent_info'] if bps > 0 else p['text_dim']};"
+        )
+        self._refresh_speed_substats()
+        self._eta_text = _fmt_eta(rem, bps)
+        self._update_eta_time_line()
 
-        # Statistiche di sessione (media/picco/minima).
-        self._refresh_speed_stats()
+        running = agg["running"]
+        queued = agg["queued"]
+        completed = agg["completed"]
+        failed_tot = agg["failed"] + agg["cancelled"] + agg["abandoned"]
 
-        # Contatori job.
-        self.k_total.set_value(str(total))
-        self.k_run.set_value(str(agg["running"]))
-        self.k_queue.set_value(str(agg["queued"]))
-        fail = agg["failed"] + agg["cancelled"] + agg["abandoned"]
-        self.k_fail.set_value(str(fail))
-        if fail > 0:
-            self.k_fail.set_color(p["accent_fail"])
-        else:
-            self.k_fail.set_color(p["text_dim"])
+        self._job_total.setText(
+            f"<span style='font-size:16pt;font-weight:600;color:{p['text']};'>{total}</span>"
+            f" <span style='font-size:8pt;color:{p['text_dim']};'>totali</span>"
+        )
+        self._job_segment.set_segments([
+            (running, "accent_info"),
+            (queued, "text_dim"),
+            (completed, "accent_ok"),
+            (failed_tot, "accent_fail"),
+        ])
+        fail_color = p["accent_fail"] if failed_tot > 0 else p["text_dim"]
+        self._job_counts.setText(
+            f"{running} in corso · {queued} in coda · {completed} fatti · "
+            f"<span style='color:{fail_color};'>{failed_tot} falliti</span>"
+        )
+        self._job_counts.setStyleSheet(f"color: {p['text_dim']};")
 
-    def _refresh_speed_stats(self) -> None:
+    def _refresh_speed_substats(self) -> None:
         p = _style.CURRENT_PALETTE
         avg = self._speed_stats.average
         peak = self._speed_stats.peak
         minimum = self._speed_stats.minimum
-        self.k_avg.set_value(_fmt_speed(avg))
-        self.k_avg.set_color(p["accent_info"] if avg > 0 else p["text_dim"])
-        self.k_peak.set_value(_fmt_speed(peak) if peak is not None else "—")
-        self.k_peak.set_color(p["accent_info"] if peak else p["text_dim"])
-        self.k_min.set_value(_fmt_speed(minimum) if minimum is not None else "—")
-        self.k_min.set_color(p["accent_info"] if minimum else p["text_dim"])
+        self._speed_substats.setText(
+            f"media {_fmt_speed(avg)} · picco "
+            f"{_fmt_speed(peak) if peak is not None else '—'} · min "
+            f"{_fmt_speed(minimum) if minimum is not None else '—'}"
+        )
+        self._speed_substats.setStyleSheet(f"color: {p['text_dim']};")
 
-    def refresh_theme(self) -> None:
-        for w in (
-            self.k_speed, self.k_avg, self.k_peak, self.k_min, self.k_eta, self.k_time,
-            self.k_total, self.k_run, self.k_queue, self.k_fail,
-        ):
-            w.refresh_theme()
-        self.refresh()
+    def _update_eta_time_line(self) -> None:
+        p = _style.CURRENT_PALETTE
+        if self._t0 is None:
+            clock = "—"
+        else:
+            sec = int(time.time() - self._t0)
+            h, rem = divmod(sec, 3600)
+            m, s = divmod(rem, 60)
+            clock = f"{h:02d}:{m:02d}:{s:02d}"
+        self._speed_eta_time.setText(f"ETA {self._eta_text} · sessione {clock}")
+        self._speed_eta_time.setStyleSheet(f"color: {p['text_dim']};")
 
     def _on_tick(self) -> None:
         bps = float(self.model.aggregates().get("total_speed", 0.0))
         self._speed_stats.sample(bps)
-        self._refresh_speed_stats()
-        self._update_time()
+        self._speed_spark.add_sample(bps)
+        self._refresh_speed_substats()
+        self._update_eta_time_line()
 
-    def _update_time(self) -> None:
+    # ---- tema -----------------------------------------------------------------
+
+    def _restyle_separator(self) -> None:
         p = _style.CURRENT_PALETTE
-        if self._t0 is None:
-            self.k_time.set_value("—")
-            self.k_time.set_color(p["text_dim"])
-            return
-        sec = int(time.time() - self._t0)
-        h = sec // 3600
-        m = (sec % 3600) // 60
-        s = sec % 60
-        self.k_time.set_value(f"{h:02d}:{m:02d}:{s:02d}")
-        self.k_time.set_color(p["accent_info"])
+        self._inner_separator.setStyleSheet(
+            f"QFrame {{ background-color: {p['border']}; border: none; }}"
+        )
+
+    def _restyle_micro_labels(self) -> None:
+        p = _style.CURRENT_PALETTE
+        for lbl in (self._speed_micro, self._job_micro):
+            lbl.setStyleSheet(
+                f"color: {p['text_dim']}; letter-spacing: 1px; border: none;"
+            )
+
+    def refresh_theme(self) -> None:
+        self._restyle_separator()
+        self._restyle_micro_labels()
+        self._speed_spark.refresh_theme()
+        self._job_segment.refresh_theme()
+        self.refresh()
