@@ -6,6 +6,8 @@ Tutte le modifiche rilevanti del progetto. Formato basato su [Keep a Changelog](
 
 ## [Non rilasciato]
 
+## [1.10.0] — 2026-06-24
+
 ### Aggiunto
 - **Metriche di velocità di sessione**: media, picco e minima (sui campioni con download attivo) accanto alla velocità istantanea, nel cruscotto.
 - **Sezione proxy** dedicata (nuovo widget `ProxyBar`), con salute del pool: proxy vivi, esito validazione, proxy scartati in sessione (transizioni vivo→morto), numero di ricariche del pool e tempo dall'ultima ricarica.

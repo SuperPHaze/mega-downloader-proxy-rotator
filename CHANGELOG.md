@@ -6,6 +6,8 @@ All notable changes to this project. Format based on [Keep a Changelog](https://
 
 ## [Unreleased]
 
+## [1.10.0] — 2026-06-24
+
 ### Added
 - **Session speed metrics**: average, peak, and minimum (over samples taken while a download is active) alongside the instantaneous speed, in the dashboard.
 - **Dedicated proxy section** (new `ProxyBar` widget), with pool health: alive proxies, validation outcome, proxies discarded this session (alive→dead transitions), number of pool refills, and time since the last refill.
