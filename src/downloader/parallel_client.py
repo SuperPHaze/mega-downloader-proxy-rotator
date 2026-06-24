@@ -675,7 +675,12 @@ class ParallelMegaDownloader:
         speed_cb: Callable[[float, int, int], None] | None = None,
     ) -> None:
         last_pct = -1
-        prev_bytes = 0
+        # Inizializzo dai byte GIA' scaricati (resume incluso): il primo
+        # delta deve misurare solo i byte scaricati DOPO l'avvio del monitor,
+        # non quelli ripresi da run precedenti (altrimenti il primo bps e'
+        # spurio: conta in mezzo secondo byte accumulati su run multiple).
+        with self._bytes_lock:
+            prev_bytes = self._bytes_downloaded
         prev_time = time.monotonic()
         while not stop.is_set():
             with self._bytes_lock:

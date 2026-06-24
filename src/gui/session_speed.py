@@ -4,6 +4,20 @@
 # non abbassano la minima a zero).
 from __future__ import annotations
 
+import math
+
+from src.core.config import SPEED_SAMPLE_CEILING_BPS
+
+
+def is_plausible_bps(bps: float) -> bool:
+    """Guardia anti-spike condivisa: scarta campioni non finiti, negativi o
+    sopra il tetto di sicurezza (impossibile per questo downloader). Lo zero
+    e' ammesso (sessione ferma): chi vuole escludere anche lo zero (vedi
+    SessionSpeedStats.sample) lo fa con un controllo separato. Usata sia da
+    SessionSpeedStats che dalla sparkline di StatsBar, cosi' un eventuale
+    spike spurio non avvelena ne' il picco ne' il grafico."""
+    return math.isfinite(bps) and 0 <= bps <= SPEED_SAMPLE_CEILING_BPS
+
 
 class SessionSpeedStats:
     def __init__(self) -> None:
@@ -16,7 +30,7 @@ class SessionSpeedStats:
         self._minimum: float | None = None
 
     def sample(self, bps: float) -> None:
-        if bps <= 0:
+        if not is_plausible_bps(bps) or bps <= 0:
             return
         self._sum_bps += bps
         self._count += 1

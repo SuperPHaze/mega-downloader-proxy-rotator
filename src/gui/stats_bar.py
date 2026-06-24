@@ -14,7 +14,7 @@ from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 from src.gui import style as _style
 from src.gui.jobs_model import JobsModel
 from src.gui.segment_bar import SegmentBar
-from src.gui.session_speed import SessionSpeedStats
+from src.gui.session_speed import SessionSpeedStats, is_plausible_bps
 from src.gui.sparkline import Sparkline
 
 
@@ -199,8 +199,11 @@ class StatsBar(QWidget):
 
     def _on_tick(self) -> None:
         bps = float(self.model.aggregates().get("total_speed", 0.0))
-        self._speed_stats.sample(bps)
-        self._speed_spark.add_sample(bps)
+        # Stessa guardia anti-spike di SessionSpeedStats: un campione assurdo
+        # non deve finire ne' nelle statistiche ne' nel grafico sparkline.
+        if is_plausible_bps(bps):
+            self._speed_stats.sample(bps)
+            self._speed_spark.add_sample(bps)
         self._refresh_speed_substats()
         self._update_eta_time_line()
 

@@ -189,6 +189,12 @@ PARALLEL_THROUGHPUT_GRACE = 15
 # appena sopra la soglia throughput ma non finiscono mai in tempi sensati.
 PARALLEL_SEGMENT_ATTEMPT_MAX_DURATION_S = 180
 
+# Tetto di sicurezza anti-spike per i campioni di velocita' di sessione
+# (SessionSpeedStats, sparkline GUI). Puramente difensivo: un campione sopra
+# questo valore e' impossibile per questo downloader e viene scartato senza
+# avvelenare il picco. Non deve mai scartare velocita' reali raggiungibili.
+SPEED_SAMPLE_CEILING_BPS = 1_073_741_824  # 1 GiB/s
+
 # Refresh forzato del pool a intervalli regolari: se l'ultimo refill e' avvenuto
 # piu' di N secondi fa, rinfresca a prescindere dalla soglia. Serve quando il
 # pool oscilla appena sopra POOL_REFRESH_THRESHOLD ma i proxy si degradano
