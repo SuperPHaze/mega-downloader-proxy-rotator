@@ -13,7 +13,7 @@ All notable changes to this project. Format based on [Keep a Changelog](https://
 - **Dedicated proxy section** (new `ProxyBar` widget), with pool health: alive proxies, validation outcome, proxies discarded this session (alive→dead transitions), number of pool refills, and time since the last refill.
 
 ### Changed
-- **Dashboard reorganized into bands**: speed (instantaneous/average/peak/minimum/ETA/time) on the left, job counters (total/running/queued/failed) on the right. The "Proxy pool" and "Validation" cards moved into the new proxy section; the "Completed" card was removed (covered by total/running/queued/failed).
+- **Dashboard reorganized into a single row split by a vertical separator**: the download zone (instantaneous/average/peak/minimum speed/ETA/time on the left, job counters on the right) and, right after the separator, the new proxy zone. The "Proxy pool" and "Validation" cards moved into the proxy zone; the "Completed" card was removed (covered by total/running/queued/failed).
 - **Job list filters changed from a dropdown to buttons**: "Running" / "Completed" / "Not completed" as mutually-exclusive buttons, same filtering behavior as before.
 
 ## [1.9.0] — 2026-06-22

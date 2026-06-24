@@ -8,6 +8,8 @@ from PyQt6.QtCore import Qt, QTimer, QUrl
 from PyQt6.QtGui import QDesktopServices
 from PyQt6.QtWidgets import (
     QApplication,
+    QFrame,
+    QHBoxLayout,
     QLabel,
     QMainWindow,
     QMessageBox,
@@ -88,10 +90,26 @@ class MainWindow(QMainWindow):
         self.stats_bar = StatsBar(self.jobs_panel.model)
         self.proxy_bar = ProxyBar()
 
+        # Cruscotto su un'unica riga: zona download (StatsBar) | separatore
+        # verticale | zona proxy (ProxyBar). Il colore del separatore segue
+        # il tema (vedi _on_theme_toggle -> _restyle_dashboard_separator).
+        dashboard_row = QHBoxLayout()
+        dashboard_row.setContentsMargins(0, 0, 0, 0)
+        dashboard_row.setSpacing(0)
+        self._dashboard_separator = QFrame()
+        self._dashboard_separator.setFrameShape(QFrame.Shape.NoFrame)
+        self._dashboard_separator.setFixedWidth(1)
+        self._restyle_dashboard_separator()
+        dashboard_row.addWidget(self.stats_bar, 0)
+        dashboard_row.addWidget(self._dashboard_separator, 0)
+        # Stretch factor 1: ProxyBar si espande nello spazio orizzontale
+        # residuo; il suo addStretch(1) interno (vedi proxy_bar.py) assorbe
+        # quello spazio subito dopo l'ultima card, non l'outer layout.
+        dashboard_row.addWidget(self.proxy_bar, 1)
+
         layout.addWidget(self.update_banner, 0)
         layout.addWidget(self.controls, 0)
-        layout.addWidget(self.stats_bar, 0)
-        layout.addWidget(self.proxy_bar, 0)
+        layout.addLayout(dashboard_row)
         layout.addWidget(self.jobs_panel, 1)
 
         self.setCentralWidget(central)
@@ -390,6 +408,13 @@ class MainWindow(QMainWindow):
         self.jobs_panel.refresh_theme()
         self.stats_bar.refresh_theme()
         self.proxy_bar.refresh_theme()
+        self._restyle_dashboard_separator()
+
+    def _restyle_dashboard_separator(self) -> None:
+        p = _style.CURRENT_PALETTE
+        self._dashboard_separator.setStyleSheet(
+            f"QFrame {{ background-color: {p['border']}; border: none; }}"
+        )
 
     # ---- riavvio job ----------------------------------------------------
 
