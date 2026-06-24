@@ -6,6 +6,9 @@ downloads/
 dist/
 proxy_cache.json
 
+# Script Python temporaneo dello smoke test di install.ps1
+_smoke_test.py
+
 # Log diagnostici/operativi e report generati (vedi src/core/config.py:LOGS_DIR).
 logs/*
 !logs/.gitkeep

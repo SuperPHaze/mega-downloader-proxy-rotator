@@ -191,6 +191,7 @@ Write-Step (L "Smoke test: importing key modules..." "Smoke test: import moduli 
 
 $testScript = @'
 import sys
+sys.path.insert(0, ".")
 errors = []
 for name, imp in [
     ("PyQt6",        "from PyQt6.QtWidgets import QApplication"),
@@ -212,10 +213,19 @@ else:
     print("ALL_OK")
 '@
 
+# Eseguito da file temporaneo (non con "python -c $testScript"): passando a un
+# eseguibile nativo uno script multi-riga con virgolette doppie annidate,
+# PowerShell altera le virgolette/gli a-capo e Python riceve codice corrotto
+# (SyntaxError). Il file va scritto nella root del progetto cosi' "src" resta
+# importabile, in UTF-8 senza BOM cosi' Python non legge un BOM iniziale.
+$tmpSmoke = Join-Path (Get-Location) "_smoke_test.py"
+[System.IO.File]::WriteAllText($tmpSmoke, $testScript, (New-Object System.Text.UTF8Encoding $false))
+
 $prevEAP = $ErrorActionPreference
 $ErrorActionPreference = 'Continue'
-$result = & $venvPy -c $testScript 2>&1
+$result = & $venvPy $tmpSmoke 2>&1
 $ErrorActionPreference = $prevEAP
+Remove-Item $tmpSmoke -ErrorAction SilentlyContinue
 if ("$result" -match "ALL_OK") {
     Write-OK (L "All modules import correctly." "Tutti i moduli si importano correttamente.")
 } else {

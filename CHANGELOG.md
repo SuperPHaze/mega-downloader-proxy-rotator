@@ -18,6 +18,9 @@ All notable changes to this project. Format based on [Keep a Changelog](https://
 - **Job list filters changed from a dropdown to buttons**: "Running" / "Completed" / "Not completed" as mutually-exclusive buttons, same filtering behavior as before.
 - **Dashboard: more compact zones; the "Jobs" zone renamed to "Downloads"; proxy zone redesigned as cards** (alive/validation/discarded/refills/last refill), pool sparkline removed.
 
+### Fixed
+- **Installer smoke test** (`install.ps1`): now run from a temporary file instead of `python -c`, fixing a `SyntaxError` caused by how PowerShell passed the multi-line script.
+
 ## [1.9.0] — 2026-06-22
 
 ### Added

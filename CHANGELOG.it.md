@@ -18,6 +18,9 @@ Tutte le modifiche rilevanti del progetto. Formato basato su [Keep a Changelog](
 - **Filtri della lista job da tendina a pulsanti**: "In corso" / "Completati" / "Non completati" come pulsanti a selezione esclusiva, stesso comportamento di filtro di prima.
 - **Cruscotto: zone più compatte; zona "Job" rinominata "Download"; zona proxy ridisegnata a card** (vivi/validazione/scartati/ricariche/ultimo refill), rimossa la sparkline del pool.
 
+### Corretto
+- **Smoke test dell'installer** (`install.ps1`): eseguito da file temporaneo invece che via `python -c`, risolto `SyntaxError` dovuto al passaggio dello script multi-riga in PowerShell.
+
 ## [1.9.0] — 2026-06-22
 
 ### Aggiunto
