@@ -44,7 +44,7 @@ from src.gui.jobs_model import (
     STATUS_RUNNING,
 )
 
-# Categorie del filtro "Mostra:" — ciascuna raggruppa piu' stati. Le tre
+# Categorie del filtro job — ciascuna raggruppa piu' stati. Le tre
 # categorie insieme coprono tutti gli stati possibili (nessuna voce "Tutti").
 FILTER_IN_PROGRESS = "in_progress"
 FILTER_COMPLETED = "completed"
@@ -478,7 +478,6 @@ class JobsPanel(QWidget):
         # Barra filtri: pulsanti a selezione esclusiva (segmented control).
         filter_row = QHBoxLayout()
         filter_row.setContentsMargins(6, 4, 6, 4)
-        filter_row.addWidget(QLabel("Mostra:"))
         self._filter_group = QButtonGroup(self)
         self._filter_group.setExclusive(True)
         self._filter_buttons: dict[str, QPushButton] = {}
