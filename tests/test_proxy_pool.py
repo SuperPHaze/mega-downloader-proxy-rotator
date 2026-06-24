@@ -141,6 +141,59 @@ def test_record_throughput_never_measured_proxy_has_no_entry():
         assert pool.get_next() is not None
 
 
+# ---- Telemetria di sessione: discarded_count / refill_count -------------
+
+def test_discarded_count_increments_once_per_alive_to_dead_transition():
+    pool = ProxyPool()
+    p = _proxy()
+    pool.add_many([p])
+    assert pool.discarded_count() == 0
+    rounds = abs(POOL_SCORE_DEAD_THRESHOLD) // abs(POOL_SCORE_ON_FAILURE) + 2
+    for _ in range(rounds):
+        pool.record_failure(p)
+    # Una sola transizione vivo->morto avvenuta durante il loop.
+    assert pool.discarded_count() == 1
+    # Ulteriori fallimenti sul proxy gia' morto non incrementano di nuovo.
+    pool.record_failure(p)
+    assert pool.discarded_count() == 1
+
+
+def test_discarded_count_not_affected_by_penalize_hard():
+    # penalize(hard=True) non passa da record_failure: non e' nello scope
+    # dell'istruzione (solo record_failure e' instrumentato).
+    pool = ProxyPool()
+    p = _proxy()
+    pool.add_many([p])
+    pool.penalize(p, hard=True)
+    assert pool.discarded_count() == 0
+
+
+def test_refill_count_and_last_refill_via_note_refill():
+    pool = ProxyPool()
+    assert pool.refill_count() == 0
+    assert pool.seconds_since_last_refill() is None
+    pool.note_refill()
+    assert pool.refill_count() == 1
+    elapsed = pool.seconds_since_last_refill()
+    assert elapsed is not None and elapsed >= 0
+    pool.note_refill()
+    assert pool.refill_count() == 2
+
+
+def test_refill_blocking_calls_note_refill_on_success():
+    pool = ProxyPool(refill_fn=lambda: [_proxy()])
+    pool.refill_blocking(force=True)
+    assert pool.refill_count() == 1
+    assert pool.seconds_since_last_refill() is not None
+
+
+def test_refill_blocking_skip_branch_does_not_call_note_refill():
+    pool = ProxyPool(refill_fn=lambda: [_proxy()])
+    pool.add_many([_proxy("9.9.9.9")])  # pool non vuoto
+    pool.refill_blocking(force=False)  # skip: size() > 0
+    assert pool.refill_count() == 0
+
+
 def test_throughput_mode_prefers_fast_proxies_with_rotation():
     pool = ProxyPool(selection_mode="throughput", n_connections=1)
     fast = _proxy("1.1.1.1")

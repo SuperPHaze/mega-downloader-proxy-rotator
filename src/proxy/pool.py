@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 from typing import Callable
 
 from src.core.config import (
@@ -54,6 +55,11 @@ class ProxyPool:
         # Numero di connessioni correnti per file (Leva A): usato per
         # dimensionare il top-K della modalita' "throughput" (K = n * FACTOR).
         self.n_connections = max(1, n_connections)
+        # Telemetria di sessione per la GUI (sezione proxy): non influisce su
+        # scoring/get_next, solo contatori osservativi.
+        self._discarded_session = 0
+        self._refill_count = 0
+        self._last_refill_monotonic: float | None = None
 
     def add_many(self, proxies: list[dict]) -> None:
         with self._lock:
@@ -177,9 +183,35 @@ class ProxyPool:
             cur = self._score.get(key, POOL_SCORE_INITIAL)
             new = cur + POOL_SCORE_ON_FAILURE
             self._score[key] = new
+            # Conta la transizione vivo->morto una sola volta (non a ogni
+            # fallimento successivo sotto soglia): telemetria per la GUI.
+            if cur > POOL_SCORE_DEAD_THRESHOLD and new <= POOL_SCORE_DEAD_THRESHOLD:
+                self._discarded_session += 1
             remaining = self._count_alive_unlocked()
         log.debug("Pool: failure %s:%s score %d -> %d (vivi: %d)",
                   proxy["host"], proxy["port"], cur, new, remaining)
+
+    def discarded_count(self) -> int:
+        """Numero di proxy transitati da vivo a morto in questa sessione."""
+        with self._lock:
+            return self._discarded_session
+
+    def note_refill(self) -> None:
+        """Da chiamare a refill completato (refill_blocking / refresher) per
+        telemetria di sessione: incrementa il contatore e timestampa."""
+        with self._lock:
+            self._refill_count += 1
+            self._last_refill_monotonic = time.monotonic()
+
+    def refill_count(self) -> int:
+        with self._lock:
+            return self._refill_count
+
+    def seconds_since_last_refill(self) -> float | None:
+        with self._lock:
+            if self._last_refill_monotonic is None:
+                return None
+            return time.monotonic() - self._last_refill_monotonic
 
     def record_throughput(self, proxy: dict, bps: float) -> None:
         """Aggiorna la EMA del throughput osservato (byte/s) per il proxy.
@@ -298,4 +330,10 @@ class ProxyPool:
                     added += 1
                 alive_now = self._count_alive_unlocked()
             log.info("Pool: refill completato, %d nuovi (vivi totali: %d)", added, alive_now)
+            # Telemetria di sessione: copre sia il refill su richiesta worker
+            # (force=False) sia quello del BackgroundPoolRefresher
+            # (force=True, vedi refresher.py), che passa da questa stessa
+            # funzione. Non chiamato nei rami "skip"/eccezione sopra: solo a
+            # refill effettivamente completato.
+            self.note_refill()
             return added

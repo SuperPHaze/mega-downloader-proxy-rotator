@@ -192,6 +192,9 @@ class DownloadOrchestrator(QObject):
     pool_size_changed = pyqtSignal(int)
     # Throughput in tempo reale: relay dal worker. (file_id, bps, downloaded, total)
     throughput = pyqtSignal(int, float, object, object)
+    # Metriche di sessione del pool proxy, emesse insieme a pool_size_changed:
+    # (discarded_session, refill_count, seconds_since_last_refill_or_None).
+    proxy_stats = pyqtSignal(int, int, object)
     # Relay del completed_info del worker: (file_id, url, file_name, file_size, path)
     completed_info = pyqtSignal(int, str, str, object, str)
     # Nome file risolto appena noto (non solo a fine download): (file_id, file_name, file_size, path)
@@ -412,6 +415,11 @@ class DownloadOrchestrator(QObject):
         except Exception:
             n = 0
         self.pool_size_changed.emit(int(n))
+        self.proxy_stats.emit(
+            self.pool.discarded_count(),
+            self.pool.refill_count(),
+            self.pool.seconds_since_last_refill(),
+        )
 
     def _on_setup_failed(self, msg: str) -> None:
         log.error("Orchestrator: setup fallito: %s", msg)
