@@ -22,7 +22,7 @@ src/
 │   ├── icon_loader.py     # build_app_icon(): QIcon robusta .ico->fallback .png, mai null senza log
 │   └── proxy_url.py       # build_proxy_url/build_proxies_dict: schema URL in base al campo protocol (http/socks4/socks5 -> socks5h), solo stdlib, usato da proxy/ e downloader/
 ├── proxy/
-│   ├── sources.py         # 52 fonti pubbliche (4 html, 45 plain, 3 json/jsonl); campo opzionale "protocol" (http/socks4/socks5) per fonte
+│   ├── sources.py         # 71 fonti pubbliche (4 html, 64 plain, 3 json/jsonl); per protocollo: 51 http, 15 socks5, 5 socks4 (campo opzionale "protocol" per fonte)
 │   ├── scraper.py         # ProxyScraper.fetch_all() multi-source; _fetch_source etichetta ogni proxy col "protocol" della fonte (sovrascrive l'"http" scritto dai parser)
 │   ├── validator.py       # 2-stage: stage1 alive + stage2 Mega
 │   ├── pool.py            # ProxyPool score-based round-robin; cooldown() mette un proxy a riposo N secondi (rate-limit 403/509) senza toccare lo score, ma MENTRE è in cooldown NON conta come vivo in size()/_count_alive_unlocked() (solo non selezionabile finché non scade — altrimenti size()>0 mentre get_next() non ha nulla, e il refill viene saltato all'infinito); contatori di sessione per la GUI (discarded_count/refill_count/seconds_since_last_refill, alimentati da note_refill())

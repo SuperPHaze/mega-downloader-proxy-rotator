@@ -7,6 +7,7 @@ Tutte le modifiche rilevanti del progetto. Formato basato su [Keep a Changelog](
 ## [Non rilasciato]
 
 ### Aggiunto
+- Aggiunte ~20 fonti SOCKS4/SOCKS5 (TheSpeedX, monosans, ShiftyTR, jetkai, roosterkid, mmpx12, vakhov, zloi, rdavydov, Zaeem20, ErcinDedeoglu, Thordata, yemixzy, proxifly): aumentano la massa di candidati per alzare il numero di proxy che reggono Mega.
 - Supporto proxy SOCKS4/SOCKS5 nel motore (schema `socks5h`/`socks4` via PySocks; lo scraper etichetta il protocollo per fonte). Le fonti SOCKS vengono aggiunte separatamente.
 - Cattura dell'intero output del terminale in `logs/terminal-log.txt` (riazzerato a ogni avvio), per diagnosi rapida e condivisione.
 - **Cooldown dei proxy su rate-limit Mega (403/509)**: messi a riposo per `PROXY_COOLDOWN_SECONDS` (90s) invece di essere scartati, per non svuotare il pool su sessioni lunghe.

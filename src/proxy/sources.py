@@ -1,6 +1,6 @@
 # Elenco delle fonti di proxy gratuiti supportate.
 # Per aggiungere una fonte: estendere PROXY_SOURCES e (se serve) un parser in scraper.py.
-# Oggi sono 52 fonti (4 html, 45 plain, 3 json/jsonl).
+# Oggi sono 71 fonti (4 html, 64 plain, 3 json/jsonl); per protocollo: 51 http, 15 socks5, 5 socks4.
 #
 # Tipi (`kind`) supportati:
 #   - "html_table" : pagina HTML con tabella standard host/porta nelle prime due colonne.
@@ -309,5 +309,123 @@ PROXY_SOURCES = [
         "name": "proxygenerator1-stable-http",
         "url": "https://raw.githubusercontent.com/proxygenerator1/ProxyGenerator/main/Stable/http.txt",
         "kind": "plain_text",
+    },
+
+    # --- Liste SOCKS5 curate ---
+    {
+        "name": "thespeedx-socks5",
+        "url": "https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/socks5.txt",
+        "kind": "plain_text",
+        "protocol": "socks5",
+    },
+    {
+        "name": "monosans-socks5",
+        "url": "https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/socks5.txt",
+        "kind": "plain_text",
+        "protocol": "socks5",
+    },
+    {
+        "name": "shiftytr-socks5",
+        "url": "https://raw.githubusercontent.com/ShiftyTR/Proxy-List/master/socks5.txt",
+        "kind": "plain_text",
+        "protocol": "socks5",
+    },
+    {
+        "name": "jetkai-socks5",
+        "url": "https://raw.githubusercontent.com/jetkai/proxy-list/main/online-proxies/txt/proxies-socks5.txt",
+        "kind": "plain_text",
+        "protocol": "socks5",
+    },
+    {
+        "name": "roosterkid-socks5",
+        "url": "https://raw.githubusercontent.com/roosterkid/openproxylist/main/SOCKS5_RAW.txt",
+        "kind": "plain_text",
+        "protocol": "socks5",
+    },
+    {
+        "name": "mmpx12-socks5",
+        "url": "https://raw.githubusercontent.com/mmpx12/proxy-list/master/socks5.txt",
+        "kind": "plain_text",
+        "protocol": "socks5",
+    },
+    {
+        "name": "vakhov-socks5",
+        "url": "https://vakhov.github.io/fresh-proxy-list/socks5.txt",
+        "kind": "plain_text",
+        "protocol": "socks5",
+    },
+    {
+        "name": "zloi-user-socks5",
+        "url": "https://raw.githubusercontent.com/zloi-user/hideip.me/main/socks5.txt",
+        "kind": "plain_text",
+        "protocol": "socks5",
+    },
+    {
+        "name": "rdavydov-socks5",
+        "url": "https://raw.githubusercontent.com/rdavydov/proxy-list/main/proxies/socks5.txt",
+        "kind": "plain_text",
+        "protocol": "socks5",
+    },
+    {
+        "name": "zaeem20-socks5",
+        "url": "https://raw.githubusercontent.com/Zaeem20/FREE_PROXIES_LIST/master/socks5.txt",
+        "kind": "plain_text",
+        "protocol": "socks5",
+    },
+    {
+        "name": "ercindedeoglu-socks5",
+        "url": "https://raw.githubusercontent.com/ErcinDedeoglu/proxies/main/socks5.txt",
+        "kind": "plain_text",
+        "protocol": "socks5",
+    },
+    {
+        "name": "thordata-socks5",
+        "url": "https://raw.githubusercontent.com/Thordata/awesome-free-proxy-list/main/proxies/socks5.txt",
+        "kind": "plain_text",
+        "protocol": "socks5",
+    },
+    {
+        "name": "yemixzy-socks5",
+        "url": "https://raw.githubusercontent.com/yemixzy/proxy-list/main/proxies/socks5.txt",
+        "kind": "plain_text",
+        "protocol": "socks5",
+    },
+    {
+        "name": "proxifly-socks5",
+        "url": "https://cdn.jsdelivr.net/gh/proxifly/free-proxy-list@main/proxies/protocols/socks5/data.txt",
+        "kind": "plain_text",
+        "protocol": "socks5",
+    },
+
+    # --- Liste SOCKS4 curate ---
+    {
+        "name": "thespeedx-socks4",
+        "url": "https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/socks4.txt",
+        "kind": "plain_text",
+        "protocol": "socks4",
+    },
+    {
+        "name": "monosans-socks4",
+        "url": "https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/socks4.txt",
+        "kind": "plain_text",
+        "protocol": "socks4",
+    },
+    {
+        "name": "shiftytr-socks4",
+        "url": "https://raw.githubusercontent.com/ShiftyTR/Proxy-List/master/socks4.txt",
+        "kind": "plain_text",
+        "protocol": "socks4",
+    },
+    {
+        "name": "roosterkid-socks4",
+        "url": "https://raw.githubusercontent.com/roosterkid/openproxylist/main/SOCKS4_RAW.txt",
+        "kind": "plain_text",
+        "protocol": "socks4",
+    },
+    {
+        "name": "jetkai-socks4",
+        "url": "https://raw.githubusercontent.com/jetkai/proxy-list/main/online-proxies/txt/proxies-socks4.txt",
+        "kind": "plain_text",
+        "protocol": "socks4",
     },
 ]
