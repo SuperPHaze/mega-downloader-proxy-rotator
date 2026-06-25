@@ -86,6 +86,7 @@ class DownloadWorker(QThread):
         file_time_limit_s: int | None = None,
         chunk_size_bytes: int | None = None,
         connections_per_file: int | None = None,
+        segment_max_duration_s: int | None = None,
     ) -> None:
         super().__init__()
         self.file_id = file_id
@@ -115,6 +116,9 @@ class DownloadWorker(QThread):
             connections_per_file if connections_per_file is not None
             else PARALLEL_CONNECTIONS_PER_FILE
         )
+        # Budget temporale massimo per pezzo (Funzioni Sperimentali).
+        # None = usa il default di config (comportamento storico).
+        self._segment_max_duration_s: int | None = segment_max_duration_s
 
     def _is_deadline_expired(self) -> bool:
         """True solo se il deadline per-file è scaduto E non c'è una cancellazione
@@ -315,6 +319,7 @@ class DownloadWorker(QThread):
                         n_connections=self._connections_per_file,
                         session_state=self._effective_state,
                         chunk_size=self._chunk_size_bytes,
+                        segment_max_duration_s=self._segment_max_duration_s,
                     )
                     final_path = pd.download(
                         self.mega_url,

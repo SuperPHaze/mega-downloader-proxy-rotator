@@ -147,6 +147,7 @@ class ParallelMegaDownloader:
         n_connections: int,
         session_state: SessionState | None = None,
         chunk_size: int | None = None,
+        segment_max_duration_s: int | None = None,
     ) -> None:
         self.pool = proxy_pool
         self.n_connections = max(1, n_connections)
@@ -157,6 +158,13 @@ class ParallelMegaDownloader:
             chunk_size
             if chunk_size is not None
             else PARALLEL_CHUNK_SIZE_MB * 1024 * 1024
+        )
+        # Budget temporale massimo per un singolo tentativo di chunk.
+        # Default dalla costante di configurazione se non specificato dalla GUI.
+        self.segment_max_duration_s = (
+            segment_max_duration_s
+            if segment_max_duration_s is not None
+            else PARALLEL_SEGMENT_ATTEMPT_MAX_DURATION_S
         )
         self._bytes_downloaded = 0
         self._bytes_lock = threading.Lock()
@@ -509,10 +517,10 @@ class ParallelMegaDownloader:
                             window_bytes += len(net_chunk)
                             now = time.monotonic()
                             elapsed_attempt = now - attempt_start
-                            if elapsed_attempt > PARALLEL_SEGMENT_ATTEMPT_MAX_DURATION_S:
+                            if elapsed_attempt > self.segment_max_duration_s:
                                 raise RuntimeError(
                                     f"chunk {chunk_idx}: superato budget temporale di "
-                                    f"{PARALLEL_SEGMENT_ATTEMPT_MAX_DURATION_S}s "
+                                    f"{self.segment_max_duration_s}s "
                                     f"(scaricati {downloaded}/{chunk_size_actual} B)"
                                 )
                             window_elapsed = now - window_start

@@ -6,7 +6,10 @@ import json
 import logging
 from pathlib import Path
 
-from src.core.config import PARALLEL_CONNECTIONS_PER_FILE
+from src.core.config import (
+    PARALLEL_CONNECTIONS_PER_FILE,
+    PARALLEL_SEGMENT_ATTEMPT_MAX_DURATION_S,
+)
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 _PREFS_PATH = _PROJECT_ROOT / "preferences.json"
@@ -52,3 +55,11 @@ def load_connections_per_file() -> int:
 
 def save_connections_per_file(value: int) -> None:
     _save_pref("connections_per_file", int(value))
+
+
+def load_segment_max_duration_s() -> int:
+    return int(_load_prefs().get("segment_max_duration_s", PARALLEL_SEGMENT_ATTEMPT_MAX_DURATION_S))
+
+
+def save_segment_max_duration_s(value: int) -> None:
+    _save_pref("segment_max_duration_s", int(value))

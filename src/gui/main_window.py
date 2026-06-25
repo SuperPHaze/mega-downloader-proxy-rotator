@@ -34,6 +34,7 @@ from src.gui.preferences import (
     load_check_updates_on_startup,
     load_connections_per_file,
     load_dark_theme,
+    load_segment_max_duration_s,
     save_dark_theme,
 )
 from src.gui.proxy_bar import ProxyBar
@@ -231,6 +232,7 @@ class MainWindow(QMainWindow):
         # Connessioni per file: riesposto nel tab Funzioni Sperimentali (vedi
         # experimental_dialog.py). Selezione per velocita' resta ritirata.
         connections_per_file = load_connections_per_file()
+        segment_max_duration_s = load_segment_max_duration_s()
         selection_mode = "score"
         self.orchestrator = DownloadOrchestrator(self.session_state)
         qc = Qt.ConnectionType.QueuedConnection
@@ -272,6 +274,7 @@ class MainWindow(QMainWindow):
             chunk_size_bytes=chunk_size_bytes,
             connections_per_file=connections_per_file,
             selection_mode=selection_mode,
+            segment_max_duration_s=segment_max_duration_s,
         )
 
     # ---- pausa / annullo globale -----------------------------------------

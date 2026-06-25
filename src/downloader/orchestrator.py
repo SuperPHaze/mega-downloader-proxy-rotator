@@ -224,6 +224,9 @@ class DownloadOrchestrator(QObject):
         # scheda Funzioni Sperimentali. None/"score" = comportamento storico.
         self.connections_per_file: int | None = None
         self.selection_mode: str = "score"
+        # Budget temporale massimo per pezzo (Funzioni Sperimentali).
+        # None = usa il default di config (comportamento storico).
+        self.segment_max_duration_s: int | None = None
         # Timer che pubblica periodicamente la size del pool. Non attivato in
         # __init__/start(): viene avviato in _on_setup_ok dopo il primo
         # add_many, altrimenti emetterebbe 0 a ripetizione durante il setup.
@@ -259,6 +262,7 @@ class DownloadOrchestrator(QObject):
         chunk_size_bytes: int | None = None,
         connections_per_file: int | None = None,
         selection_mode: str | None = None,
+        segment_max_duration_s: int | None = None,
     ) -> None:
         if concurrency is not None:
             self.max_concurrent = max(1, int(concurrency))
@@ -266,6 +270,7 @@ class DownloadOrchestrator(QObject):
         self.chunk_size_bytes = chunk_size_bytes
         self.connections_per_file = connections_per_file
         self.selection_mode = selection_mode or "score"
+        self.segment_max_duration_s = segment_max_duration_s
         # Letti UNA volta all'avvio sessione (non a caldo): il pool condiviso
         # da tutti i worker adotta la modalita' di selezione e il K per il
         # ramo "throughput" prima che parta il primo download.
@@ -455,6 +460,7 @@ class DownloadOrchestrator(QObject):
             file_time_limit_s=self.file_time_limit_s,
             chunk_size_bytes=self.chunk_size_bytes,
             connections_per_file=self.connections_per_file,
+            segment_max_duration_s=self.segment_max_duration_s,
         )
         worker.setObjectName(f"Worker-{file_id}")
         worker.progress.connect(self.progress)
