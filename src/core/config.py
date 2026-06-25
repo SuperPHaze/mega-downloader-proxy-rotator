@@ -72,8 +72,10 @@ USER_AGENT = (
 
 # Tetto massimo di proxy candidati da validare (i gratuiti sono migliaia,
 # validarli tutti significa minuti di attesa anche con 20 worker paralleli).
-# Alzato a 3000 per reggere un pool vivo di 200 (vedi VALIDATOR_TARGET_ALIVE):
-# con mortalita' ~70% serve un bacino di candidati piu' largo.
+# 3000 candidati per arrivare a un pool vivo realistico di poche decine (vedi
+# VALIDATOR_TARGET_ALIVE): lo stage 2 verso Mega ha una resa molto bassa
+# (~30-40 vivi anche partendo da migliaia di candidati), quindi il cap resta
+# largo per dare margine, non per inseguire un target a centinaia.
 MAX_PROXIES_TO_VALIDATE = 3000
 
 # Validazione a due stadi.
@@ -106,9 +108,13 @@ VALIDATOR_STAGE2_URL = "https://g.api.mega.co.nz/cs"
 
 # Target proxy vivi: se raggiunto, la validazione si ferma in anticipo
 # (cancellando i future rimanenti). None = valida tutto.
-# Alzato a 200 per reggere ore di download con molte connessioni parallele
-# senza svuotare il pool tra un refill e l'altro.
-VALIDATOR_TARGET_ALIVE = 200
+# La resa reale dello stage 2 (raggiungibilita' Mega) e' bassa: anche con
+# migliaia di candidati si arriva tipicamente a ~30-40 proxy vivi. Un target
+# di 200 era irraggiungibile e teneva il pool sempre "sotto soglia" agli
+# occhi del refresher; 60 e' un tetto realistico che lascia comunque scattare
+# l'early-stop nelle sessioni piu' fortunate, senza inseguire un numero che
+# non si raggiunge mai.
+VALIDATOR_TARGET_ALIVE = 60
 
 # DEPRECATO: alias retro-compatibile per VALIDATOR_STAGE2_WORKERS.
 # Codice nuovo deve usare VALIDATOR_STAGE2_WORKERS direttamente.
@@ -155,11 +161,12 @@ POOL_REFRESH_INTERVAL = 30          # secondi tra check
 # (osservato: 66 refill in una sessione, ~200 thread di picco -> access
 # violation nei thread di validazione). Con isteresi il refresher si "disarma"
 # dopo un refill e si riarma solo quando il pool torna sano (>= HIGH).
-# Soglie alzate in coerenza col nuovo target VALIDATOR_TARGET_ALIVE=200: LOW e
-# HIGH restano entrambe sotto il target (LOW < HIGH < target), altrimenti il
-# refresher non si riarmerebbe mai (HIGH >= target = disarmato per sempre).
-POOL_REFRESH_THRESHOLD_LOW = 100    # armato + vivi < LOW -> refill, poi disarma
-POOL_REFRESH_THRESHOLD_HIGH = 180   # disarmato + vivi >= HIGH -> riarma
+# Soglie dimensionate sulla resa reale dello stage 2 (~30-40 vivi tipici, vedi
+# VALIDATOR_TARGET_ALIVE): LOW < HIGH < resa tipica, altrimenti il refresher
+# non si riarmerebbe mai (HIGH >= resa reale = disarmato per sempre) oppure
+# scatenerebbe un refill quasi a ogni ciclo (LOW troppo vicino alla resa).
+POOL_REFRESH_THRESHOLD_LOW = 15     # armato + vivi < LOW -> refill, poi disarma
+POOL_REFRESH_THRESHOLD_HIGH = 30    # disarmato + vivi >= HIGH -> riarma
 POOL_REFRESH_MIN_INTERVAL_S = 45    # mai due refill a meno di N secondi l'uno dall'altro
 
 # DEPRECATO: alias retro-compatibile pre-isteresi. Codice nuovo deve usare

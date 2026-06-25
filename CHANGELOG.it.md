@@ -15,7 +15,10 @@ Tutte le modifiche rilevanti del progetto. Formato basato su [Keep a Changelog](
 - **Descrizione breve + icona "i"** su entrambi i controlli del tab Funzioni Sperimentali (connessioni per file, budget per pezzo): la spiegazione estesa si apre al clic, senza appesantire il dialog.
 
 ### Modificato
-- **Pool proxy ingrandito**: target proxy vivi 80→200, candidati validati 1000→3000, soglie di rifornimento 40/80→100/180 (coerenti col nuovo target); aggiunte ~20 nuove fonti HTTP/HTTPS. La validazione iniziale/di refill è più lunga ma gira in background; obiettivo: reggere sessioni lunghe con molte connessioni senza svuotare il pool.
+- **Pool proxy ingrandito**: candidati validati 1000→3000 (aggiunte ~20 nuove fonti HTTP/HTTPS). Target proxy vivi e soglie di rifornimento portati a valori realistici (vedi voce in Corretto sotto) coerenti con la resa reale della validazione verso Mega, non con un target a centinaia irraggiungibile.
+
+### Corretto
+- **Starvation del pool**: un proxy in cooldown (rate-limit 403/509) contava ancora come "vivo", quindi quando quasi tutto il pool andava in cooldown insieme `size()` restava > 0 e `refill_blocking()` veniva saltato all'infinito mentre `get_next()` non aveva più nulla di selezionabile, inchiodando il pool a 1-2 proxy. Ora un proxy in cooldown non conta come vivo finché non scade. Target proxy vivi e soglie di rifornimento riportati a valori realistici (60 vivi target, soglie 15/30) coerenti con la resa reale della validazione verso Mega (~30-40 vivi tipici anche da migliaia di candidati); ridotto a DEBUG il rumore di log dei refill saltati.
 
 ## [1.10.0] — 2026-06-24
 

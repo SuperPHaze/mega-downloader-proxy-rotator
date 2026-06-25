@@ -15,7 +15,10 @@ All notable changes to this project. Format based on [Keep a Changelog](https://
 - **Short description + "i" icon** on both Experimental Features controls (connections per file, per-chunk budget): the extended explanation opens on click, keeping the dialog compact.
 
 ### Changed
-- **Larger proxy pool**: target alive proxies 80→200, validated candidates 1000→3000, refill thresholds 40/80→100/180 (consistent with the new target); added ~20 new HTTP/HTTPS sources. Initial/refill validation takes longer but runs in the background; the goal is to sustain long sessions with many connections without draining the pool.
+- **Larger proxy pool**: validated candidates 1000→3000 (added ~20 new HTTP/HTTPS sources). Target alive proxies and refill thresholds set to realistic values (see Fixed entry below) consistent with the actual yield of validation against Mega, not an unreachable target in the hundreds.
+
+### Fixed
+- **Pool starvation**: a proxy in cooldown (403/509 rate-limit) still counted as "alive", so when almost the whole pool went into cooldown together `size()` stayed > 0 and `refill_blocking()` kept being skipped forever while `get_next()` had nothing left to select, pinning the pool at 1-2 proxies. A proxy in cooldown no longer counts as alive until it expires. Target alive proxies and refill thresholds brought back to realistic values (60 target alive, 15/30 thresholds) consistent with the actual yield of validation against Mega (~30-40 typical alive even from thousands of candidates); the "refill skipped" log noise reduced to DEBUG.
 
 ## [1.10.0] — 2026-06-24
 
