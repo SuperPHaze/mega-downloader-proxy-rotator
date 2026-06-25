@@ -16,6 +16,7 @@ from pathlib import Path
 
 import requests
 
+from src.core.proxy_url import build_proxies_dict
 from src.downloader.mega_crypto import (
     base64_to_a32,
     base64_url_decode,
@@ -53,8 +54,7 @@ def _normalize_proxy(proxy: dict | None) -> dict[str, str] | None:
     if "http" in proxy and "https" in proxy:
         return {"http": proxy["http"], "https": proxy["https"]}
     if "protocol" in proxy and "host" in proxy and "port" in proxy:
-        url = f"{proxy['protocol']}://{proxy['host']}:{proxy['port']}"
-        return {"http": url, "https": url}
+        return build_proxies_dict(proxy)
     raise ValueError(f"formato proxy non riconosciuto: {sorted(proxy.keys())}")
 
 

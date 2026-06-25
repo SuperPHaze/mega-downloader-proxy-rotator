@@ -9,6 +9,12 @@
 #   - "jsonl"      : una riga = un JSON object (es. fate0/proxylist) con chiavi host/port/type.
 #   - "databay_json": API JSON di databay.com con filtro Strict-SSL upstream
 #                     (esclude proxy MITM-suspect). Array di {ip, port, ...}.
+#
+# Campo opzionale `"protocol"`: "http" (default se assente), "socks4", "socks5".
+# Etichetta TUTTI i proxy di quella fonte con questo protocollo (vedi
+# ProxyScraper._fetch_source in scraper.py: e' la fonte di verita', i parser
+# scrivono sempre "http" e vengono sovrascritti qui). Determina lo schema
+# dell'URL costruito da src/core/proxy_url.py (socks5 -> socks5h://, ecc.).
 
 PROXY_SOURCES = [
     # --- HTML scraping ---
@@ -87,9 +93,10 @@ PROXY_SOURCES = [
         "kind": "plain_text",
     },
     {
-        "name": "hookzof-socks5",  # alcuni server accettano anche http via tunnel: lo testa il validator
+        "name": "hookzof-socks5",
         "url": "https://raw.githubusercontent.com/hookzof/socks5_list/master/proxy.txt",
         "kind": "plain_text",
+        "protocol": "socks5",
     },
 
     # --- API JSON ---

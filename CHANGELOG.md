@@ -7,6 +7,7 @@ All notable changes to this project. Format based on [Keep a Changelog](https://
 ## [Unreleased]
 
 ### Added
+- SOCKS4/SOCKS5 proxy support in the engine (`socks5h`/`socks4` scheme via PySocks; the scraper labels the protocol per source). SOCKS sources are added separately.
 - Capture of the entire terminal output in `logs/terminal-log.txt` (reset on every startup), for quick diagnosis and sharing.
 - **Proxy cooldown on Mega rate-limit (403/509)**: put to rest for `PROXY_COOLDOWN_SECONDS` (90s) instead of being discarded, to avoid draining the pool on long sessions.
 - Re-exposed the connections-per-file control in the Experimental Features tab (for testing).
@@ -19,6 +20,7 @@ All notable changes to this project. Format based on [Keep a Changelog](https://
 
 ### Fixed
 - **Pool starvation**: a proxy in cooldown (403/509 rate-limit) still counted as "alive", so when almost the whole pool went into cooldown together `size()` stayed > 0 and `refill_blocking()` kept being skipped forever while `get_next()` had nothing left to select, pinning the pool at 1-2 proxies. A proxy in cooldown no longer counts as alive until it expires. Target alive proxies and refill thresholds brought back to realistic values (60 target alive, 15/30 thresholds) consistent with the actual yield of validation against Mega (~30-40 typical alive even from thousands of candidates); the "refill skipped" log noise reduced to DEBUG.
+- The `hookzof-socks5` source was treated as http, now correctly SOCKS5.
 
 ## [1.10.0] — 2026-06-24
 

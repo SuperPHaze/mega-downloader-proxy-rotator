@@ -199,6 +199,7 @@ for name, imp in [
     ("bs4",          "from bs4 import BeautifulSoup"),
     ("lxml",         "import lxml"),
     ("pycryptodome", "from Crypto.Cipher import AES"),
+    ("PySocks",      "import socks"),
     ("src.core",     "from src.core.config import OUTPUT_DIR"),
 ]:
     try:

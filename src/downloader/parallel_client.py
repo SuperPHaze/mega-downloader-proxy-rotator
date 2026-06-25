@@ -42,6 +42,7 @@ from src.core.config import (
     PROXY_TIMEOUT,
     USER_AGENT,
 )
+from src.core.proxy_url import build_proxies_dict as _proxies_dict
 from src.core.state import SessionState
 from src.downloader.mega_api import MegaPublicClient
 from src.downloader.mega_crypto import a32_to_str
@@ -49,11 +50,6 @@ from src.downloader.mega_client import MegaCryptoDependencyError
 from src.proxy.pool import ProxyPool
 
 log = logging.getLogger(__name__)
-
-
-def _proxies_dict(proxy: dict) -> dict[str, str]:
-    url = f"{proxy['protocol']}://{proxy['host']}:{proxy['port']}"
-    return {"http": url, "https": url}
 
 
 def _progress_path(target_path: Path) -> Path:

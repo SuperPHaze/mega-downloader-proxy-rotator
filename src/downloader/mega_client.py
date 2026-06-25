@@ -15,6 +15,7 @@ from typing import Callable
 import requests
 
 from src.core.config import IP_CHECK_URL, PROXY_TIMEOUT, USER_AGENT
+from src.core.proxy_url import build_proxies_dict, build_proxy_url
 from src.downloader.mega_api import MegaApiError, MegaPublicClient
 from src.downloader.mega_crypto import a32_to_str
 
@@ -35,8 +36,8 @@ _CHUNK = 64 * 1024
 class MegaClient:
     def __init__(self, proxy: dict) -> None:
         self.proxy = proxy
-        self._proxy_url = f"{proxy['protocol']}://{proxy['host']}:{proxy['port']}"
-        self._proxies = {"http": self._proxy_url, "https": self._proxy_url}
+        self._proxy_url = build_proxy_url(proxy)
+        self._proxies = build_proxies_dict(proxy)
 
     def get_egress_ip(self) -> str:
         log.debug("IP check via %s", self._proxy_url)

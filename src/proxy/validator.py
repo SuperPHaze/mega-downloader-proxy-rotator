@@ -23,6 +23,7 @@ from src.core.config import (
     VALIDATOR_STAGE2_WORKERS,
     VALIDATOR_TARGET_ALIVE,
 )
+from src.core.proxy_url import build_proxies_dict
 
 log = logging.getLogger(__name__)
 
@@ -165,13 +166,12 @@ class ProxyValidator:
 
     # --- Stage 1: il proxy funziona (raggiunge un host qualunque)? ---
     def _check_alive(self, proxy: dict) -> bool:
-        proxy_url = f"{proxy['protocol']}://{proxy['host']}:{proxy['port']}"
         t0 = time.monotonic()
         try:
             resp = _session().get(
                 VALIDATOR_STAGE1_URL,
                 headers=self._headers,
-                proxies={"http": proxy_url, "https": proxy_url},
+                proxies=build_proxies_dict(proxy),
                 timeout=VALIDATOR_STAGE1_TIMEOUT,
                 allow_redirects=False,
             )
@@ -189,7 +189,6 @@ class ProxyValidator:
 
     # --- Stage 2: il proxy raggiunge l'infrastruttura di download Mega? ---
     def _check_mega(self, proxy: dict) -> bool:
-        proxy_url = f"{proxy['protocol']}://{proxy['host']}:{proxy['port']}"
         try:
             # GET sull'host dell'API Mega (stesso host del resolve reale).
             # Niente redirect: vogliamo la risposta DIRETTA di questo host,
@@ -199,7 +198,7 @@ class ProxyValidator:
             _session().get(
                 VALIDATOR_STAGE2_URL,
                 headers=self._headers,
-                proxies={"http": proxy_url, "https": proxy_url},
+                proxies=build_proxies_dict(proxy),
                 timeout=VALIDATOR_STAGE2_TIMEOUT,
                 allow_redirects=False,
             )

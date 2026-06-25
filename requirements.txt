@@ -14,3 +14,5 @@ pycryptodome>=3.20
 requests>=2.31
 beautifulsoup4>=4.12
 lxml>=5.0
+# Serve a requests per parlare gli schemi socks5h:// / socks4:// (proxy SOCKS).
+PySocks>=1.7.1

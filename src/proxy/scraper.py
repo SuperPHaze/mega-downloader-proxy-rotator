@@ -71,16 +71,25 @@ class ProxyScraper:
         resp = requests.get(source["url"], headers=self._headers, timeout=PROXY_TIMEOUT)
         resp.raise_for_status()
         if source["kind"] == "html_table":
-            return self._parse_html_table(resp.text)
-        if source["kind"] == "plain_text":
-            return self._parse_plain_text(resp.text)
-        if source["kind"] == "geonode_json":
-            return self._parse_geonode_json(resp.text)
-        if source["kind"] == "jsonl":
-            return self._parse_jsonl(resp.text)
-        if source["kind"] == "databay_json":
-            return self._parse_databay_json(resp.text)
-        return []
+            proxies = self._parse_html_table(resp.text)
+        elif source["kind"] == "plain_text":
+            proxies = self._parse_plain_text(resp.text)
+        elif source["kind"] == "geonode_json":
+            proxies = self._parse_geonode_json(resp.text)
+        elif source["kind"] == "jsonl":
+            proxies = self._parse_jsonl(resp.text)
+        elif source["kind"] == "databay_json":
+            proxies = self._parse_databay_json(resp.text)
+        else:
+            proxies = []
+        # I parser scrivono sempre "http": il protocollo della fonte (campo
+        # opzionale "protocol" in sources.py) e' la fonte di verita' e
+        # sovrascrive qui, cosi' tutti i parser ereditano il comportamento
+        # senza doverlo gestire uno a uno.
+        protocol = source.get("protocol", "http")
+        for p in proxies:
+            p["protocol"] = protocol
+        return proxies
 
     @classmethod
     def _parse_databay_json(cls, text: str) -> list[dict]:
