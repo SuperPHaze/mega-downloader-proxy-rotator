@@ -47,9 +47,12 @@ class ProxyPool:
         self._throughput: dict[tuple[str, str], float] = {}
         # Timestamp monotonico (time.monotonic()) fino al quale un proxy e'
         # escluso da get_next() per rate-limit temporaneo del CDN Mega
-        # (403/509). NON tocca lo score: il proxy resta "vivo" (conta in
-        # size()/_count_alive_unlocked()), e' solo non selezionabile finche'
-        # il cooldown non scade. Vedi cooldown().
+        # (403/509). NON tocca lo score (la sua "buona reputazione" resta
+        # intatta e torna selezionabile da solo a scadenza), ma MENTRE e'
+        # in cooldown non conta come vivo in size()/_count_alive_unlocked():
+        # e' temporaneamente inutilizzabile, e farlo contare gonfierebbe
+        # size() facendo saltare refill_blocking(force=False) anche quando
+        # get_next() non ha piu' nulla di selezionabile. Vedi cooldown().
         self._cooldown_until: dict[tuple[str, str], float] = {}
         self._index = 0
         self._lock = threading.Lock()
@@ -89,9 +92,16 @@ class ProxyPool:
         log.info("Pool: aggiunti %d proxy (vivi totali: %d)", len(proxies), total)
 
     def _count_alive_unlocked(self) -> int:
-        # Conta proxy con score > soglia dead. Caller deve tenere _lock.
-        # Conta entry uniche (host,port) per evitare doppi conteggi se
-        # add_many viene chiamato con un proxy gia' presente.
+        # Conta proxy con score > soglia dead E non in cooldown attivo (un
+        # proxy in cooldown e' temporaneamente non selezionabile da
+        # get_next(), quindi non deve gonfiare il conteggio: altrimenti
+        # size() resta > 0 mentre il pool e' di fatto inutilizzabile, e
+        # refill_blocking(force=False) salta il refill all'infinito (vedi
+        # rules/proxy.md, starvation con tutto il pool in cooldown).
+        # Caller deve tenere _lock. Conta entry uniche (host,port) per
+        # evitare doppi conteggi se add_many viene chiamato con un proxy
+        # gia' presente.
+        now = time.monotonic()
         seen: set[tuple[str, str]] = set()
         n = 0
         for p in self._proxies:
@@ -99,8 +109,11 @@ class ProxyPool:
             if key in seen:
                 continue
             seen.add(key)
-            if self._score.get(key, POOL_SCORE_INITIAL) > POOL_SCORE_DEAD_THRESHOLD:
-                n += 1
+            if self._score.get(key, POOL_SCORE_INITIAL) <= POOL_SCORE_DEAD_THRESHOLD:
+                continue
+            if self._cooldown_until.get(key, 0.0) > now:
+                continue
+            n += 1
         return n
 
     def get_next(self) -> dict | None:
@@ -337,7 +350,7 @@ class ProxyPool:
             return 0
         with self._refill_lock:
             if not force and self.size() > 0:
-                log.info("Pool: refill saltato, %d gia' disponibili", self.size())
+                log.debug("Pool: refill saltato, %d gia' disponibili", self.size())
                 return 0
             log.info("Pool: refill in corso (scraping + validazione, force=%s)...", force)
             try:

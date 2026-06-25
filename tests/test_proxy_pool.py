@@ -208,14 +208,42 @@ def test_cooldown_excludes_proxy_until_it_expires():
     assert pool.get_next() == p
 
 
-def test_cooldown_does_not_change_score_or_alive_count():
+def test_cooldown_does_not_change_score_but_excludes_from_alive_count():
+    # Il cooldown non tocca lo score (la "buona reputazione" resta intatta),
+    # ma il proxy NON deve contare come vivo mentre e' a riposo: altrimenti
+    # size() resta > 0 anche se get_next() non ha nulla di selezionabile, e
+    # refill_blocking(force=False) salta il refill all'infinito (starvation).
     pool = ProxyPool()
     p = _proxy()
     pool.add_many([p])
     score_before = pool._score[(p["host"], p["port"])]
     pool.cooldown(p, seconds=10)
     assert pool._score[(p["host"], p["port"])] == score_before
+    assert pool.size() == 0
+
+
+def test_cooldown_proxy_counted_again_after_expiry():
+    pool = ProxyPool()
+    p = _proxy()
+    pool.add_many([p])
+    pool.cooldown(p, seconds=0.05)
+    assert pool.size() == 0
+    time.sleep(0.07)
     assert pool.size() == 1
+
+
+def test_refill_blocking_not_skipped_when_all_proxies_in_cooldown():
+    # Bug di starvation: con tutti i proxy in cooldown, size() deve essere
+    # ~0 cosi' refill_blocking(force=False) NON salta (altrimenti get_next()
+    # non ha nulla di selezionabile e il refill non scatta mai).
+    pool = ProxyPool(refill_fn=lambda: [_proxy("9.9.9.9")])
+    p1, p2 = _proxy("1.1.1.1"), _proxy("2.2.2.2")
+    pool.add_many([p1, p2])
+    pool.cooldown(p1, seconds=10)
+    pool.cooldown(p2, seconds=10)
+    added = pool.refill_blocking(force=False)
+    assert added == 1
+    assert pool.refill_count() == 1
 
 
 def test_cooldown_count_reflects_resting_proxies():
