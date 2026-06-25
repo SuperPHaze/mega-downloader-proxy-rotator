@@ -99,14 +99,20 @@ class ControlsBar(QWidget):
         self.chunk_size_combo.setToolTip(
             "Dimensione di ogni pezzo scaricato da un proxy diverso.\n"
             "Pezzi più piccoli = più resistenza ai proxy instabili,\n"
-            "più richieste HTTP al CDN Mega."
+            "più richieste HTTP al CDN Mega.\n"
+            "Tagli grandi (128/256 MB): adatti a file molto grandi su proxy buoni."
         )
-        for mb in (4, 8, 16, 32):
+        # Tagli grandi (128/256 MB) per file molto grandi su proxy buoni: con
+        # proxy lenti il watchdog per-segmento (PARALLEL_SEGMENT_ATTEMPT_MAX_DURATION_S
+        # = 180s, soglia 200 KB/s) può abortire il tentativo prima che il pezzo
+        # finisca, e un proxy che muore a metà pezzo spreca più byte. Restano
+        # opzioni a disposizione dell'utente; il default 32 MB non cambia.
+        for mb in (4, 8, 16, 32, 64, 128, 256):
             self.chunk_size_combo.addItem(f"{mb} MB", mb * 1024 * 1024)
         idx = self.chunk_size_combo.findData(PARALLEL_CHUNK_SIZE_MB * 1024 * 1024)
         if idx >= 0:
             self.chunk_size_combo.setCurrentIndex(idx)
-        self.chunk_size_combo.setFixedWidth(70)
+        self.chunk_size_combo.setFixedWidth(84)
 
         # Pulsante Impostazioni: apre il popup con i tre controlli.
         self._settings_btn = QPushButton("⚙  Impostazioni")

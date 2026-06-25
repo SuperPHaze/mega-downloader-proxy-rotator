@@ -9,6 +9,7 @@ All notable changes to this project. Format based on [Keep a Changelog](https://
 ### Added
 - **Proxy cooldown on Mega rate-limit (403/509)**: put to rest for `PROXY_COOLDOWN_SECONDS` (90s) instead of being discarded, to avoid draining the pool on long sessions.
 - Re-exposed the connections-per-file control in the Experimental Features tab (for testing).
+- Additional chunk sizes 64 / 128 / 256 MB in the size combo (default unchanged at 32 MB).
 
 ### Changed
 - **Larger proxy pool**: target alive proxies 80→200, validated candidates 1000→3000, refill thresholds 40/80→100/180 (consistent with the new target); added ~20 new HTTP/HTTPS sources. Initial/refill validation takes longer but runs in the background; the goal is to sustain long sessions with many connections without draining the pool.
