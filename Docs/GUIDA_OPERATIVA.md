@@ -130,6 +130,9 @@ I valori sotto sono i default di fabbrica; quelli regolabili sono indicati nelle
 | Durata massima per file | 60 min | configurabile; oltre il limite il file è abbandonato |
 | Tentativi falliti prima dell'abbandono | 15 | per singolo link, non si resetta tra cicli |
 | Refresh pool | ogni 30 s | refill se proxy vivi < 15 (si riarma a 30); refresh forzato oltre 5 min |
+| Target proxy vivi | 60 | la validazione si ferma in anticipo al raggiungimento; con i proxy gratuiti non è sempre raggiunto |
+| Candidati massimi alla validazione | 3000 | tetto per limitare la durata dell'avvio; scansiona prima lo stage 1, poi stage 2 fino al target |
+| Cooldown proxy rate-limit | 90 s | escluso dalla rotazione e dal conteggio "vivi" alla ricezione di 403/509 dal CDN; torna disponibile allo scadere |
 | Validità cache proxy | 6 ore | voci più vecchie scartate all'avvio |
 | Punteggio proxy | 0 / +5 / −10 / morto sotto −20 | iniziale / successo / fallimento / soglia |
 

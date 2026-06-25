@@ -43,7 +43,7 @@ A **Windows desktop app** (Python + PyQt6) that downloads files from Mega.nz by 
 
 ## 🧩 Features
 
-- Queue of **fixed-size fragments** (32 MB by default) pulled by 10 parallel HTTP Range connections (configurable), with up to 5 files at once.
+- Queue of **fixed-size fragments** (32 MB by default) pulled by 10 parallel HTTP Range connections, with support for multiple files at once (configurable; see the guide for parameters).
 - **Streaming decryption** to disk (constant RAM even for multi-GB files), `.part` pattern + atomic rename.
 - **Resume** of interrupted downloads and **restart** of failed/abandoned/cancelled ones (only the missing fragments are re-fetched).
 - **Configurable per-file time limit**; past the threshold the file is abandoned.
@@ -83,7 +83,7 @@ Headless CLI:
 .\venv\Scripts\python.exe -m tools.cli_download "https://mega.nz/file/..."
 ```
 
-> **A note on default values.** The program is tested on long sessions with the factory defaults. Changing the parameters (parallel downloads, connections per file, chunk size, per-chunk budget) may help in some scenarios and hurt in others, because the behaviour of free proxies is highly variable. Work is ongoing to improve throughput, proxy quality, and resilience on long sessions. For now it is recommended to keep **1 download at a time** and a **32 MB chunk size**.
+> We recommend keeping the default values (1 download, 32 MB chunk); for tuning see the [guide](Docs/OPERATING_GUIDE.md).
 
 ## ⚙️ How it works
 
@@ -98,9 +98,9 @@ Headless CLI:
 
 ## ⚠️ Known limitations
 
-- Free proxies have a high death rate (~70%): it's normal for validation to discard most of them.
+- Free proxies have a high death rate: it's normal for validation to discard most of them.
 - Speed depends on the proxies: typically from tens to a few hundred KB/s.
-- Mega may rate-limit the same file even from different IPs (403/509 from the CDN): the affected proxy goes into cooldown (90s) instead of being discarded.
+- Mega may rate-limit the same file even from different IPs (403/509 from the CDN): temporarily blocked proxies are put to rest and reused (details in the [guide](Docs/OPERATING_GUIDE.md)).
 - File MAC verification is not yet implemented (planned).
 
 ## 🛡️ Disclaimer

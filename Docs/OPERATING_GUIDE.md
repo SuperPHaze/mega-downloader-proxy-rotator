@@ -130,6 +130,9 @@ The values below are factory defaults; the configurable ones are noted according
 | Maximum duration per file | 60 min | configurable; beyond the limit the file is abandoned |
 | Failed attempts before abandoning | 15 | per individual link, does not reset between cycles |
 | Pool refresh | every 30 s | refill if alive proxies < 15 (re-arms at 30); forced refresh after 5 min |
+| Target alive proxies | 60 | validation stops early once reached; with free proxies it is not always achieved |
+| Maximum validation candidates | 3000 | cap to limit startup duration; scans stage 1 first, then stage 2 up to the target |
+| Rate-limit proxy cooldown | 90 s | excluded from rotation and from the "alive" count on 403/509 from the CDN; returns available when it expires |
 | Proxy cache validity | 6 hours | older entries discarded at startup |
 | Proxy score | 0 / +5 / −10 / dead below −20 | initial / success / failure / threshold |
 

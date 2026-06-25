@@ -43,7 +43,7 @@ App **desktop per Windows** (Python + PyQt6) che scarica file da Mega.nz instrad
 
 ## 🧩 Caratteristiche
 
-- Coda di **chunk a dimensione fissa** (default 32 MB, configurabile) da 10 connessioni HTTP Range parallele, fino a 5 file contemporaneamente (configurabile).
+- Coda di **chunk a dimensione fissa** (default 32 MB, configurabile) da 10 connessioni HTTP Range parallele, con supporto a più file contemporaneamente (configurabile; vedi la guida per i parametri).
 - **Decifratura in streaming** su disco (RAM costante anche su file da molti GB), pattern `.part` + rinomina atomica.
 - **Resume** dei download interrotti e **riavvio** di falliti/abbandonati/annullati (riprende solo i chunk mancanti).
 - **Limite di tempo per file** configurabile; oltre la soglia il file viene abbandonato.
@@ -83,7 +83,7 @@ CLI senza interfaccia:
 .\venv\Scripts\python.exe -m tools.cli_download "https://mega.nz/file/..."
 ```
 
-> **Nota sui valori predefiniti.** Il programma è collaudato su sessioni lunghe con i valori predefiniti impostati di serie. Modificare i parametri (download in parallelo, connessioni per file, dimensione del chunk, budget per pezzo) può portare benefici in alcuni scenari e penalizzare in altri, perché il comportamento dei proxy gratuiti è molto variabile. È in corso un lavoro per migliorare banda, qualità dei proxy e tenuta sulle sessioni lunghe. Per ora si consiglia di mantenere **1 download alla volta** e un **chunk da 32 MB**.
+> Si consiglia di lasciare i valori predefiniti (1 download, chunk da 32 MB); per la messa a punto vedi la [guida](Docs/GUIDA_OPERATIVA.md).
 
 ## ⚙️ Come funziona
 
@@ -98,9 +98,9 @@ CLI senza interfaccia:
 
 ## ⚠️ Limiti noti
 
-- I proxy gratuiti hanno mortalità elevata (~70%): è normale che la validazione ne scarti la maggior parte.
+- I proxy gratuiti hanno mortalità elevata: è normale che la validazione ne scarti la maggior parte.
 - La velocità dipende dai proxy: tipicamente da decine a poche centinaia di KB/s.
-- Mega può applicare rate-limit allo stesso file anche da IP diversi (403/509 dal CDN): il proxy colpito va in cooldown (90s) invece di essere scartato.
+- Mega può applicare rate-limit allo stesso file anche da IP diversi (403/509 dal CDN): i proxy temporaneamente bloccati vengono messi a riposo e riusati (dettagli nella [guida](Docs/GUIDA_OPERATIVA.md)).
 - Verifica MAC del file scaricato non ancora implementata (pianificata).
 
 ## 🛡️ Disclaimer

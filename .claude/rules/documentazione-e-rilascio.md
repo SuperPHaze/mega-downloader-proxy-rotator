@@ -10,6 +10,13 @@ Una modifica NON è "finita" finché codice e documentazione non sono allineati.
 - L'**italiano è la fonte** dei documenti; l'inglese si **rigenera col sync** (vedi `docs-i18n.md`),
   mai scritto a mano.
 
+## Regola sui numeri nei documenti
+I numeri vivono in `config.py` e, in prosa, nella tabella §11 della guida (`Docs/GUIDA_OPERATIVA.md`).
+README e sito **non** ripetono valori specifici di `config.py`, salvo i due numeri-vetrina concordati
+(**chunk 32 MB** e **10 connessioni per file**): per tutti gli altri rimandano alla guida.
+Le altre sezioni della guida possono citare numeri in prosa (è il documento tecnico), ma devono
+coincidere con `config.py` e con la tabella §11.
+
 ## A ogni modifica funzionale (feature o fix che cambia comportamento, parametri o UI)
 1. **CHANGELOG**: aggiungere la voce sotto `[Non rilasciato]` (Aggiunto/Modificato/Corretto) in `CHANGELOG.it.md`.
 2. **Valutare l'impatto** e aggiornare SOLO le fonti italiane toccate:
