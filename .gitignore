@@ -28,18 +28,8 @@ branding_logo.*
 # Cache pytest
 .pytest_cache/
 
-# Documentazione interna di sviluppo (non pubblicata)
-Docs/prompts/
-Docs/publishing/
-Docs/archivio/
-Docs/RELAZIONE_TECNICA.md
-Docs/scansione-concorrenti.md
-Docs/design-*.md
-Docs/*.docx
-ONBOARDING.md
-
 # Strumento interno di sincronizzazione traduzioni (lancia Claude Code)
 sync-docs.bat
 
-# Documentazione/note private di sviluppo (non pubblicata, esclusa da git)
-Docs/Doc.SoloSPH/
+# Privato di lavoro: tutto sotto MyDocs/ è escluso da git. Docs/ contiene solo documentazione pubblica.
+MyDocs/
