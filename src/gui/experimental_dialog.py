@@ -4,6 +4,7 @@
 # qui per permettere prove senza ricompilare i default di config.py.
 from __future__ import annotations
 
+from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QDialog,
     QHBoxLayout,
