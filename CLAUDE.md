@@ -21,7 +21,7 @@ src/
 │   ├── branding.py        # Branding (nome/acronimo/autore/nick/link/logo): default -> cache -> remoto
 │   └── icon_loader.py     # build_app_icon(): QIcon robusta .ico->fallback .png, mai null senza log
 ├── proxy/
-│   ├── sources.py         # 32 fonti pubbliche (4 html, 25 plain, 3 json/jsonl)
+│   ├── sources.py         # 52 fonti pubbliche (4 html, 45 plain, 3 json/jsonl)
 │   ├── scraper.py         # ProxyScraper.fetch_all() multi-source
 │   ├── validator.py       # 2-stage: stage1 alive + stage2 Mega
 │   ├── pool.py            # ProxyPool score-based round-robin; contatori di sessione per la GUI (discarded_count/refill_count/seconds_since_last_refill, alimentati da note_refill())

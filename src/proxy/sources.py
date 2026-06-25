@@ -1,5 +1,6 @@
 # Elenco delle fonti di proxy gratuiti supportate.
 # Per aggiungere una fonte: estendere PROXY_SOURCES e (se serve) un parser in scraper.py.
+# Oggi sono 52 fonti (4 html, 45 plain, 3 json/jsonl).
 #
 # Tipi (`kind`) supportati:
 #   - "html_table" : pagina HTML con tabella standard host/porta nelle prime due colonne.
@@ -199,5 +200,107 @@ PROXY_SOURCES = [
         "name": "fate0-proxylist",
         "url": "https://raw.githubusercontent.com/fate0/proxylist/master/proxy.list",
         "kind": "jsonl",
+    },
+
+    # --- Liste GitHub HTTP/HTTPS aggiuntive (ingrandimento pool 2026-06) ---
+    {
+        "name": "jetkai-https",
+        "url": "https://raw.githubusercontent.com/jetkai/proxy-list/main/online-proxies/txt/proxies-https.txt",
+        "kind": "plain_text",
+    },
+    {
+        "name": "shiftytr-https",
+        "url": "https://raw.githubusercontent.com/ShiftyTR/Proxy-List/master/https.txt",
+        "kind": "plain_text",
+    },
+    {
+        "name": "mmpx12-https",
+        "url": "https://raw.githubusercontent.com/mmpx12/proxy-list/master/https.txt",
+        "kind": "plain_text",
+    },
+    {
+        "name": "vakhov-https",
+        "url": "https://vakhov.github.io/fresh-proxy-list/https.txt",
+        "kind": "plain_text",
+    },
+    {
+        "name": "vpslab-http-all",
+        "url": "https://raw.githubusercontent.com/VPSLabCloud/VPSLab-Free-Proxy-List/main/http_all.txt",
+        "kind": "plain_text",
+    },
+    {
+        "name": "vpslab-http-ssl",
+        "url": "https://raw.githubusercontent.com/VPSLabCloud/VPSLab-Free-Proxy-List/main/http_ssl.txt",
+        "kind": "plain_text",
+    },
+    {
+        "name": "vpslab-http-elite",
+        "url": "https://raw.githubusercontent.com/VPSLabCloud/VPSLab-Free-Proxy-List/main/http_elite.txt",
+        "kind": "plain_text",
+    },
+    {
+        "name": "vmheaven-http",
+        "url": "https://raw.githubusercontent.com/vmheaven/VMHeaven-Free-Proxy-Updated/main/http.txt",
+        "kind": "plain_text",
+    },
+    {
+        "name": "vmheaven-https",
+        "url": "https://raw.githubusercontent.com/vmheaven/VMHeaven-Free-Proxy-Updated/main/https.txt",
+        "kind": "plain_text",
+    },
+    {
+        "name": "komutan234-http",
+        "url": "https://raw.githubusercontent.com/komutan234/Proxy-List-Free/main/proxies/http.txt",
+        "kind": "plain_text",
+    },
+    {
+        "name": "rdavydov-http",
+        "url": "https://raw.githubusercontent.com/rdavydov/proxy-list/main/proxies/http.txt",
+        "kind": "plain_text",
+    },
+    {
+        "name": "zevtyardt-http",
+        "url": "https://raw.githubusercontent.com/zevtyardt/proxy-list/main/http.txt",
+        "kind": "plain_text",
+    },
+    {
+        "name": "kangproxy-http",
+        "url": "https://raw.githubusercontent.com/officialputuid/KangProxy/master/http.txt",
+        "kind": "plain_text",
+    },
+    {
+        "name": "thordata-http",
+        "url": "https://raw.githubusercontent.com/Thordata/awesome-free-proxy-list/main/proxies/http.txt",
+        "kind": "plain_text",
+    },
+    {
+        "name": "thordata-https",
+        "url": "https://raw.githubusercontent.com/Thordata/awesome-free-proxy-list/main/proxies/https.txt",
+        "kind": "plain_text",
+    },
+    {
+        "name": "zaeem20-http",
+        "url": "https://raw.githubusercontent.com/Zaeem20/FREE_PROXIES_LIST/master/http.txt",
+        "kind": "plain_text",
+    },
+    {
+        "name": "zaeem20-https",
+        "url": "https://raw.githubusercontent.com/Zaeem20/FREE_PROXIES_LIST/master/https.txt",
+        "kind": "plain_text",
+    },
+    {
+        "name": "ercindedeoglu-http",
+        "url": "https://raw.githubusercontent.com/ErcinDedeoglu/proxies/main/http.txt",
+        "kind": "plain_text",
+    },
+    {
+        "name": "yemixzy-http",
+        "url": "https://raw.githubusercontent.com/yemixzy/proxy-list/main/proxies/http.txt",
+        "kind": "plain_text",
+    },
+    {
+        "name": "proxygenerator1-stable-http",
+        "url": "https://raw.githubusercontent.com/proxygenerator1/ProxyGenerator/main/Stable/http.txt",
+        "kind": "plain_text",
     },
 ]

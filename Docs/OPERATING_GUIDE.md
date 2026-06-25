@@ -36,7 +36,7 @@ Public proxy lists are large and largely made up of addresses that are no longer
 
 **Stage 2 — Mega reachability.** Survivors are tested, at moderate concurrency (60 workers) because Mega rate-limits, against the host of Mega's download API — the same one used by real link resolution, not the homepage. The success criterion is any HTTP response received from the host, even an application-level error: it means the round trip reached its destination. A stricter criterion would discard proxies that are perfectly valid for downloading.
 
-Validation stops early once the target number of alive proxies (80) is reached, and in any case never exceeds a candidate cap (1000), so startup doesn't turn into minutes of waiting.
+Validation stops early once the target number of alive proxies (200) is reached, and in any case never exceeds a candidate cap (3000), so startup doesn't turn into minutes of waiting.
 
 It is expected, and not a flaw, that out of hundreds or thousands of candidates only a few dozen survive: free proxies have a high mortality rate, on the order of 70%.
 
@@ -127,7 +127,7 @@ The values below are factory defaults; the configurable ones are noted according
 | Per-segment attempt budget | 180 s | absolute limit, independent of throughput |
 | Maximum duration per file | 60 min | configurable; beyond the limit the file is abandoned |
 | Failed attempts before abandoning | 15 | per individual link, does not reset between cycles |
-| Pool refresh | every 30 s | refill if alive proxies < 40 (re-arms at 80); forced refresh after 5 min |
+| Pool refresh | every 30 s | refill if alive proxies < 100 (re-arms at 180); forced refresh after 5 min |
 | Proxy cache validity | 6 hours | older entries discarded at startup |
 | Proxy score | 0 / +5 / −10 / dead below −20 | initial / success / failure / threshold |
 

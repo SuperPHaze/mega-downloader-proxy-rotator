@@ -72,7 +72,9 @@ USER_AGENT = (
 
 # Tetto massimo di proxy candidati da validare (i gratuiti sono migliaia,
 # validarli tutti significa minuti di attesa anche con 20 worker paralleli).
-MAX_PROXIES_TO_VALIDATE = 1000
+# Alzato a 3000 per reggere un pool vivo di 200 (vedi VALIDATOR_TARGET_ALIVE):
+# con mortalita' ~70% serve un bacino di candidati piu' largo.
+MAX_PROXIES_TO_VALIDATE = 3000
 
 # Validazione a due stadi.
 # Stage 1: "il proxy funziona?" — pre-filtro veloce su un endpoint di
@@ -104,7 +106,9 @@ VALIDATOR_STAGE2_URL = "https://g.api.mega.co.nz/cs"
 
 # Target proxy vivi: se raggiunto, la validazione si ferma in anticipo
 # (cancellando i future rimanenti). None = valida tutto.
-VALIDATOR_TARGET_ALIVE = 80
+# Alzato a 200 per reggere ore di download con molte connessioni parallele
+# senza svuotare il pool tra un refill e l'altro.
+VALIDATOR_TARGET_ALIVE = 200
 
 # DEPRECATO: alias retro-compatibile per VALIDATOR_STAGE2_WORKERS.
 # Codice nuovo deve usare VALIDATOR_STAGE2_WORKERS direttamente.
@@ -151,8 +155,11 @@ POOL_REFRESH_INTERVAL = 30          # secondi tra check
 # (osservato: 66 refill in una sessione, ~200 thread di picco -> access
 # violation nei thread di validazione). Con isteresi il refresher si "disarma"
 # dopo un refill e si riarma solo quando il pool torna sano (>= HIGH).
-POOL_REFRESH_THRESHOLD_LOW = 40     # armato + vivi < LOW -> refill, poi disarma
-POOL_REFRESH_THRESHOLD_HIGH = 80    # disarmato + vivi >= HIGH -> riarma
+# Soglie alzate in coerenza col nuovo target VALIDATOR_TARGET_ALIVE=200: LOW e
+# HIGH restano entrambe sotto il target (LOW < HIGH < target), altrimenti il
+# refresher non si riarmerebbe mai (HIGH >= target = disarmato per sempre).
+POOL_REFRESH_THRESHOLD_LOW = 100    # armato + vivi < LOW -> refill, poi disarma
+POOL_REFRESH_THRESHOLD_HIGH = 180   # disarmato + vivi >= HIGH -> riarma
 POOL_REFRESH_MIN_INTERVAL_S = 45    # mai due refill a meno di N secondi l'uno dall'altro
 
 # DEPRECATO: alias retro-compatibile pre-isteresi. Codice nuovo deve usare

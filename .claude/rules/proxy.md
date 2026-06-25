@@ -5,7 +5,7 @@ paths: ["src/proxy/**/*.py"]
 # Regole per il layer proxy
 
 ## Aggiungere una nuova fonte
-1. Aggiungere una voce in `PROXY_SOURCES` (`src/proxy/sources.py`) con `name`, `url`, `kind`. Oggi sono 32 fonti registrate.
+1. Aggiungere una voce in `PROXY_SOURCES` (`src/proxy/sources.py`) con `name`, `url`, `kind`. Oggi sono 52 fonti registrate.
 2. `kind` supportati e dispatchati in `ProxyScraper._fetch_source`: `html_table`, `plain_text`, `geonode_json`, `databay_json`, `jsonl`. Se serve un nuovo `kind`, aggiungere un parser dedicato in `ProxyScraper` e wire-up nel dispatch.
 3. Il parser DEVE restituire `list[dict]` con chiavi esatte: `host` (str), `port` (str numerica), `protocol` (`"http"` / `"https"` / `"socks5"`).
 4. Mai sollevare eccezioni dal parser: una fonte rotta non deve bloccare le altre — già gestito a livello di `fetch_all`.
@@ -13,7 +13,7 @@ paths: ["src/proxy/**/*.py"]
 ## Validazione (a due stadi)
 - `ProxyValidator.validate_against_mega` esegue Stage 1 ("il proxy funziona?" su `VALIDATOR_STAGE1_URL` = `http://www.gstatic.com/generate_204`, `VALIDATOR_STAGE1_WORKERS=100`, timeout `VALIDATOR_STAGE1_TIMEOUT=4s`) poi Stage 2 ("il proxy raggiunge l'infrastruttura di download Mega?" su `VALIDATOR_STAGE2_URL` = host dell'API Mega `https://g.api.mega.co.nz/cs`, `VALIDATOR_STAGE2_WORKERS=60`, timeout `VALIDATOR_STAGE2_TIMEOUT=PROXY_TIMEOUT=8s`).
 - Solo i proxy che passano Stage 1 vengono testati allo Stage 2.
-- Stage 2 ha cortocircuito: se `VALIDATOR_TARGET_ALIVE` (default 80) viene raggiunto, i future rimanenti vengono cancellati.
+- Stage 2 ha cortocircuito: se `VALIDATOR_TARGET_ALIVE` (default 200) viene raggiunto, i future rimanenti vengono cancellati.
 - Stage 1: valido un 2xx/3xx (l'endpoint risponde 204 per design). Stage 2: valida QUALSIASI risposta HTTP ricevuta dall'host API (anche un errore applicativo Mega, es. `-2`), non necessariamente 200 — un criterio più severo scarterebbe falsi negativi (proxy che funzionano benissimo per il download ma a cui Mega risponde con un errore applicativo sulla GET di test, che non e' una vera chiamata `g=1`). Niente redirect seguiti in nessuno dei due stage (`allow_redirects=False`): vogliamo la risposta diretta dell'host testato, non quella di un eventuale hop successivo.
 - Stage 1 popola `proxy["latency_ms"]` su successo: il pool lo usa come tiebreaker fra proxy a parità di score.
 - `progress_callback(done, total, alive)` viene chiamato dopo ogni check (utile per status bar / progress bar). `return_stage_breakdown=True` restituisce dict `{stage1_alive, stage2_alive}` per telemetria per-fonte.
@@ -44,7 +44,7 @@ paths: ["src/proxy/**/*.py"]
 - `start(initial_force=True)` salta il primo wait e forza un refill immediato: usato dopo un hot-start da cache per rinforzare il pool con uno scrape completo.
 
 ## Cap di validazione
-- Cap di `MAX_PROXIES_TO_VALIDATE = 1000` (definito in `core/config.py`): le fonti aggregate ritornano decine di migliaia di entry, validarle tutte significa minuti di attesa. Se serve più copertura aumentare il cap, non rimuoverlo.
+- Cap di `MAX_PROXIES_TO_VALIDATE = 3000` (definito in `core/config.py`): le fonti aggregate ritornano decine di migliaia di entry, validarle tutte significa minuti di attesa. Se serve più copertura aumentare il cap, non rimuoverlo.
 
 ## Cose da NON fare
 - Non importare nulla da `src.gui` o `src.downloader` qui: il layer proxy deve restare riusabile in isolamento.

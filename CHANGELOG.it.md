@@ -4,6 +4,11 @@
 
 Tutte le modifiche rilevanti del progetto. Formato basato su [Keep a Changelog](https://keepachangelog.com/it/1.1.0/); versioni secondo [SemVer](https://semver.org/lang/it/).
 
+## [Non rilasciato]
+
+### Modificato
+- **Pool proxy ingrandito**: target proxy vivi 80→200, candidati validati 1000→3000, soglie di rifornimento 40/80→100/180 (coerenti col nuovo target); aggiunte ~20 nuove fonti HTTP/HTTPS. La validazione iniziale/di refill è più lunga ma gira in background; obiettivo: reggere sessioni lunghe con molte connessioni senza svuotare il pool.
+
 ## [1.10.0] — 2026-06-24
 
 ### Aggiunto

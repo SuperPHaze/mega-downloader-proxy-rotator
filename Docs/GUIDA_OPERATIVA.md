@@ -36,7 +36,7 @@ Le liste pubbliche di proxy sono ampie e in larga parte composte da indirizzi no
 
 **Stadio 2 — raggiungibilità di Mega.** I superstiti vengono provati, con concorrenza moderata (60 worker) perché Mega rate-limita, contro l'host dell'API di download di Mega — lo stesso usato dalla risoluzione reale dei link, non la homepage. Il criterio di successo è qualsiasi risposta HTTP ricevuta dall'host, anche un errore applicativo: significa che il round-trip è arrivato a destinazione. Un criterio più severo scarterebbe proxy perfettamente validi per il download.
 
-La validazione si arresta in anticipo al raggiungimento del numero obiettivo di proxy vivi (80) e comunque non supera un tetto di candidati (1000), per non trasformare l'avvio in minuti di attesa.
+La validazione si arresta in anticipo al raggiungimento del numero obiettivo di proxy vivi (200) e comunque non supera un tetto di candidati (3000), per non trasformare l'avvio in minuti di attesa.
 
 È atteso, e non è un difetto, che da centinaia o migliaia di candidati ne sopravvivano poche decine: i proxy gratuiti hanno una mortalità elevata, nell'ordine del 70%.
 
@@ -127,7 +127,7 @@ I valori sotto sono i default di fabbrica; quelli regolabili sono indicati nelle
 | Budget per tentativo di chunk | 180 s | limite assoluto, indipendente dal throughput |
 | Durata massima per file | 60 min | configurabile; oltre il limite il file è abbandonato |
 | Tentativi falliti prima dell'abbandono | 15 | per singolo link, non si resetta tra cicli |
-| Refresh pool | ogni 30 s | refill se proxy vivi < 40 (si riarma a 80); refresh forzato oltre 5 min |
+| Refresh pool | ogni 30 s | refill se proxy vivi < 100 (si riarma a 180); refresh forzato oltre 5 min |
 | Validità cache proxy | 6 ore | voci più vecchie scartate all'avvio |
 | Punteggio proxy | 0 / +5 / −10 / morto sotto −20 | iniziale / successo / fallimento / soglia |
 
