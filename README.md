@@ -11,7 +11,8 @@
 
 
 
-https://github.com/user-attachments/assets/b4e0839b-6545-4614-9437-22f5ee564264
+<img width="1917" height="1034" alt="Screenshot 2026-06-25 180048" src="https://github.com/user-attachments/assets/68ccf4d8-5a20-4316-a8e8-434ffceb2480" />
+
 
 
 
