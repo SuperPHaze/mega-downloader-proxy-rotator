@@ -4,7 +4,7 @@
 
 All notable changes to this project. Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [SemVer](https://semver.org/).
 
-## [Unreleased]
+## [1.11.0] — 2026-06-25
 
 ### Added
 - Added ~20 SOCKS4/SOCKS5 sources (TheSpeedX, monosans, ShiftyTR, jetkai, roosterkid, mmpx12, vakhov, zloi, rdavydov, Zaeem20, ErcinDedeoglu, Thordata, yemixzy, proxifly): more raw candidates to raise the number of proxies that hold up against Mega.
@@ -17,10 +17,12 @@ All notable changes to this project. Format based on [Keep a Changelog](https://
 - **Short description + "i" icon** on both Experimental Features controls (connections per file, per-chunk budget): the extended explanation opens on click, keeping the dialog compact.
 
 ### Changed
-- **Larger proxy pool**: validated candidates 1000→3000 (added ~20 new HTTP/HTTPS sources). Target alive proxies and refill thresholds set to realistic values (see Fixed entry below) consistent with the actual yield of validation against Mega, not an unreachable target in the hundreds.
+- **Larger proxy pool**: increased the number of validated candidates to **3000** (added ~20 new HTTP/HTTPS sources). The target of alive proxies has been set to **60**, and the refill thresholds to **15/30** — realistic values for validation against Mega.
+- The default chunk size is **32 MB**, and parallel connections per file are **10**.
+- The cooldown for proxies that hit a Mega rate-limit (403/509) is **90 seconds**.
 
 ### Fixed
-- **Pool starvation**: a proxy in cooldown (403/509 rate-limit) still counted as "alive", so when almost the whole pool went into cooldown together `size()` stayed > 0 and `refill_blocking()` kept being skipped forever while `get_next()` had nothing left to select, pinning the pool at 1-2 proxies. A proxy in cooldown no longer counts as alive until it expires. Target alive proxies and refill thresholds brought back to realistic values (60 target alive, 15/30 thresholds) consistent with the actual yield of validation against Mega (~30-40 typical alive even from thousands of candidates); the "refill skipped" log noise reduced to DEBUG.
+- **Pool starvation**: fixed an issue where a proxy in cooldown (403/509 rate-limit) still counted as "alive", so when almost the whole pool went into cooldown together `size()` stayed > 0 and `refill_blocking()` kept being skipped forever while `get_next()` had nothing left to select, pinning the pool at 1-2 proxies. A proxy in cooldown no longer counts as alive until it expires.
 - The `hookzof-socks5` source was treated as http, now correctly SOCKS5.
 
 ## [1.10.0] — 2026-06-24

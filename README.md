@@ -18,7 +18,7 @@
 
 
 
-![version](https://img.shields.io/badge/version-1.10.0-blue)
+![version](https://img.shields.io/badge/version-1.11.0-blue)
 ![python](https://img.shields.io/badge/python-3.11%E2%80%933.14-blue)
 ![platform](https://img.shields.io/badge/platform-Windows%2010%2F11-lightgrey)
 ![gui](https://img.shields.io/badge/GUI-PyQt6-green)
@@ -37,7 +37,7 @@ A **Windows desktop app** (Python + PyQt6) that downloads files from Mega.nz by 
 ## ✨ What makes it different
 
 - **Built for Mega** — public-link resolution and AES decryption are built in (no dependency on `mega.py`).
-- **Validated, scored pool of free proxies** — scraped from dozens of sources, two-stage validation, per-proxy reputation, on-disk cache, background regeneration.
+- **Validated, scored pool of free proxies** — scraped from dozens of sources (around 70), two-stage validation, per-proxy reputation, on-disk cache, background regeneration.
 - **A different proxy for every fragment** — rotation is per-fragment, not per-file: if a proxy dies, you lose at most one fragment.
 - **Granular resume** — completed fragments survive crashes, proxy changes, and changes to the number of connections.
 
@@ -82,6 +82,8 @@ Headless CLI:
 ```powershell
 .\venv\Scripts\python.exe -m tools.cli_download "https://mega.nz/file/..."
 ```
+
+> **A note on default values.** The program is tested on long sessions with the factory defaults. Changing the parameters (parallel downloads, connections per file, chunk size, per-chunk budget) may help in some scenarios and hurt in others, because the behaviour of free proxies is highly variable. Work is ongoing to improve throughput, proxy quality, and resilience on long sessions. For now it is recommended to keep **1 download at a time** and a **32 MB chunk size**.
 
 ## ⚙️ How it works
 

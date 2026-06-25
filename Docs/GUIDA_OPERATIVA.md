@@ -36,7 +36,7 @@ Le liste pubbliche di proxy sono ampie e in larga parte composte da indirizzi no
 
 **Stadio 2 — raggiungibilità di Mega.** I superstiti vengono provati, con concorrenza moderata (60 worker) perché Mega rate-limita, contro l'host dell'API di download di Mega — lo stesso usato dalla risoluzione reale dei link, non la homepage. Il criterio di successo è qualsiasi risposta HTTP ricevuta dall'host, anche un errore applicativo: significa che il round-trip è arrivato a destinazione. Un criterio più severo scarterebbe proxy perfettamente validi per il download.
 
-La validazione si arresta in anticipo al raggiungimento del numero obiettivo di proxy vivi (200) e comunque non supera un tetto di candidati (3000), per non trasformare l'avvio in minuti di attesa.
+La validazione si arresta in anticipo al raggiungimento del numero obiettivo di proxy vivi (60) e comunque non supera un tetto di candidati (3000), per non trasformare l'avvio in minuti di attesa.
 
 È atteso, e non è un difetto, che da centinaia o migliaia di candidati ne sopravvivano poche decine: i proxy gratuiti hanno una mortalità elevata, nell'ordine del 70%.
 
@@ -64,6 +64,8 @@ La scrittura segue il pattern **`.part` + rename atomico**: il trasferimento avv
 
 Il pannello "Funzioni Sperimentali" espone due controlli, ciascuno con una breve descrizione e un'icona "i" che apre la spiegazione estesa: il numero di **connessioni per file** (quante parti dello stesso file scaricare in parallelo, ognuna su un proxy diverso; default 10) e il **budget per pezzo** (tempo massimo concesso a un proxy per completare un pezzo prima di cambiarlo; default 180 s, sezione 6), per fare prove senza ricompilare i default. La selezione dei proxy per throughput osservato resta invece interna (per riuso futuro) e non è configurabile dalla GUI.
 
+> **Nota sui valori predefiniti.** Il programma è collaudato su sessioni lunghe con i valori predefiniti impostati di serie. Modificare i parametri (download in parallelo, connessioni per file, dimensione del chunk, budget per pezzo) può portare benefici in alcuni scenari e penalizzare in altri, perché il comportamento dei proxy gratuiti è molto variabile. È in corso un lavoro per migliorare banda, qualità dei proxy e tenuta sulle sessioni lunghe. Per ora si consiglia di mantenere **1 download alla volta** e un **chunk da 32 MB**.
+
 ---
 
 ## 6. Watchdog e gestione dei fallimenti
@@ -84,7 +86,7 @@ I numerosi tentativi falliti visibili durante l'uso sono quindi un comportamento
 
 ## 7. Mantenimento del pool
 
-I proxy gratuiti si consumano: uno valido pochi minuti fa può non esserlo più. Se il programma usasse solo l'insieme raccolto all'avvio, finirebbe per restare a secco. Un **rifornitore in background** controlla a intervalli regolari (ogni 30 secondi) il numero di proxy vivi e, se scende sotto la soglia (100), avvia uno scrape e una validazione senza interrompere i download in corso. Per evitare raffiche di rifornimenti quando il pool oscilla appena intorno alla soglia, il rifornitore si "disarma" dopo ogni intervento e si riarma solo quando i proxy vivi tornano sopra una soglia più alta (180). Per intercettare il degrado silenzioso (proxy che rallentano progressivamente senza morire del tutto), forza comunque un rifornimento se l'ultimo è avvenuto da più di 5 minuti.
+I proxy gratuiti si consumano: uno valido pochi minuti fa può non esserlo più. Se il programma usasse solo l'insieme raccolto all'avvio, finirebbe per restare a secco. Un **rifornitore in background** controlla a intervalli regolari (ogni 30 secondi) il numero di proxy vivi e, se scende sotto la soglia (15), avvia uno scrape e una validazione senza interrompere i download in corso. Per evitare raffiche di rifornimenti quando il pool oscilla appena intorno alla soglia, il rifornitore si "disarma" dopo ogni intervento e si riarma solo quando i proxy vivi tornano sopra una soglia più alta (30). Per intercettare il degrado silenzioso (proxy che rallentano progressivamente senza morire del tutto), forza comunque un rifornimento se l'ultimo è avvenuto da più di 5 minuti.
 
 Se il pool si svuota in un momento critico, è il download stesso a richiedere un rifornimento e ad attendere il tempo necessario: in quei frangenti si può osservare una pausa, durante la quale il programma sta ricostruendo il pool prima di proseguire. Il tutto è automatico e non richiede intervento.
 
@@ -127,7 +129,7 @@ I valori sotto sono i default di fabbrica; quelli regolabili sono indicati nelle
 | Budget per tentativo di chunk | 180 s | configurabile (Funzioni Sperimentali); limite assoluto, indipendente dal throughput |
 | Durata massima per file | 60 min | configurabile; oltre il limite il file è abbandonato |
 | Tentativi falliti prima dell'abbandono | 15 | per singolo link, non si resetta tra cicli |
-| Refresh pool | ogni 30 s | refill se proxy vivi < 100 (si riarma a 180); refresh forzato oltre 5 min |
+| Refresh pool | ogni 30 s | refill se proxy vivi < 15 (si riarma a 30); refresh forzato oltre 5 min |
 | Validità cache proxy | 6 ore | voci più vecchie scartate all'avvio |
 | Punteggio proxy | 0 / +5 / −10 / morto sotto −20 | iniziale / successo / fallimento / soglia |
 

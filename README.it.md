@@ -18,7 +18,7 @@
 
 
 
-![version](https://img.shields.io/badge/version-1.10.0-blue)
+![version](https://img.shields.io/badge/version-1.11.0-blue)
 ![python](https://img.shields.io/badge/python-3.11%E2%80%933.14-blue)
 ![platform](https://img.shields.io/badge/platform-Windows%2010%2F11-lightgrey)
 ![gui](https://img.shields.io/badge/GUI-PyQt6-green)
@@ -37,7 +37,7 @@ App **desktop per Windows** (Python + PyQt6) che scarica file da Mega.nz instrad
 ## ✨ Perché è diversa
 
 - **Specifica per Mega** — resolve del link pubblico e decifratura AES integrati (nessuna dipendenza da `mega.py`).
-- **Pool di proxy gratuiti validato e con punteggio** — scraping da decine di fonti, validazione a due stadi, reputazione per proxy, cache su disco, rigenerazione in background.
+- **Pool di proxy gratuiti validato e con punteggio** — scraping da decine di fonti (circa 70), validazione a due stadi, reputazione per proxy, cache su disco, rigenerazione in background.
 - **Un proxy diverso per ogni chunk** — la rotazione è per-chunk, non per-file: se un proxy cade, perdi al massimo un chunk.
 - **Resume granulare** — i chunk completati sopravvivono a crash, cambio proxy e cambio numero di connessioni.
 
@@ -82,6 +82,8 @@ CLI senza interfaccia:
 ```powershell
 .\venv\Scripts\python.exe -m tools.cli_download "https://mega.nz/file/..."
 ```
+
+> **Nota sui valori predefiniti.** Il programma è collaudato su sessioni lunghe con i valori predefiniti impostati di serie. Modificare i parametri (download in parallelo, connessioni per file, dimensione del chunk, budget per pezzo) può portare benefici in alcuni scenari e penalizzare in altri, perché il comportamento dei proxy gratuiti è molto variabile. È in corso un lavoro per migliorare banda, qualità dei proxy e tenuta sulle sessioni lunghe. Per ora si consiglia di mantenere **1 download alla volta** e un **chunk da 32 MB**.
 
 ## ⚙️ Come funziona
 

@@ -41,5 +41,5 @@ ONBOARDING.md
 # Strumento interno di sincronizzazione traduzioni (lancia Claude Code)
 sync-docs.bat
 
-# Strumento interno di sincronizzazione traduzioni (lancia Claude Code)
-sync-docs.bat
+# Documentazione/note private di sviluppo (non pubblicata, esclusa da git)
+Docs/Doc.SoloSPH/

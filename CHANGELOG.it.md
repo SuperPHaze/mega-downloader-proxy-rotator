@@ -4,7 +4,7 @@
 
 Tutte le modifiche rilevanti del progetto. Formato basato su [Keep a Changelog](https://keepachangelog.com/it/1.1.0/); versioni secondo [SemVer](https://semver.org/lang/it/).
 
-## [Non rilasciato]
+## [1.11.0] — 2026-06-25
 
 ### Aggiunto
 - Aggiunte ~20 fonti SOCKS4/SOCKS5 (TheSpeedX, monosans, ShiftyTR, jetkai, roosterkid, mmpx12, vakhov, zloi, rdavydov, Zaeem20, ErcinDedeoglu, Thordata, yemixzy, proxifly): aumentano la massa di candidati per alzare il numero di proxy che reggono Mega.
@@ -17,10 +17,12 @@ Tutte le modifiche rilevanti del progetto. Formato basato su [Keep a Changelog](
 - **Descrizione breve + icona "i"** su entrambi i controlli del tab Funzioni Sperimentali (connessioni per file, budget per pezzo): la spiegazione estesa si apre al clic, senza appesantire il dialog.
 
 ### Modificato
-- **Pool proxy ingrandito**: candidati validati 1000→3000 (aggiunte ~20 nuove fonti HTTP/HTTPS). Target proxy vivi e soglie di rifornimento portati a valori realistici (vedi voce in Corretto sotto) coerenti con la resa reale della validazione verso Mega, non con un target a centinaia irraggiungibile.
+- **Pool proxy ingrandito**: aumentato il numero di candidati validati a **3000** (aggiunte ~20 nuove fonti HTTP/HTTPS). Il target di proxy vivi è stato fissato a **60**, e le soglie di rifornimento a **15/30**, valori realistici per la validazione contro Mega.
+- La dimensione di default di un chunk è ora **32 MB**, e le connessioni parallele per file sono **10**.
+- Il cooldown per i proxy che subiscono un rate-limit da Mega (403/509) è impostato a **90 secondi**.
 
 ### Corretto
-- **Starvation del pool**: un proxy in cooldown (rate-limit 403/509) contava ancora come "vivo", quindi quando quasi tutto il pool andava in cooldown insieme `size()` restava > 0 e `refill_blocking()` veniva saltato all'infinito mentre `get_next()` non aveva più nulla di selezionabile, inchiodando il pool a 1-2 proxy. Ora un proxy in cooldown non conta come vivo finché non scade. Target proxy vivi e soglie di rifornimento riportati a valori realistici (60 vivi target, soglie 15/30) coerenti con la resa reale della validazione verso Mega (~30-40 vivi tipici anche da migliaia di candidati); ridotto a DEBUG il rumore di log dei refill saltati.
+- **Starvation del pool**: risolto il problema per cui un proxy in cooldown (rate-limit 403/509) contava ancora come "vivo", quindi quando quasi tutto il pool andava in cooldown insieme `size()` restava > 0 e `refill_blocking()` veniva saltato all'infinito mentre `get_next()` non aveva più nulla di selezionabile, inchiodando il pool a 1-2 proxy. Ora un proxy in cooldown non conta come vivo finché non scade.
 - La fonte `hookzof-socks5` era trattata come http, ora correttamente SOCKS5.
 
 ## [1.10.0] — 2026-06-24
