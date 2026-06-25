@@ -106,7 +106,7 @@ Resume also covers involuntary interruptions (program closed, blackout, error). 
 
 ## 10. Output, history, and logs
 
-Downloaded files are saved in dedicated subfolders inside the project's `downloads` folder. All diagnostic/operational logs are collected in the project's `logs/` folder: the history of completed downloads (deduplicated by Mega handle, used to warn when a link already downloaded is re-entered), the log of abandoned links, per-source proxy metrics, a general technical activity log, and a universal structured log (`logs/events.jsonl`). They are not needed for normal use, but are available for diagnostics.
+Downloaded files are saved in dedicated subfolders inside the project's `downloads` folder. All diagnostic/operational logs are collected in the project's `logs/` folder: the history of completed downloads (deduplicated by Mega handle, used to warn when a link already downloaded is re-entered), the log of abandoned links, per-source proxy metrics, a general technical activity log, a universal structured log (`logs/events.jsonl`), and a raw capture of the entire terminal output of the current session (`logs/terminal-log.txt`, reset on every startup). They are not needed for normal use, but are available for diagnostics.
 
 A **passive diagnostics suite**, always on, complements these logs: native crash tracebacks, multi-thread exception capture, a periodic heartbeat with memory usage, and session start/clean-exit markers. In case of a crash, the command-line tool `tools/report.py` reads `logs/events.jsonl` and `logs/crash.log` and produces a readable HTML report in `logs/reports/`, useful for reconstructing what the program was doing shortly before the problem.
 

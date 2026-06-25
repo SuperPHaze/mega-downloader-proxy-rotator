@@ -109,6 +109,7 @@ package.ps1                # packaging: crea dist/MegaProxyRotator-X.Y.Z.zip
 - `setup_logging()` viene chiamato in `src/main.py` prima della creazione di `QApplication`; crea `logs/` se assente.
 - Hook globale `sys.excepthook` cattura le eccezioni non gestite nel thread principale.
 - Log dedicati JSONL in `logs/`: `failed_links.log` (link abbandonati), `download_history.log` (download completati, dedup per handle), `proxy_sources_stats.log` (survival per-fonte).
+- `logs/terminal-log.txt`: tee grezzo di stdout/stderr della sessione corrente (riazzerato a ogni avvio, mode `"w"`). Diagnostico, non strutturato: contiene le stesse righe viste a video (console handler del logging + eventuali print/tracce).
 - `tools/report.py` legge `logs/events.jsonl` + `logs/crash.log` (sola lettura) e genera un report HTML in `logs/reports/`.
 
 ## Setup ambiente (Windows + Python 3.11–3.14)

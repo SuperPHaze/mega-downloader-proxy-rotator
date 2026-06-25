@@ -7,6 +7,7 @@ Tutte le modifiche rilevanti del progetto. Formato basato su [Keep a Changelog](
 ## [Non rilasciato]
 
 ### Aggiunto
+- Cattura dell'intero output del terminale in `logs/terminal-log.txt` (riazzerato a ogni avvio), per diagnosi rapida e condivisione.
 - **Cooldown dei proxy su rate-limit Mega (403/509)**: messi a riposo per `PROXY_COOLDOWN_SECONDS` (90s) invece di essere scartati, per non svuotare il pool su sessioni lunghe.
 - Riesposto nel tab Funzioni Sperimentali il controllo delle connessioni per file (per test).
 - Tagli pezzo aggiuntivi 64 / 128 / 256 MB nella combo dimensione (default invariato a 32 MB).

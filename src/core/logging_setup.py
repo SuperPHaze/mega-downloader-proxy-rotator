@@ -12,10 +12,11 @@ from datetime import datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-from src.core.config import EVENTS_LOG, EVENTS_LOG_BACKUPS, EVENTS_LOG_MAX_BYTES, LOGS_DIR
+from src.core.config import EVENTS_LOG, EVENTS_LOG_BACKUPS, EVENTS_LOG_MAX_BYTES, LOGS_DIR, TERMINAL_LOG
 
 _LOG_FILE = LOGS_DIR / "app.log"
 _CRASH_LOG_FILE = LOGS_DIR / "crash.log"
+_TERMINAL_LOG_FILE = LOGS_DIR / TERMINAL_LOG
 _FORMAT = "%(asctime)s [%(levelname)s] %(threadName)s %(name)s: %(message)s"
 _initialized = False
 
@@ -70,6 +71,60 @@ class JsonLinesFormatter(logging.Formatter):
 # ci scrivono in piu' un estratto leggibile delle eccezioni Python fatali.
 _crash_file_handle = None
 
+# Handle di terminal-log.txt tenuto vivo a livello di modulo (come
+# _crash_file_handle) per non farlo garbage-collectare per tutta la sessione.
+_terminal_log_file_handle = None
+
+
+class _TeeStream:
+    """Sdoppia un flusso (stdout/stderr) su un file, oltre al flusso originale.
+
+    Gli attributi non definiti qui (isatty, fileno, encoding, ...) sono
+    delegati al flusso originale via __getattr__: librerie e Qt devono
+    vedere il flusso reale, non il tee. fileno() resta quello reale, quindi
+    l'output nativo C-level continua ad andare al terminale e non al file
+    (qui catturiamo solo il livello Python, sufficiente per i nostri log)."""
+
+    def __init__(self, stream, file):
+        self._stream = stream
+        self._file = file
+
+    def write(self, data):
+        self._stream.write(data)
+        try:
+            self._file.write(data)
+            self._file.flush()
+        except Exception:
+            pass  # un file rotto non deve uccidere l'app né l'output a video
+        return len(data)
+
+    def flush(self):
+        self._stream.flush()
+        try:
+            self._file.flush()
+        except Exception:
+            pass
+
+    def __getattr__(self, name):
+        return getattr(self._stream, name)
+
+
+def _install_terminal_tee() -> None:
+    """Sdoppia sys.stdout/sys.stderr su logs/terminal-log.txt (riazzerato a
+    ogni avvio). Se l'apertura del file fallisce, prosegue senza tee."""
+    global _terminal_log_file_handle
+    try:
+        _terminal_log_file_handle = open(
+            _TERMINAL_LOG_FILE, "w", encoding="utf-8", errors="replace", buffering=1,
+        )
+    except OSError:
+        logging.getLogger().warning(
+            "terminal-log.txt non apribile: cattura terminale disabilitata", exc_info=True,
+        )
+        return
+    sys.stdout = _TeeStream(sys.stdout, _terminal_log_file_handle)
+    sys.stderr = _TeeStream(sys.stderr, _terminal_log_file_handle)
+
 
 def crash_log_path() -> Path:
     return _CRASH_LOG_FILE
@@ -109,12 +164,15 @@ def setup_logging(level: int = logging.DEBUG) -> Path:
 
     LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
+    _install_terminal_tee()
+
     root = logging.getLogger()
     root.setLevel(level)
 
     fmt = logging.Formatter(_FORMAT, datefmt="%H:%M:%S")
 
-    # Console (stderr).
+    # Console (stderr): sys.stderr e' già sdoppiato da _install_terminal_tee(),
+    # quindi tutto cio' che passa di qui finisce anche in terminal-log.txt.
     ch = logging.StreamHandler(sys.stderr)
     ch.setLevel(level)
     ch.setFormatter(fmt)

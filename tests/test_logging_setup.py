@@ -27,3 +27,65 @@ def test_crash_log_path_is_writable():
     # modulo tiene un handle aperto e scrivibile.
     assert logging_setup._crash_file_handle is not None
     assert not logging_setup._crash_file_handle.closed
+
+
+class _FakeStream:
+    def __init__(self):
+        self.written = []
+
+    def write(self, data):
+        self.written.append(data)
+
+    def flush(self):
+        pass
+
+    def isatty(self):
+        return False
+
+
+class _FakeFile:
+    def __init__(self):
+        self.written = []
+        self.flushed = False
+
+    def write(self, data):
+        self.written.append(data)
+
+    def flush(self):
+        self.flushed = True
+
+
+class _BrokenFile:
+    def write(self, data):
+        raise OSError("disco pieno")
+
+    def flush(self):
+        raise OSError("disco pieno")
+
+
+def test_tee_stream_writes_to_both_stream_and_file():
+    stream = _FakeStream()
+    file = _FakeFile()
+    tee = logging_setup._TeeStream(stream, file)
+
+    tee.write("riga di log\n")
+
+    assert stream.written == ["riga di log\n"]
+    assert file.written == ["riga di log\n"]
+    assert file.flushed is True
+
+
+def test_tee_stream_write_does_not_raise_if_file_is_broken():
+    stream = _FakeStream()
+    tee = logging_setup._TeeStream(stream, _BrokenFile())
+
+    tee.write("riga di log\n")  # non deve sollevare
+
+    assert stream.written == ["riga di log\n"]
+
+
+def test_tee_stream_delegates_unknown_attributes_to_original_stream():
+    stream = _FakeStream()
+    tee = logging_setup._TeeStream(stream, _FakeFile())
+
+    assert tee.isatty() is False

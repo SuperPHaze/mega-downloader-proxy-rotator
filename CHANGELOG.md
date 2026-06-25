@@ -7,6 +7,7 @@ All notable changes to this project. Format based on [Keep a Changelog](https://
 ## [Unreleased]
 
 ### Added
+- Capture of the entire terminal output in `logs/terminal-log.txt` (reset on every startup), for quick diagnosis and sharing.
 - **Proxy cooldown on Mega rate-limit (403/509)**: put to rest for `PROXY_COOLDOWN_SECONDS` (90s) instead of being discarded, to avoid draining the pool on long sessions.
 - Re-exposed the connections-per-file control in the Experimental Features tab (for testing).
 - Additional chunk sizes 64 / 128 / 256 MB in the size combo (default unchanged at 32 MB).

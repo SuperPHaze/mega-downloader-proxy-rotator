@@ -249,6 +249,11 @@ SOURCES_STATS_LOG = "proxy_sources_stats.log"
 SOURCES_STATS_LOG_MAX_BYTES = 2_000_000
 SOURCES_STATS_LOG_BACKUPS = 3
 
+# Cattura grezza di tutto l'output del terminale (stdout+stderr) della sessione
+# corrente. Riazzerato a ogni avvio (mode "w"): contiene solo l'ultima sessione.
+# Diagnostico/condivisibile: NON è il log strutturato (vedi events.jsonl).
+TERMINAL_LOG = "terminal-log.txt"
+
 # Pool a punteggio reputazionale.
 # Ogni successo alza il punteggio, ogni fallimento lo abbassa. Un proxy
 # sotto SCORE_DEAD_THRESHOLD è considerato morto ma viene riabilitato al
