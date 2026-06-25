@@ -1,4 +1,6 @@
 # Test puri per ProxyPool: scoring, esclusione "morti", dedup. Nessuna rete.
+import time
+
 from src.core.config import (
     POOL_SCORE_DEAD_THRESHOLD,
     POOL_SCORE_INITIAL,
@@ -192,6 +194,41 @@ def test_refill_blocking_skip_branch_does_not_call_note_refill():
     pool.add_many([_proxy("9.9.9.9")])  # pool non vuoto
     pool.refill_blocking(force=False)  # skip: size() > 0
     assert pool.refill_count() == 0
+
+
+# ---- Cooldown (rate-limit 403/509 dal CDN Mega) --------------------------
+
+def test_cooldown_excludes_proxy_until_it_expires():
+    pool = ProxyPool()
+    p = _proxy()
+    pool.add_many([p])
+    pool.cooldown(p, seconds=0.05)
+    assert pool.get_next() is None
+    time.sleep(0.07)
+    assert pool.get_next() == p
+
+
+def test_cooldown_does_not_change_score_or_alive_count():
+    pool = ProxyPool()
+    p = _proxy()
+    pool.add_many([p])
+    score_before = pool._score[(p["host"], p["port"])]
+    pool.cooldown(p, seconds=10)
+    assert pool._score[(p["host"], p["port"])] == score_before
+    assert pool.size() == 1
+
+
+def test_cooldown_count_reflects_resting_proxies():
+    pool = ProxyPool()
+    p1, p2 = _proxy("1.1.1.1"), _proxy("2.2.2.2")
+    pool.add_many([p1, p2])
+    assert pool.cooldown_count() == 0
+    pool.cooldown(p1, seconds=10)
+    assert pool.cooldown_count() == 1
+    pool.cooldown(p2, seconds=0.05)
+    assert pool.cooldown_count() == 2
+    time.sleep(0.07)
+    assert pool.cooldown_count() == 1
 
 
 def test_throughput_mode_prefers_fast_proxies_with_rotation():

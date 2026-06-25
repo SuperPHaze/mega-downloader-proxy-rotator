@@ -261,6 +261,12 @@ POOL_SCORE_ON_FAILURE = -10
 POOL_SCORE_DEAD_THRESHOLD = -20
 POOL_SCORE_MAX = 100
 
+# Cooldown (secondi) per un proxy che ha ricevuto un rate-limit dal CDN Mega
+# (403/509): viene escluso dalla rotazione per questo tempo e poi torna
+# disponibile, invece di essere scartato definitivamente. Evita di svuotare il
+# pool su sessioni lunghe (il 403/509 è temporaneo, non un proxy morto).
+PROXY_COOLDOWN_SECONDS = 90
+
 # Latency-aware selection.
 # Quando due proxy hanno score identico, viene scelto quello con latency_ms minore.
 # Se latency_ms è ignota (None), il proxy va in fondo alla coda di pari-score.

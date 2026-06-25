@@ -21,6 +21,7 @@ from src.core.config import (
     POOL_SCORE_ON_SUCCESS,
     POOL_THROUGHPUT_EMA_ALPHA,
     POOL_THROUGHPUT_TOPK_FACTOR,
+    PROXY_COOLDOWN_SECONDS,
 )
 
 log = logging.getLogger(__name__)
@@ -44,6 +45,12 @@ class ProxyPool:
         # misurato. Usata SOLO da get_next() quando selection_mode=="throughput";
         # in modalita' "score" (default) non influisce su nulla.
         self._throughput: dict[tuple[str, str], float] = {}
+        # Timestamp monotonico (time.monotonic()) fino al quale un proxy e'
+        # escluso da get_next() per rate-limit temporaneo del CDN Mega
+        # (403/509). NON tocca lo score: il proxy resta "vivo" (conta in
+        # size()/_count_alive_unlocked()), e' solo non selezionabile finche'
+        # il cooldown non scade. Vedi cooldown().
+        self._cooldown_until: dict[tuple[str, str], float] = {}
         self._index = 0
         self._lock = threading.Lock()
         self._refill_fn = refill_fn
@@ -100,7 +107,10 @@ class ProxyPool:
         with self._lock:
             if not self._proxies:
                 return None
-            # Filtra per score sopra soglia dead, dedup su (host,port).
+            # Filtra per score sopra soglia dead E non in cooldown attivo,
+            # dedup su (host,port). Vale per entrambi i rami sotto (score e
+            # throughput): unico punto in cui si costruisce eligible.
+            now = time.monotonic()
             seen: set[tuple[str, str]] = set()
             eligible: list[dict] = []
             for p in self._proxies:
@@ -108,8 +118,11 @@ class ProxyPool:
                 if key in seen:
                     continue
                 seen.add(key)
-                if self._score.get(key, POOL_SCORE_INITIAL) > POOL_SCORE_DEAD_THRESHOLD:
-                    eligible.append(p)
+                if self._score.get(key, POOL_SCORE_INITIAL) <= POOL_SCORE_DEAD_THRESHOLD:
+                    continue
+                if self._cooldown_until.get(key, 0.0) > now:
+                    continue
+                eligible.append(p)
             if not eligible:
                 return None
             if self.selection_mode == "throughput":
@@ -243,6 +256,23 @@ class ProxyPool:
             remaining = self._count_alive_unlocked()
         log.info("Pool: penalize hard %s:%s (vivi rimasti: %d)",
                  proxy["host"], proxy["port"], remaining)
+
+    def cooldown(self, proxy: dict, seconds: float | None = None) -> None:
+        """Mette il proxy a riposo per N secondi (default PROXY_COOLDOWN_SECONDS):
+        escluso da get_next finché non scade, poi torna selezionabile. NON tocca
+        lo score: il proxy resta 'vivo', è solo temporaneamente non utilizzabile."""
+        key = (proxy["host"], proxy["port"])
+        delay = seconds if seconds is not None else PROXY_COOLDOWN_SECONDS
+        with self._lock:
+            self._cooldown_until[key] = time.monotonic() + delay
+        log.info("Pool: cooldown %s:%s per %.0fs (rate-limit CDN)",
+                 proxy["host"], proxy["port"], delay)
+
+    def cooldown_count(self) -> int:
+        """Numero di proxy attualmente in cooldown (until > now)."""
+        now = time.monotonic()
+        with self._lock:
+            return sum(1 for until in self._cooldown_until.values() if until > now)
 
     def mark_dead(self, proxy: dict) -> None:
         """DEPRECATO: alias di penalize(proxy, hard=True). Nessun call-site

@@ -54,7 +54,7 @@ Tutti i segnali hanno `file_id: int` come primo parametro per permettere alla GU
   1. Throughput minimo `PARALLEL_MIN_THROUGHPUT_BPS` (default 200 KB/s) misurato su finestra `PARALLEL_THROUGHPUT_WINDOW` dopo un grace di `PARALLEL_THROUGHPUT_GRACE`. Sotto soglia → abort + mark dead.
   2. Budget temporale assoluto `PARALLEL_SEGMENT_ATTEMPT_MAX_DURATION_S` (default 180s): superato il budget, abort anche se il throughput è sopra soglia. Difesa contro proxy "appena sopra la riga" che non finiscono mai un file grande.
 - Gestione codici HTTP dal CDN Mega in `_download_segment`:
-  - **403 / 509**: rate-limit per IP del proxy. Marca dead, NO re-resolve URL (ritornerebbe lo stesso host), consuma il tentativo.
-  - **503**: marca dead + tenta re-resolve come fallback (può essere overload Mega o URL scaduta).
+  - **403 / 509**: rate-limit per IP del proxy, temporaneo. `pool.cooldown(proxy)` (NON `penalize`/mark dead: il proxy resta vivo, solo escluso dalla rotazione per `PROXY_COOLDOWN_SECONDS`), NO re-resolve URL (ritornerebbe lo stesso host), consuma il tentativo.
+  - **503**: marca dead (`penalize(hard=True)`) + tenta re-resolve come fallback (può essere overload Mega o URL scaduta).
   - Altri codici: warning standard, mark dead a fine loop come per gli errori di rete.
-- `cdn_error = True` significa "ho già gestito il proxy in questo branch": serve a evitare il doppio `mark_dead` nel cleanup finale.
+- `cdn_error = True` significa "ho già gestito il proxy in questo branch" (cooldown o mark dead): serve a evitare la doppia penalità nel cleanup finale.

@@ -447,10 +447,10 @@ class ParallelMegaDownloader:
                         )
                         log.warning(
                             "[parallel] chunk=%d 403/509 dal CDN -> proxy %s:%s "
-                            "marcato dead (rate-limit)",
+                            "in cooldown (rate-limit)",
                             chunk_idx, proxy["host"], proxy["port"],
                         )
-                        self.pool.penalize(proxy, hard=True)
+                        self.pool.cooldown(proxy)
                         cdn_error = True
                         backoff = min(PARALLEL_SEGMENT_BACKOFF_MAX, 2 ** min(attempt, 6))
                         if self._sleep_interruptible(backoff):
@@ -563,10 +563,10 @@ class ParallelMegaDownloader:
                 code = exc.response.status_code if exc.response is not None else 0
                 if code in (403, 509):
                     log.warning(
-                        "[parallel] chunk=%d HTTP %d -> proxy %s:%s marcato dead",
+                        "[parallel] chunk=%d HTTP %d -> proxy %s:%s in cooldown",
                         chunk_idx, code, proxy["host"], proxy["port"],
                     )
-                    self.pool.penalize(proxy, hard=True)
+                    self.pool.cooldown(proxy)
                     cdn_error = True
                 elif code == 503:
                     log.warning(

@@ -27,9 +27,10 @@ paths: ["src/proxy/**/*.py"]
 ## Pool (score-based)
 - `ProxyPool` è thread-safe (lock interno `_lock`). Tutti i metodi pubblici devono prenderlo.
 - Ogni proxy ha uno `score` (inizialmente `POOL_SCORE_INITIAL`): `record_success` lo incrementa, `record_failure` lo decrementa. Sotto `POOL_SCORE_DEAD_THRESHOLD` il proxy è escluso da `get_next()`.
-- `get_next()` è round-robin filtrato sui proxy con score sopra soglia. Se due hanno lo stesso score top, `POOL_LATENCY_TIEBREAKER` ordina per latency ascending (None in fondo). Se nessuno è eligibile ritorna `None` — il worker deve gestirlo via `refill_blocking()`.
+- `get_next()` è round-robin filtrato sui proxy con score sopra soglia E non in cooldown attivo. Se due hanno lo stesso score top, `POOL_LATENCY_TIEBREAKER` ordina per latency ascending (None in fondo). Se nessuno è eligibile ritorna `None` — il worker deve gestirlo via `refill_blocking()`.
 - `penalize(proxy, hard=False)` = `record_failure`. `penalize(proxy, hard=True)` forza lo score sotto soglia (equivalente al vecchio `mark_dead`).
 - `mark_dead(proxy)` esiste come alias deprecato di `penalize(hard=True)` per backward compatibility; codice nuovo deve usare `record_failure` / `penalize`.
+- `cooldown(proxy, seconds=None)` (default `PROXY_COOLDOWN_SECONDS`, 90s) esclude temporaneamente il proxy da `get_next()` SENZA toccare lo score: conta ancora come vivo in `size()`/`_count_alive_unlocked()`. Usato per i rate-limit transitori (403/509 dal CDN Mega) dove scartare il proxy sarebbe eccessivo. `cooldown_count()` espone quanti proxy sono attualmente a riposo.
 - `refill_blocking(force=False)` rifà scrape+validate via `refill_fn` (iniettato dall'`Orchestrator`). Serializzato da `_refill_lock`: se più worker arrivano insieme, solo il primo esegue il refill, gli altri lo saltano e trovano il pool già popolato. Con `force=True` aggiunge sempre anche se il pool ha già contenuto (usato dal refresher background).
 - `_refill_lock` ≠ `_lock`: il primo serializza l'operazione di refill (lunga, I/O), il secondo protegge `_proxies` / `_score` / `_latency` / `_index`. Non fonderli.
 - `export_for_cache(min_score=0)` produce uno snapshot serializzabile (host, port, protocol, score, latency_ms) per `proxy_cache.save()`; dedup su (host, port).
