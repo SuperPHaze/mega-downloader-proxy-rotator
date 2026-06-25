@@ -24,7 +24,7 @@ src/
 │   ├── sources.py         # 52 fonti pubbliche (4 html, 45 plain, 3 json/jsonl)
 │   ├── scraper.py         # ProxyScraper.fetch_all() multi-source
 │   ├── validator.py       # 2-stage: stage1 alive + stage2 Mega
-│   ├── pool.py            # ProxyPool score-based round-robin; contatori di sessione per la GUI (discarded_count/refill_count/seconds_since_last_refill, alimentati da note_refill())
+│   ├── pool.py            # ProxyPool score-based round-robin; cooldown() mette un proxy a riposo N secondi (rate-limit 403/509) senza toccare lo score (conta come vivo, non selezionabile finché non scade); contatori di sessione per la GUI (discarded_count/refill_count/seconds_since_last_refill, alimentati da note_refill())
 │   ├── refresher.py       # BackgroundPoolRefresher (thread daemon)
 │   └── proxy_cache.py     # cache proxy persistente JSON (hot-start)
 ├── downloader/
@@ -47,7 +47,7 @@ src/
     ├── stats_bar.py       # cruscotto "spinta" compatto: zona velocita' (RadialGauge con % del picco + picco/media/minima/ETA/tempo) e zona Download (totale + SegmentBar + conteggi), separate da una linea verticale interna
     ├── proxy_bar.py       # ProxyBar: zona proxy in stile "conservativo" — riga di card compatte (vivi/validazione/scartati/ricariche/ultimo refill), niente sparkline; popolata da pool_size_changed/setup_progress/proxy_stats dell'orchestrator
     ├── controls.py        # barra comandi: Avvia/Pausa/Annulla/Paralleli/Incolla/Tema/Info (in menu Impostazioni)
-    ├── experimental_dialog.py # ExperimentalFeaturesDialog: dalla 1.9.0 segnaposto vuoto (nessuna leva attiva in UI); motore (selection_mode/connections_per_file) invariato
+    ├── experimental_dialog.py # ExperimentalFeaturesDialog: spinbox "Connessioni per file" (riesposto, persiste in preferences.json); selezione per velocità resta ritirata dall'UI
     ├── preferences.py     # carica/salva preferenze utente (tema, check aggiornamenti all'avvio) in preferences.json
     ├── about_dialog.py    # AboutDialog: nome/acronimo/autore/nick/link/logo (da branding) + licenza + controllo aggiornamenti manuale
     ├── update_check.py    # UpdateCheckWorker(QThread): GET releases/latest GitHub, fuori dal thread GUI
@@ -86,7 +86,8 @@ package.ps1                # packaging: crea dist/MegaProxyRotator-X.Y.Z.zip
 ## Convenzioni
 - GUI in italiano; codice (variabili/funzioni/classi) in inglese.
 - Downloader: pattern `.part` + rename atomico. Si scarica SEMPRE su `<nome>.part` (sidecar `.progress.json` riferito al `.part`, include `chunk_size` per validare compatibilità del resume); `os.replace` sul nome finale solo a download completo e verificato. L'esistenza del nome finale è l'UNICO marker di completamento usato dal check di resume del worker. I `.part` non vanno mai cancellati al cleanup (servono al resume: i chunk completati restano scritti e vengono skippati al retry).
-- Pool scoring: i call-site devono registrare anche i successi (`record_success` su segmento completato / IP check ok) e usare `penalize(hard=True)` solo per 403/509/503 dal CDN; errori transitori (timeout, throughput basso, connection error) → `penalize(hard=False)`. Mai usare `mark_dead` (alias deprecato).
+- Pool scoring: i call-site devono registrare anche i successi (`record_success` su segmento completato / IP check ok) e usare `penalize(hard=True)` solo per 503 dal CDN; errori transitori (timeout, throughput basso, connection error) → `penalize(hard=False)`. Mai usare `mark_dead` (alias deprecato).
+- Pool cooldown vs penalize: il rate-limit 403/509 dal CDN Mega chiama `pool.cooldown(proxy)`, NON `penalize(hard=True)` — il proxy resta "vivo" (conta in `size()`) ma è escluso da `get_next()` per `PROXY_COOLDOWN_SECONDS` (90s), poi torna selezionabile. Lo score non viene toccato.
 - Sessioni: prima di creare un nuovo `DownloadOrchestrator` chiamare SEMPRE `shutdown()` su quello precedente (teardown worker/refresher/timer); se ritorna False non avviare e mantenere il riferimento (distruggere QThread vivi = crash).
 - Comunicazione GUI↔worker SOLO via PyQt signals (mai chiamate dirette dalla GUI ai worker).
 - `SessionState` è l'UNICA fonte di verità per pausa/annullo.
@@ -98,7 +99,7 @@ package.ps1                # packaging: crea dist/MegaProxyRotator-X.Y.Z.zip
 - I proxy gratuiti hanno tasso di mortalità ~70%: è normale che `ProxyValidator` scarti la maggioranza.
 - mega.py è stato vendorizzato: le primitive crypto e l'API pubblica sono in `src/downloader/mega_crypto.py` e `src/downloader/mega_api.py`. Nessuna dipendenza esterna `mega.py`, nessun conflitto tenacity/pathlib.
 - Mega può rate-limitare lo stesso file anche da IP diversi: è atteso, è proprio ciò che il test misura.
-- **403/509 dal CDN Mega indica rate-limit del proxy, NON scadenza URL**: un re-resolve dell'URL CDN ritorna sistematicamente lo stesso host. Il proxy va marcato dead; il re-resolve va riservato ai casi di URL effettivamente cambiata (es. 503 di overload).
+- **403/509 dal CDN Mega indica rate-limit del proxy, NON scadenza URL**: un re-resolve dell'URL CDN ritorna sistematicamente lo stesso host. Il proxy va messo in cooldown (`pool.cooldown`, temporaneo: torna in rotazione dopo `PROXY_COOLDOWN_SECONDS`), non marcato dead; il re-resolve va riservato ai casi di URL effettivamente cambiata (es. 503 di overload).
 - L'import di `pycryptodome` (pesante) avviene localmente dentro `MegaClient.download()` e `ParallelMegaDownloader.download()` per non rallentare l'avvio della GUI.
 
 ## Logging

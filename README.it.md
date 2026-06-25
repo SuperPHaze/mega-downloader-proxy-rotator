@@ -48,7 +48,7 @@ App **desktop per Windows** (Python + PyQt6) che scarica file da Mega.nz instrad
 - **Limite di tempo per file** configurabile; oltre la soglia il file viene abbandonato.
 - **Storico download** con avviso sui link già scaricati (dedup per handle Mega).
 - **Watchdog per chunk**: scarta i proxy troppo lenti o che non finiscono in tempo.
-- **Pannello "Funzioni sperimentali"** presente ma vuoto in questa versione (nessuna leva configurabile dall'interfaccia).
+- **Pannello "Funzioni sperimentali"** con il controllo delle connessioni per file (per test, senza ricompilare i default).
 - **Diagnostica crash passiva** sempre attiva (heartbeat di memoria, traceback multi-thread), log strutturato universale (`logs/events.jsonl`) e un generatore di report HTML (`tools/report.py`).
 - **Interfaccia** a schede con cruscotto compatto a 3 zone (velocità, download, proxy) — gauge radiale di velocità (% del picco di sessione), barra segmentata per lo stato dei download, card compatte per lo stato del pool proxy — filtri job a pulsanti, tema chiaro/scuro, pausa/ripresa/annullo globali e per singolo job.
 - **Modalità CLI** per macchine headless.
@@ -97,7 +97,7 @@ CLI senza interfaccia:
 
 - I proxy gratuiti hanno mortalità elevata (~70%): è normale che la validazione ne scarti la maggior parte.
 - La velocità dipende dai proxy: tipicamente da decine a poche centinaia di KB/s.
-- Mega può applicare rate-limit allo stesso file anche da IP diversi (403/509 dal CDN).
+- Mega può applicare rate-limit allo stesso file anche da IP diversi (403/509 dal CDN): il proxy colpito va in cooldown (90s) invece di essere scartato.
 - Verifica MAC del file scaricato non ancora implementata (pianificata).
 
 ## 🛡️ Disclaimer

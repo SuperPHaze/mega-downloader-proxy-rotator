@@ -62,7 +62,7 @@ Writing follows the **`.part` + atomic rename** pattern: the transfer always hap
 
 ## 5. Experimental features
 
-As of version 1.9.0, the "Experimental Features" panel is present in the interface but empty: no lever is configurable by the user anymore. The number of parallel HTTP Range connections per file and speed-based proxy selection remain available internally (for future reuse), but they are fixed to their default values and no longer exposed in the GUI.
+The "Experimental Features" panel exposes the number of **connections per file** (how many parts of the same file to download in parallel, each over a different proxy; default 10), to experiment without recompiling the defaults. Speed-based proxy selection remains internal (for future reuse) and is not configurable from the GUI.
 
 ---
 
@@ -149,5 +149,5 @@ Some behaviors may look like anomalies but are part of normal operation:
 
 - Free proxies have a high mortality rate (~70%): validation physiologically discards most of them.
 - Speed is determined by the proxies, not the program.
-- Mega can rate-limit the same file even from different IPs (403/509 from the CDN): this is the behavior the tool was originally built to measure.
+- Mega can rate-limit the same file even from different IPs (403/509 from the CDN): this is the behavior the tool was originally built to measure. The affected proxy is not discarded but put to rest for 90 seconds, then returns to rotation.
 - Integrity verification via the downloaded file's MAC is not yet implemented: it is a planned feature.

@@ -48,7 +48,7 @@ A **Windows desktop app** (Python + PyQt6) that downloads files from Mega.nz by 
 - **Configurable per-file time limit**; past the threshold the file is abandoned.
 - **Download history** with a warning for links already downloaded (deduplicated by Mega handle).
 - **Per-fragment watchdog**: drops proxies that are too slow or fail to finish in time.
-- **"Experimental Features" panel** present but empty in this version (no levers configurable from the interface).
+- **"Experimental Features" panel** with the connections-per-file control (for testing, without recompiling the defaults).
 - **Passive crash diagnostics**, always on (memory heartbeat, multi-thread tracebacks), universal structured logging (`logs/events.jsonl`), and an HTML report generator (`tools/report.py`).
 - **Tabbed interface** with a compact 3-zone dashboard (speed, downloads, proxy) — a radial speed gauge (% of session peak), a segmented bar for download status, compact cards for proxy pool status — button-based job filters, light/dark theme, global and per-job pause/resume/cancel.
 - **CLI mode** for headless machines.
@@ -97,7 +97,7 @@ Headless CLI:
 
 - Free proxies have a high death rate (~70%): it's normal for validation to discard most of them.
 - Speed depends on the proxies: typically from tens to a few hundred KB/s.
-- Mega may rate-limit the same file even from different IPs (403/509 from the CDN).
+- Mega may rate-limit the same file even from different IPs (403/509 from the CDN): the affected proxy goes into cooldown (90s) instead of being discarded.
 - File MAC verification is not yet implemented (planned).
 
 ## 🛡️ Disclaimer

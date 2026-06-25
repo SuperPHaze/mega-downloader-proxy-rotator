@@ -6,6 +6,8 @@ import json
 import logging
 from pathlib import Path
 
+from src.core.config import PARALLEL_CONNECTIONS_PER_FILE
+
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 _PREFS_PATH = _PROJECT_ROOT / "preferences.json"
 
@@ -42,3 +44,11 @@ def load_check_updates_on_startup() -> bool:
 
 def save_check_updates_on_startup(enabled: bool) -> None:
     _save_pref("check_updates_on_startup", enabled)
+
+
+def load_connections_per_file() -> int:
+    return int(_load_prefs().get("connections_per_file", PARALLEL_CONNECTIONS_PER_FILE))
+
+
+def save_connections_per_file(value: int) -> None:
+    _save_pref("connections_per_file", int(value))

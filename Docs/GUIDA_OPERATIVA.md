@@ -62,7 +62,7 @@ La scrittura segue il pattern **`.part` + rename atomico**: il trasferimento avv
 
 ## 5. Funzioni sperimentali
 
-A partire dalla versione 1.9.0 il pannello "Funzioni Sperimentali" è presente nell'interfaccia ma vuoto: nessuna leva è più configurabile dall'utente. Restano internamente disponibili (per riuso futuro) il numero di connessioni HTTP Range parallele per file e la selezione dei proxy per throughput osservato, ma sono fissati ai valori di default e non più esposti nella GUI.
+Il pannello "Funzioni Sperimentali" espone il numero di **connessioni per file** (quante parti dello stesso file scaricare in parallelo, ognuna su un proxy diverso; default 10), per fare prove senza ricompilare i default. La selezione dei proxy per throughput osservato resta invece interna (per riuso futuro) e non è configurabile dalla GUI.
 
 ---
 
@@ -149,5 +149,5 @@ Alcuni comportamenti possono sembrare anomalie ma sono parte del normale funzion
 
 - I proxy gratuiti hanno mortalità elevata (~70%): la validazione ne scarta fisiologicamente la maggior parte.
 - La velocità è determinata dai proxy, non dal programma.
-- Mega può applicare rate-limit allo stesso file anche da IP diversi (403/509 dal CDN): è il comportamento che il tool è nato per misurare.
+- Mega può applicare rate-limit allo stesso file anche da IP diversi (403/509 dal CDN): è il comportamento che il tool è nato per misurare. Il proxy colpito non viene scartato ma messo a riposo per 90 secondi, poi torna in rotazione.
 - La verifica dell'integrità tramite MAC del file scaricato non è ancora implementata: è una funzionalità pianificata.
