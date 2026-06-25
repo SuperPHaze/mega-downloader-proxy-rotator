@@ -10,6 +10,8 @@ Tutte le modifiche rilevanti del progetto. Formato basato su [Keep a Changelog](
 - **Cooldown dei proxy su rate-limit Mega (403/509)**: messi a riposo per `PROXY_COOLDOWN_SECONDS` (90s) invece di essere scartati, per non svuotare il pool su sessioni lunghe.
 - Riesposto nel tab Funzioni Sperimentali il controllo delle connessioni per file (per test).
 - Tagli pezzo aggiuntivi 64 / 128 / 256 MB nella combo dimensione (default invariato a 32 MB).
+- **Budget per pezzo configurabile** dal tab Funzioni Sperimentali (default invariato a 180 s): tempo massimo concesso a un proxy per completare un pezzo prima di cambiarlo.
+- **Descrizione breve + icona "i"** su entrambi i controlli del tab Funzioni Sperimentali (connessioni per file, budget per pezzo): la spiegazione estesa si apre al clic, senza appesantire il dialog.
 
 ### Modificato
 - **Pool proxy ingrandito**: target proxy vivi 80→200, candidati validati 1000→3000, soglie di rifornimento 40/80→100/180 (coerenti col nuovo target); aggiunte ~20 nuove fonti HTTP/HTTPS. La validazione iniziale/di refill è più lunga ma gira in background; obiettivo: reggere sessioni lunghe con molte connessioni senza svuotare il pool.

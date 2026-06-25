@@ -42,7 +42,7 @@ La validazione si arresta in anticipo al raggiungimento del numero obiettivo di 
 
 **Punteggio reputazionale.** Ogni proxy del pool ha un punteggio. Entra a 0; un successo lo incrementa (+5), un fallimento lo penalizza (−10), e sotto la soglia di −20 viene considerato morto e messo da parte (ma può rientrare a un refill successivo se ricompare nelle liste). La selezione è round-robin per punteggio; a parità di punteggio viene preferito il proxy con latenza inferiore.
 
-Le penalità distinguono la causa: un rifiuto esplicito del CDN di Mega per saturazione dell'IP (403, 509, 503) è una penalità "dura", mentre un errore transitorio (timeout, throughput insufficiente, errore di rete) è una penalità "morbida". I successi — un chunk completato o un controllo dell'IP di uscita andato a buon fine — vengono registrati e alzano il punteggio.
+Le penalità distinguono la causa: un rifiuto esplicito del CDN di Mega per saturazione dell'IP (403, 509) non penalizza il punteggio, ma metterebbe il proxy a riposo per un breve periodo (sezione 13); un overload del CDN (503) è invece una penalità "dura"; un errore transitorio (timeout, throughput insufficiente, errore di rete) è una penalità "morbida". I successi — un chunk completato o un controllo dell'IP di uscita andato a buon fine — vengono registrati e alzano il punteggio.
 
 ---
 
@@ -62,7 +62,7 @@ La scrittura segue il pattern **`.part` + rename atomico**: il trasferimento avv
 
 ## 5. Funzioni sperimentali
 
-Il pannello "Funzioni Sperimentali" espone il numero di **connessioni per file** (quante parti dello stesso file scaricare in parallelo, ognuna su un proxy diverso; default 10), per fare prove senza ricompilare i default. La selezione dei proxy per throughput osservato resta invece interna (per riuso futuro) e non è configurabile dalla GUI.
+Il pannello "Funzioni Sperimentali" espone due controlli, ciascuno con una breve descrizione e un'icona "i" che apre la spiegazione estesa: il numero di **connessioni per file** (quante parti dello stesso file scaricare in parallelo, ognuna su un proxy diverso; default 10) e il **budget per pezzo** (tempo massimo concesso a un proxy per completare un pezzo prima di cambiarlo; default 180 s, sezione 6), per fare prove senza ricompilare i default. La selezione dei proxy per throughput osservato resta invece interna (per riuso futuro) e non è configurabile dalla GUI.
 
 ---
 
@@ -72,7 +72,7 @@ I proxy gratuiti falliscono spesso e in modi diversi; il programma è costruito 
 
 **Soglia di throughput.** Se la velocità media negli ultimi 20 secondi scende sotto un minimo utile (200 KB/s), dopo un periodo di grazia iniziale di 15 secondi (per lasciare spazio al TCP slow-start), il tentativo viene abortito e il chunk riprovato con un altro proxy. È la difesa contro i proxy che trasmettono a singhiozzo: inviano qualche byte quanto basta a non far scattare il timeout di lettura, ma di fatto non concluderebbero mai.
 
-**Budget temporale assoluto.** Indipendentemente dal throughput istantaneo, un singolo tentativo non può durare più di 180 secondi. Evita di restare bloccati su un proxy che si mantiene appena sopra la soglia ma non finisce in tempi sensati.
+**Budget temporale assoluto.** Indipendentemente dal throughput istantaneo, un singolo tentativo non può durare più del budget configurato (default 180 secondi, regolabile dal pannello Funzioni Sperimentali — sezione 5). Evita di restare bloccati su un proxy che si mantiene appena sopra la soglia ma non finisce in tempi sensati.
 
 Quando un tentativo fallisce, il programma riprova lo stesso chunk con un proxy diverso, fino a un numero massimo di tentativi per chunk (8). Se un numero eccessivo di chunk esaurisce tutti i tentativi, il download viene interrotto in modo soft: i chunk già completati restano salvati nel sidecar e il file viene ripreso dal punto raggiunto.
 
@@ -84,7 +84,7 @@ I numerosi tentativi falliti visibili durante l'uso sono quindi un comportamento
 
 ## 7. Mantenimento del pool
 
-I proxy gratuiti si consumano: uno valido pochi minuti fa può non esserlo più. Se il programma usasse solo l'insieme raccolto all'avvio, finirebbe per restare a secco. Un **rifornitore in background** controlla a intervalli regolari (ogni 30 secondi) il numero di proxy vivi e, se scende sotto la soglia (40), avvia uno scrape e una validazione senza interrompere i download in corso. Per evitare raffiche di rifornimenti quando il pool oscilla appena intorno alla soglia, il rifornitore si "disarma" dopo ogni intervento e si riarma solo quando i proxy vivi tornano sopra una soglia più alta (80). Per intercettare il degrado silenzioso (proxy che rallentano progressivamente senza morire del tutto), forza comunque un rifornimento se l'ultimo è avvenuto da più di 5 minuti.
+I proxy gratuiti si consumano: uno valido pochi minuti fa può non esserlo più. Se il programma usasse solo l'insieme raccolto all'avvio, finirebbe per restare a secco. Un **rifornitore in background** controlla a intervalli regolari (ogni 30 secondi) il numero di proxy vivi e, se scende sotto la soglia (100), avvia uno scrape e una validazione senza interrompere i download in corso. Per evitare raffiche di rifornimenti quando il pool oscilla appena intorno alla soglia, il rifornitore si "disarma" dopo ogni intervento e si riarma solo quando i proxy vivi tornano sopra una soglia più alta (180). Per intercettare il degrado silenzioso (proxy che rallentano progressivamente senza morire del tutto), forza comunque un rifornimento se l'ultimo è avvenuto da più di 5 minuti.
 
 Se il pool si svuota in un momento critico, è il download stesso a richiedere un rifornimento e ad attendere il tempo necessario: in quei frangenti si può osservare una pausa, durante la quale il programma sta ricostruendo il pool prima di proseguire. Il tutto è automatico e non richiede intervento.
 
@@ -119,12 +119,12 @@ I valori sotto sono i default di fabbrica; quelli regolabili sono indicati nelle
 | Parametro | Default | Note |
 |---|---|---|
 | Dimensione chunk | 32 MB | configurabile; chunk più piccoli resistono meglio al cambio proxy ma generano più richieste |
-| Connessioni parallele per file | 10 | richieste HTTP Range simultanee, una per proxy |
+| Connessioni parallele per file | 10 | configurabile (Funzioni Sperimentali); richieste HTTP Range simultanee, una per proxy |
 | Download contemporanei | 1 | configurabile, range consigliato 1–5 |
 | Soglia minima di parallelizzazione | 1 MiB | sotto questa dimensione il file va in seriale |
 | Tentativi per chunk | 8 | prima di considerare il chunk fallito |
 | Throughput minimo | 200 KB/s | misurato su finestra di 20 s, dopo 15 s di grazia |
-| Budget per tentativo di chunk | 180 s | limite assoluto, indipendente dal throughput |
+| Budget per tentativo di chunk | 180 s | configurabile (Funzioni Sperimentali); limite assoluto, indipendente dal throughput |
 | Durata massima per file | 60 min | configurabile; oltre il limite il file è abbandonato |
 | Tentativi falliti prima dell'abbandono | 15 | per singolo link, non si resetta tra cicli |
 | Refresh pool | ogni 30 s | refill se proxy vivi < 100 (si riarma a 180); refresh forzato oltre 5 min |

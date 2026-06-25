@@ -42,7 +42,7 @@ It is expected, and not a flaw, that out of hundreds or thousands of candidates 
 
 **Reputation score.** Every proxy in the pool has a score. It starts at 0; a success increases it (+5), a failure penalizes it (−10), and below a threshold of −20 it is considered dead and set aside (but it can rejoin on a later refill if it reappears in the lists). Selection is round-robin by score; ties are broken in favor of the proxy with lower latency.
 
-Penalties distinguish the cause: an explicit rejection from Mega's CDN due to IP saturation (403, 509, 503) is a "hard" penalty, while a transient error (timeout, insufficient throughput, network error) is a "soft" penalty. Successes — a completed segment or a successful egress IP check — are recorded and raise the score.
+Penalties distinguish the cause: an explicit rejection from Mega's CDN due to IP saturation (403, 509) does not penalize the score, but rests the proxy for a short period instead (section 13); CDN overload (503) is instead a "hard" penalty; a transient error (timeout, insufficient throughput, network error) is a "soft" penalty. Successes — a completed segment or a successful egress IP check — are recorded and raise the score.
 
 ---
 
@@ -62,7 +62,7 @@ Writing follows the **`.part` + atomic rename** pattern: the transfer always hap
 
 ## 5. Experimental features
 
-The "Experimental Features" panel exposes the number of **connections per file** (how many parts of the same file to download in parallel, each over a different proxy; default 10), to experiment without recompiling the defaults. Speed-based proxy selection remains internal (for future reuse) and is not configurable from the GUI.
+The "Experimental Features" panel exposes two controls, each with a short description and an "i" icon that opens the extended explanation: the number of **connections per file** (how many parts of the same file to download in parallel, each over a different proxy; default 10) and the **per-chunk budget** (maximum time given to a proxy to finish a chunk before switching; default 180 s, section 6), to experiment without recompiling the defaults. Speed-based proxy selection remains internal (for future reuse) and is not configurable from the GUI.
 
 ---
 
@@ -72,7 +72,7 @@ Free proxies fail often and in different ways; the program is built to absorb th
 
 **Throughput threshold.** If the average speed over the last 20 seconds drops below a useful minimum (200 KB/s), after an initial grace period of 15 seconds (to leave room for TCP slow-start), the attempt is aborted and the chunk retried with another proxy. This is the defense against proxies that trickle data: they send just enough bytes not to trigger a read timeout, but would effectively never finish.
 
-**Absolute time budget.** Regardless of instantaneous throughput, a single attempt cannot last more than 180 seconds. This avoids getting stuck on a proxy that stays just above the threshold but doesn't finish in a reasonable time.
+**Absolute time budget.** Regardless of instantaneous throughput, a single attempt cannot last more than the configured budget (default 180 seconds, adjustable from the Experimental Features panel — section 5). This avoids getting stuck on a proxy that stays just above the threshold but doesn't finish in a reasonable time.
 
 When an attempt fails, the program retries the same chunk with a different proxy, up to a maximum number of attempts per segment (8). If too many chunks exhaust all their attempts, the download is stopped softly: chunks already completed remain saved in the sidecar and the file is resumed from where it left off.
 
@@ -84,7 +84,7 @@ The many failed attempts visible during use are therefore expected behavior, not
 
 ## 7. Pool maintenance
 
-Free proxies wear out: one that was valid a few minutes ago may no longer be. If the program only used the set collected at startup, it would eventually run dry. A **background resupplier** checks at regular intervals (every 30 seconds) how many proxies are alive and, if it drops below the threshold (40), starts a scrape and validation without interrupting downloads in progress. To avoid bursts of resupplies when the pool oscillates right around the threshold, the resupplier "disarms" itself after each run and only re-arms once alive proxies climb back above a higher threshold (80). To catch silent degradation (proxies progressively slowing down without fully dying), it also forces a resupply if the last one happened more than 5 minutes ago.
+Free proxies wear out: one that was valid a few minutes ago may no longer be. If the program only used the set collected at startup, it would eventually run dry. A **background resupplier** checks at regular intervals (every 30 seconds) how many proxies are alive and, if it drops below the threshold (100), starts a scrape and validation without interrupting downloads in progress. To avoid bursts of resupplies when the pool oscillates right around the threshold, the resupplier "disarms" itself after each run and only re-arms once alive proxies climb back above a higher threshold (180). To catch silent degradation (proxies progressively slowing down without fully dying), it also forces a resupply if the last one happened more than 5 minutes ago.
 
 If the pool empties at a critical moment, it's the download itself that requests an immediate resupply and waits as long as needed: at those times you may see a pause, during which the program is rebuilding the pool before continuing. All of this is automatic and requires no intervention.
 
@@ -119,12 +119,12 @@ The values below are factory defaults; the configurable ones are noted according
 | Parameter | Default | Notes |
 |---|---|---|
 | Chunk size | 32 MB | configurable; smaller chunks tolerate proxy changes better but generate more requests |
-| Parallel connections per file | 10 | simultaneous HTTP Range requests, one per proxy |
+| Parallel connections per file | 10 | configurable (Experimental Features); simultaneous HTTP Range requests, one per proxy |
 | Concurrent downloads | 1 | configurable, recommended range 1–5 |
 | Minimum parallelization threshold | 1 MiB | below this size the file is downloaded serially |
 | Attempts per segment | 8 | before considering the chunk failed |
 | Minimum throughput | 200 KB/s | measured over a 20 s window, after 15 s grace |
-| Per-segment attempt budget | 180 s | absolute limit, independent of throughput |
+| Per-segment attempt budget | 180 s | configurable (Experimental Features); absolute limit, independent of throughput |
 | Maximum duration per file | 60 min | configurable; beyond the limit the file is abandoned |
 | Failed attempts before abandoning | 15 | per individual link, does not reset between cycles |
 | Pool refresh | every 30 s | refill if alive proxies < 100 (re-arms at 180); forced refresh after 5 min |

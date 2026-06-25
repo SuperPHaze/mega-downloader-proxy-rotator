@@ -47,7 +47,7 @@ src/
     ├── stats_bar.py       # cruscotto "spinta" compatto: zona velocita' (RadialGauge con % del picco + picco/media/minima/ETA/tempo) e zona Download (totale + SegmentBar + conteggi), separate da una linea verticale interna
     ├── proxy_bar.py       # ProxyBar: zona proxy in stile "conservativo" — riga di card compatte (vivi/validazione/scartati/ricariche/ultimo refill), niente sparkline; popolata da pool_size_changed/setup_progress/proxy_stats dell'orchestrator
     ├── controls.py        # barra comandi: Avvia/Pausa/Annulla/Paralleli/Incolla/Tema/Info (in menu Impostazioni)
-    ├── experimental_dialog.py # ExperimentalFeaturesDialog: spinbox "Connessioni per file" (riesposto, persiste in preferences.json); selezione per velocità resta ritirata dall'UI
+    ├── experimental_dialog.py # ExperimentalFeaturesDialog: spinbox "Connessioni per file" e "Budget per pezzo (s)" (riesposti, persistono in preferences.json), ciascuno con descrizione breve inline e icona "i" (QToolButton) che apre la spiegazione estesa in QMessageBox; selezione per velocità resta ritirata dall'UI
     ├── preferences.py     # carica/salva preferenze utente (tema, check aggiornamenti all'avvio) in preferences.json
     ├── about_dialog.py    # AboutDialog: nome/acronimo/autore/nick/link/logo (da branding) + licenza + controllo aggiornamenti manuale
     ├── update_check.py    # UpdateCheckWorker(QThread): GET releases/latest GitHub, fuori dal thread GUI
@@ -78,7 +78,7 @@ package.ps1                # packaging: crea dist/MegaProxyRotator-X.Y.Z.zip
 2. `MainWindow._on_start` istanzia `DownloadOrchestrator(SessionState)` e gli passa la lista link.
 3. `Orchestrator.start()`: hot-start da `proxy_cache.load()` se disponibile, altrimenti `ProxyScraper.fetch_all()` → `ProxyValidator.validate_against_mega()` → `ProxyPool.add_many()`.
 4. Per ogni link viene avviato un `DownloadWorker(QThread)` che esegue `DOWNLOAD_CYCLES` cicli.
-5. A ogni ciclo: `ProxyPool.get_next()` → `MegaClient(proxy).get_egress_ip()` → se `PARALLEL_CONNECTIONS_PER_FILE > 1` (default 4) usa `ParallelMegaDownloader.download()`, altrimenti `MegaClient.download()`.
+5. A ogni ciclo: `ProxyPool.get_next()` → `MegaClient(proxy).get_egress_ip()` → se `PARALLEL_CONNECTIONS_PER_FILE > 1` (default 10) usa `ParallelMegaDownloader.download()`, altrimenti `MegaClient.download()`.
 6. Worker emette `progress / ip_logged / cycle_completed / failed / fatal_error / completed_info / all_done / cancelled / abandoned / throughput` → `JobsPanel` (via `JobsModel`). Su `completed_info` l'orchestrator persiste lo storico in `download_history.log` e lo riemette alla GUI per aggiornare nome file e path nelle card.
 7. Worker controlla `is_cancelled()` / `wait_if_paused()` su un `_EffectiveSessionState` che combina `SessionState` globale + flag locale (cancellazione per-job).
 8. Cancellazione per-job: utente clicca la X rossa in colonna 0 → `JobsPanel.cancel_job_requested` → `MainWindow` → `DownloadOrchestrator.cancel_job(file_id)`. Se in coda viene rimosso, se in corso `worker.request_cancel()` setta il flag locale e il worker esce al prossimo checkpoint emettendo `cancelled`. La cartella `downloads/<sha1>_<file_id>/` viene rimossa lato GUI dopo la terminazione del worker.
