@@ -32,6 +32,8 @@ Every download session is made up of three phases that operate in parallel once 
 
 Public proxy lists are large and largely made up of addresses that are no longer operational. Using them unfiltered would produce constant failures. The program therefore applies a **two-stage validation** (three with speed-based selection active), sized to quickly discard useless candidates and spend the more expensive test resources only on the promising ones.
 
+**Pre-filter for sources with metadata (ProxyScrape JSON).** Sources that provide pre-calculated metadata — in particular the three ProxyScrape JSON endpoints — include in their payload fields such as `uptime_percent` and `latency_ms` for each candidate. The scraper uses them as a pre-filter before validation, discarding candidates with `uptime < 50%` or `latency > 3000 ms`. This saves stage 1/2 time without replacing validation: proxies that pass the pre-filter are still validated normally.
+
 **Stage 1 — reachability.** A fast, high-concurrency pre-filter (up to 100 workers, 4 s timeout) against a highly reliable connectivity endpoint (Google's `generate_204`). It only verifies that the proxy can complete an HTTP round trip; it does not judge Mega reachability. It serves to eliminate dead proxies without wasting a test on stage 2's limited capacity.
 
 **Stage 2 — Mega reachability.** Survivors are tested, at moderate concurrency (60 workers) because Mega rate-limits, against the host of Mega's download API — the same one used by real link resolution, not the homepage. The success criterion is any HTTP response received from the host, even an application-level error: it means the round trip reached its destination. A stricter criterion would discard proxies that are perfectly valid for downloading.
@@ -44,7 +46,7 @@ It is expected, and not a flaw, that out of hundreds or thousands of candidates 
 
 **Reputation score.** Every proxy in the pool has a score. It starts at 0; a success increases it (+5), a failure penalizes it (−10), and below a threshold of −20 it is considered dead and set aside (but it can rejoin on a later refill if it reappears in the lists). Selection is round-robin by score; ties are broken in favor of the proxy with lower latency.
 
-Penalties distinguish the cause: an explicit rejection from Mega's CDN due to IP saturation (403, 509) does not penalize the score, but rests the proxy for a short period instead (section 13); CDN overload (503) is instead a "hard" penalty; a transient error (timeout, insufficient throughput, network error) is a "soft" penalty. Successes — a completed segment or a successful egress IP check — are recorded and raise the score.
+Penalties distinguish the cause: an explicit rejection from Mega's CDN due to IP saturation (403, 509) does not penalize the score, but rests the proxy for a short period instead (section 14); CDN overload (503) is instead a "hard" penalty; a transient error (timeout, insufficient throughput, network error) is a "soft" penalty. Successes — a completed segment or a successful egress IP check — are recorded and raise the score.
 
 ---
 
@@ -92,6 +94,8 @@ The many failed attempts visible during use are therefore expected behavior, not
 
 Free proxies wear out: one that was valid a few minutes ago may no longer be. If the program only used the set collected at startup, it would eventually run dry. A **background resupplier** checks at regular intervals (every 30 seconds) how many proxies are alive and, if it drops below the threshold (15), starts a scrape and validation without interrupting downloads in progress. To avoid bursts of resupplies when the pool oscillates right around the threshold, the resupplier "disarms" itself after each run and only re-arms once alive proxies climb back above a higher threshold (30). To catch silent degradation (proxies progressively slowing down without fully dying), it also forces a resupply if the last one happened more than 5 minutes ago.
 
+With **speed-based selection active**, these thresholds become adaptive: the low threshold is `max(10, active downloads × connections × 3)`, and the high threshold is double that. They update automatically every time a download starts or ends, so the reserve margin grows in proportion to the actual load. With speed-based selection off, behavior is identical to what is described above (static thresholds 15/30).
+
 If the pool empties at a critical moment, it's the download itself that requests an immediate resupply and waits as long as needed: at those times you may see a pause, during which the program is rebuilding the pool before continuing. All of this is automatic and requires no intervention.
 
 ---
@@ -110,7 +114,28 @@ Resume also covers involuntary interruptions (program closed, blackout, error). 
 
 ---
 
-## 10. Output, history, and logs
+## 10. Statistics dashboard
+
+The **Statistics** panel, visible below the main dashboard, aggregates session metrics in a single place designed for comparing configurations during tests.
+
+**What it shows:**
+
+- *Session*: active time since startup. The clock **auto-freezes** when all downloads finish (in any state), keeping the numbers stable for review. Starting a new session resets the clock.
+- *Downloaded volume*: cumulative total across all session jobs, including partial bytes from failed, cancelled, or abandoned jobs.
+- *Session speed*: two distinct formulas:
+  - **Effective throughput** = total volume / active time (measures how many bytes are actually delivered per unit of time);
+  - **Average per-download** = arithmetic average of the mean speeds of each finished job (indicates the typical quality of a single download).
+  - Session peak and minimum from 1 Hz sampling.
+- *Job counts*: totals by status and completion rate.
+- *Per-download detail*: one row per job with file name, volume, duration, and final average speed (or current speed for jobs still in progress).
+
+**"Copy summary" button**: produces a plain-text block in the clipboard with all the numbers listed above, ready to paste into a comparison note across tests with different configurations.
+
+Each job card in a terminal state also shows a summary line with the final average speed, downloaded volume, and duration of that individual download.
+
+---
+
+## 11. Output, history, and logs
 
 Downloaded files are saved in dedicated subfolders inside the project's `downloads` folder. All diagnostic/operational logs are collected in the project's `logs/` folder: the history of completed downloads (deduplicated by Mega handle, used to warn when a link already downloaded is re-entered), the log of abandoned links, per-source proxy metrics, a general technical activity log, a universal structured log (`logs/events.jsonl`), and a raw capture of the entire terminal output of the current session (`logs/terminal-log.txt`, reset on every startup). They are not needed for normal use, but are available for diagnostics.
 
@@ -118,7 +143,7 @@ A **passive diagnostics suite**, always on, complements these logs: native crash
 
 ---
 
-## 11. Key parameters and defaults
+## 12. Key parameters and defaults
 
 The values below are factory defaults; the configurable ones are noted accordingly.
 
@@ -134,8 +159,10 @@ The values below are factory defaults; the configurable ones are noted according
 | Maximum duration per file | 60 min | configurable; beyond the limit the file is abandoned |
 | Failed attempts before abandoning | 15 | per individual link, does not reset between cycles |
 | Pool refresh | every 30 s | refill if alive proxies < 15 (re-arms at 30); forced refresh after 5 min |
+| **Adaptive refill threshold** (with speed-based selection) | floor 10, ×3 | `LOW = max(10, active × conn × 3)`, `HIGH = 2 × LOW`. With flag OFF: static (15/30). |
 | Target alive proxies | 60 | validation stops early once reached; with free proxies it is not always achieved |
 | Maximum validation candidates | 3000 | cap to limit startup duration; scans stage 1 first, then stage 2 up to the target |
+| **Pre-filter for metadata sources** (ProxyScrape JSON) | uptime ≥ 50%, latency ≤ 3000 ms | applied by the scraper before validation; discards candidates the source flags as unreliable |
 | Rate-limit proxy cooldown | 90 s | excluded from rotation and from the "alive" count on 403/509 from the CDN; returns available when it expires |
 | Proxy cache validity | 6 hours | older entries discarded at startup |
 | Proxy score | 0 / +5 / −10 / dead below −20 | initial / success / failure / threshold |
@@ -151,7 +178,7 @@ The values below are factory defaults; the configurable ones are noted according
 
 ---
 
-## 12. Expected behaviors
+## 13. Expected behaviors
 
 Some behaviors may look like anomalies but are part of normal operation:
 
@@ -163,7 +190,7 @@ Some behaviors may look like anomalies but are part of normal operation:
 
 ---
 
-## 13. Known limitations
+## 14. Known limitations
 
 - Free proxies have a high mortality rate (~70%): validation physiologically discards most of them.
 - Speed is determined by the proxies, not the program.

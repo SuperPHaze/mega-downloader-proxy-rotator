@@ -11,11 +11,11 @@ Una modifica NON è "finita" finché codice e documentazione non sono allineati.
   mai scritto a mano.
 
 ## Regola sui numeri nei documenti
-I numeri vivono in `config.py` e, in prosa, nella tabella §11 della guida (`Docs/GUIDA_OPERATIVA.md`).
+I numeri vivono in `config.py` e, in prosa, nella tabella §12 della guida (`Docs/GUIDA_OPERATIVA.md`).
 README e sito **non** ripetono valori specifici di `config.py`, salvo i due numeri-vetrina concordati
 (**chunk 32 MB** e **10 connessioni per file**): per tutti gli altri rimandano alla guida.
 Le altre sezioni della guida possono citare numeri in prosa (è il documento tecnico), ma devono
-coincidere con `config.py` e con la tabella §11.
+coincidere con `config.py` e con la tabella §12.
 
 ## A ogni modifica funzionale (feature o fix che cambia comportamento, parametri o UI)
 1. **CHANGELOG**: aggiungere la voce sotto `[Non rilasciato]` (Aggiunto/Modificato/Corretto) in `CHANGELOG.it.md`.

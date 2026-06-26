@@ -33,6 +33,7 @@ from PyQt6.QtWidgets import (
 
 from src.core.failed_log import failed_log_path
 from src.gui import style as _style
+from src.gui.format_helpers import fmt_bytes as _fmt_bytes, fmt_speed as _fmt_speed_stat
 from src.gui.jobs_model import (
     Job,
     JobsModel,
@@ -238,6 +239,12 @@ class _JobCard(QFrame):
         self._progress.setFixedHeight(6)
         outer.addWidget(self._progress)
 
+        # --- Riga statistiche finali (visibile solo per job terminali con bytes) ---
+        self._terminal_stats_lbl = QLabel()
+        self._terminal_stats_lbl.setFont(QFont("Consolas", 9))
+        self._terminal_stats_lbl.setVisible(False)
+        outer.addWidget(self._terminal_stats_lbl)
+
         # --- Pannello dettagli (collassato di default) ---
         self._detail = QFrame()
         self._detail.setFrameShape(QFrame.Shape.NoFrame)
@@ -397,6 +404,24 @@ class _JobCard(QFrame):
             f"border-radius: 3px; }}"
             f"QProgressBar::chunk {{ background: {chunk_color}; border-radius: 3px; }}"
         )
+
+        # Riga statistiche finali (job terminato con byte scaricati).
+        _TERMINAL = {STATUS_COMPLETED, STATUS_FAILED, STATUS_CANCELLED, STATUS_ABANDONED}
+        if job.status in _TERMINAL and job.downloaded_bytes > 0:
+            vol_str = _fmt_bytes(job.downloaded_bytes)
+            dur = job.duration_s()
+            dur_str = f"{int(dur) // 60:02d}:{int(dur) % 60:02d}"
+            if job.average_bps_final is not None:
+                spd_str = f"media {_fmt_speed_stat(job.average_bps_final)}"
+            else:
+                spd_str = "—"
+            self._terminal_stats_lbl.setText(f"{spd_str} · {vol_str} · {dur_str}")
+            self._terminal_stats_lbl.setStyleSheet(
+                f"color: {p['text_dim']}; border: none; padding-left: 24px;"
+            )
+            self._terminal_stats_lbl.setVisible(True)
+        else:
+            self._terminal_stats_lbl.setVisible(False)
 
         # Pannello dettagli.
         self._ip_lbl.setText(f"IP corrente: {job.current_ip or '—'}")

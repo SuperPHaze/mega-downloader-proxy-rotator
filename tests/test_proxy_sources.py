@@ -3,7 +3,7 @@
 from src.proxy.sources import PROXY_SOURCES
 
 _VALID_PROTOCOLS = {"http", "socks4", "socks5"}
-_VALID_KINDS = {"html_table", "plain_text", "geonode_json", "jsonl", "databay_json"}
+_VALID_KINDS = {"html_table", "plain_text", "geonode_json", "jsonl", "databay_json", "proxyscrape_json"}
 
 
 def test_every_source_has_required_fields():
@@ -24,7 +24,11 @@ def test_source_names_are_unique():
 
 
 def test_socks_sources_are_all_plain_text():
-    socks_sources = [s for s in PROXY_SOURCES if s.get("protocol") in ("socks4", "socks5")]
+    # Le fonti proxyscrape_json possono avere protocollo socks: escluse dall'asserzione sul kind.
+    socks_sources = [
+        s for s in PROXY_SOURCES
+        if s.get("protocol") in ("socks4", "socks5") and s["kind"] != "proxyscrape_json"
+    ]
     assert len(socks_sources) >= 19  # 14 socks5 + 5 socks4 curate + hookzof preesistente
     assert all(s["kind"] == "plain_text" for s in socks_sources)
 

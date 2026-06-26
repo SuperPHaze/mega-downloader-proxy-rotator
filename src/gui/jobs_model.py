@@ -66,6 +66,9 @@ class Job:
     file_name: str = ""
     # Path di output (cartella del job).
     output_path: str = ""
+    # Velocita' media finale, congelata al passaggio in stato terminale.
+    # None finche' il job non e' terminato o se la durata e' 0.
+    average_bps_final: float | None = None
 
     def duration_s(self) -> float:
         if self.started_at is None:
@@ -231,6 +234,13 @@ class JobsModel(QAbstractTableModel):
         job.append_log("WARN", f"Tentativo {job.attempts}: {reason}")
         self._emit_changed(file_id, [COL_STATUS, COL_ATTEMPTS])
 
+    def _freeze_average(self, job: Job) -> None:
+        dur = job.duration_s()
+        if dur > 0 and job.downloaded_bytes > 0:
+            job.average_bps_final = job.downloaded_bytes / dur
+        else:
+            job.average_bps_final = None
+
     def mark_completed(self, file_id: int) -> None:
         job = self._job(file_id)
         if job is None:
@@ -239,6 +249,7 @@ class JobsModel(QAbstractTableModel):
         job.progress = 100
         job.completed_at = time.time()
         job.append_log("INFO", "Download completato")
+        self._freeze_average(job)
         self._emit_changed(file_id, [COL_STATUS, COL_PROGRESS, COL_DURATION])
         self.aggregates_changed.emit()
 
@@ -250,6 +261,7 @@ class JobsModel(QAbstractTableModel):
         job.last_error = reason
         job.completed_at = time.time()
         job.append_log("ERROR", f"Errore fatale: {reason}")
+        self._freeze_average(job)
         self._emit_changed(file_id, [COL_STATUS, COL_DURATION])
         self.aggregates_changed.emit()
 
@@ -262,6 +274,7 @@ class JobsModel(QAbstractTableModel):
         job.last_error = last_error
         job.completed_at = time.time()
         job.append_log("ERROR", f"Link abbandonato dopo {attempts} tentativi: {last_error}")
+        self._freeze_average(job)
         self._emit_changed(file_id, [COL_STATUS, COL_ATTEMPTS, COL_DURATION])
         self.aggregates_changed.emit()
 
@@ -276,6 +289,7 @@ class JobsModel(QAbstractTableModel):
         job.status = STATUS_CANCELLED
         job.completed_at = time.time()
         job.append_log("WARN", "Cancellato dall'utente")
+        self._freeze_average(job)
         self._emit_changed(file_id, [COL_STATUS, COL_DURATION])
         self.aggregates_changed.emit()
 
@@ -306,6 +320,7 @@ class JobsModel(QAbstractTableModel):
             if job.status in (STATUS_QUEUED, STATUS_RUNNING):
                 job.status = STATUS_CANCELLED
                 job.completed_at = time.time()
+                self._freeze_average(job)
                 self._emit_changed(job.file_id, [COL_STATUS, COL_DURATION])
                 changed = True
         if changed:
@@ -337,6 +352,7 @@ class JobsModel(QAbstractTableModel):
         job.speed = 0.0
         job.downloaded_bytes = 0
         job.total_bytes = 0
+        job.average_bps_final = None
         job.append_log("INFO", "----- Riavvio richiesto -----")
         self._emit_changed(
             file_id,
@@ -351,7 +367,7 @@ class JobsModel(QAbstractTableModel):
     def iter_restartable(self) -> Iterator[Job]:
         return (j for j in self._jobs if j.status in self._RESTARTABLE)
 
-    # ----- Aggregati per StatsBar -----
+    # ----- Aggregati per StatsBar e StatsPanel -----
     def aggregates(self) -> dict:
         agg: dict = {
             "total": len(self._jobs),
@@ -363,8 +379,14 @@ class JobsModel(QAbstractTableModel):
             "abandoned": 0,
             "total_speed": 0.0,
             "total_remaining_bytes": 0,
+            "total_downloaded_bytes": 0,
+            "terminated_count": 0,
+            "all_terminated": False,
+            "arithmetic_avg_bps": None,
         }
+        avg_bps_list: list[float] = []
         for j in self._jobs:
+            agg["total_downloaded_bytes"] += j.downloaded_bytes
             if j.status == STATUS_QUEUED:
                 agg["queued"] += 1
             elif j.status == STATUS_RUNNING:
@@ -374,10 +396,27 @@ class JobsModel(QAbstractTableModel):
                     agg["total_remaining_bytes"] += max(0, j.total_bytes - j.downloaded_bytes)
             elif j.status == STATUS_COMPLETED:
                 agg["completed"] += 1
+                agg["terminated_count"] += 1
+                if j.average_bps_final is not None:
+                    avg_bps_list.append(j.average_bps_final)
             elif j.status == STATUS_FAILED:
                 agg["failed"] += 1
+                agg["terminated_count"] += 1
+                if j.average_bps_final is not None:
+                    avg_bps_list.append(j.average_bps_final)
             elif j.status == STATUS_CANCELLED:
                 agg["cancelled"] += 1
+                agg["terminated_count"] += 1
+                if j.average_bps_final is not None:
+                    avg_bps_list.append(j.average_bps_final)
             elif j.status == STATUS_ABANDONED:
                 agg["abandoned"] += 1
+                agg["terminated_count"] += 1
+                if j.average_bps_final is not None:
+                    avg_bps_list.append(j.average_bps_final)
+        total = agg["total"]
+        terminated = agg["terminated_count"]
+        agg["all_terminated"] = total > 0 and terminated == total
+        if avg_bps_list:
+            agg["arithmetic_avg_bps"] = sum(avg_bps_list) / len(avg_bps_list)
         return agg

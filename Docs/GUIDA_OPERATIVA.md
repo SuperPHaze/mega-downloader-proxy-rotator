@@ -32,6 +32,8 @@ Ogni sessione di download si articola in tre fasi che operano in parallelo una v
 
 Le liste pubbliche di proxy sono ampie e in larga parte composte da indirizzi non più operativi. Usarle senza filtro produrrebbe fallimenti continui. Il programma applica quindi una **validazione a due stadi** (tre con la selezione per velocità attiva), dimensionata per scartare in fretta i candidati inutili e spendere le risorse di test più costose solo su quelli promettenti.
 
+**Pre-filtro fonti con metadati (ProxyScrape JSON).** Le fonti che forniscono metadati pre-calcolati — in particolare i tre endpoint ProxyScrape JSON — includono nel payload informazioni come `uptime_percent` e `latency_ms` per ogni candidato. Lo scraper li usa come pre-filtro prima della validazione, scartando i candidati con `uptime < 50%` o `latency > 3000 ms`. Risparmia tempo di stadio 1/2 senza sostituire la validazione: i proxy che passano il pre-filtro vengono comunque validati normalmente.
+
 **Stadio 1 — raggiungibilità.** Pre-filtro veloce e ad alta concorrenza (fino a 100 worker, timeout 4 s) contro un endpoint di connettività ad alta affidabilità (`generate_204` di Google). Verifica solo che il proxy regga un round-trip HTTP; non giudica Mega. Serve a eliminare i proxy morti senza sprecare un test sulla capacità limitata dello stadio 2.
 
 **Stadio 2 — raggiungibilità di Mega.** I superstiti vengono provati, con concorrenza moderata (60 worker) perché Mega rate-limita, contro l'host dell'API di download di Mega — lo stesso usato dalla risoluzione reale dei link, non la homepage. Il criterio di successo è qualsiasi risposta HTTP ricevuta dall'host, anche un errore applicativo: significa che il round-trip è arrivato a destinazione. Un criterio più severo scarterebbe proxy perfettamente validi per il download.
@@ -44,7 +46,7 @@ La validazione si arresta in anticipo al raggiungimento del numero obiettivo di 
 
 **Punteggio reputazionale.** Ogni proxy del pool ha un punteggio. Entra a 0; un successo lo incrementa (+5), un fallimento lo penalizza (−10), e sotto la soglia di −20 viene considerato morto e messo da parte (ma può rientrare a un refill successivo se ricompare nelle liste). La selezione è round-robin per punteggio; a parità di punteggio viene preferito il proxy con latenza inferiore.
 
-Le penalità distinguono la causa: un rifiuto esplicito del CDN di Mega per saturazione dell'IP (403, 509) non penalizza il punteggio, ma metterebbe il proxy a riposo per un breve periodo (sezione 13); un overload del CDN (503) è invece una penalità "dura"; un errore transitorio (timeout, throughput insufficiente, errore di rete) è una penalità "morbida". I successi — un chunk completato o un controllo dell'IP di uscita andato a buon fine — vengono registrati e alzano il punteggio.
+Le penalità distinguono la causa: un rifiuto esplicito del CDN di Mega per saturazione dell'IP (403, 509) non penalizza il punteggio, ma metterebbe il proxy a riposo per un breve periodo (sezione 14); un overload del CDN (503) è invece una penalità "dura"; un errore transitorio (timeout, throughput insufficiente, errore di rete) è una penalità "morbida". I successi — un chunk completato o un controllo dell'IP di uscita andato a buon fine — vengono registrati e alzano il punteggio.
 
 ---
 
@@ -92,6 +94,8 @@ I numerosi tentativi falliti visibili durante l'uso sono quindi un comportamento
 
 I proxy gratuiti si consumano: uno valido pochi minuti fa può non esserlo più. Se il programma usasse solo l'insieme raccolto all'avvio, finirebbe per restare a secco. Un **rifornitore in background** controlla a intervalli regolari (ogni 30 secondi) il numero di proxy vivi e, se scende sotto la soglia (15), avvia uno scrape e una validazione senza interrompere i download in corso. Per evitare raffiche di rifornimenti quando il pool oscilla appena intorno alla soglia, il rifornitore si "disarma" dopo ogni intervento e si riarma solo quando i proxy vivi tornano sopra una soglia più alta (30). Per intercettare il degrado silenzioso (proxy che rallentano progressivamente senza morire del tutto), forza comunque un rifornimento se l'ultimo è avvenuto da più di 5 minuti.
 
+Con la **selezione per velocità attiva**, le soglie diventano adattive: la soglia bassa è `max(10, download_attivi × connessioni × 3)`, quella alta è il doppio. Si aggiornano automaticamente ogni volta che parte o termina un download, così il margine di riserva cresce in proporzione al carico reale. Con la selezione disattivata il comportamento è identico a quello descritto sopra (soglie statiche 15/30).
+
 Se il pool si svuota in un momento critico, è il download stesso a richiedere un rifornimento e ad attendere il tempo necessario: in quei frangenti si può osservare una pausa, durante la quale il programma sta ricostruendo il pool prima di proseguire. Il tutto è automatico e non richiede intervento.
 
 ---
@@ -110,7 +114,28 @@ Il resume copre anche le interruzioni non volontarie (chiusura del programma, bl
 
 ---
 
-## 10. Output, storico e log
+## 10. Cruscotto Statistiche
+
+Il pannello **Statistiche**, visibile sotto il cruscotto principale, aggrega le metriche di sessione in un unico punto pensato per confrontare configurazioni durante i test.
+
+**Cosa mostra:**
+
+- *Sessione*: tempo attivo dall'avvio. Il clock si **congela automaticamente** quando tutti i download terminano (in qualsiasi stato), così i numeri restano stabili per la consultazione. Se si avvia una nuova sessione il clock riparte da zero.
+- *Volume scaricato*: totale cumulativo su tutti i job della sessione, inclusi i byte parziali di job falliti, annullati o abbandonati.
+- *Velocità di sessione*: due formule distinte:
+  - **Throughput effettivo** = volume totale / tempo attivo (misura quanti byte vengono effettivamente portati a casa per unità di tempo);
+  - **Media per-download** = media aritmetica delle velocità medie dei singoli job terminati (indica la qualità tipica di un singolo download).
+  - Picco e minima di sessione dal campionamento 1 Hz.
+- *Conteggi job*: totali per stato e tasso di completamento.
+- *Dettaglio per-download*: una riga per ogni job con nome file, volume, durata e velocità media finale (o velocità istantanea per i job in corso).
+
+**Pulsante "Copia riepilogo"**: produce un blocco di testo plain negli appunti con tutti i numeri sopra elencati, pronto da incollare in una nota di confronto fra test con configurazioni diverse.
+
+Ogni card di job in stato terminale mostra inoltre una riga di riepilogo con la velocità media finale, il volume scaricato e la durata del singolo download.
+
+---
+
+## 11. Output, storico e log
 
 I file scaricati vengono salvati in sottocartelle dedicate dentro la cartella `downloads` del progetto. Tutti i log diagnostici/operativi sono raccolti nella cartella `logs/` del progetto: lo storico dei download completati (con deduplica per handle Mega, usato per avvisare quando si reinserisce un link già scaricato), il registro dei link abbandonati, le metriche per-fonte dei proxy, un log tecnico generale dell'attività, un log strutturato universale (`logs/events.jsonl`) e una cattura grezza dell'intero output del terminale della sessione corrente (`logs/terminal-log.txt`, riazzerato a ogni avvio). Non servono per l'uso ordinario, ma sono disponibili per la diagnostica.
 
@@ -118,7 +143,7 @@ Una **suite di diagnostica passiva**, sempre attiva, integra questi log: traceba
 
 ---
 
-## 11. Parametri principali e default
+## 12. Parametri principali e default
 
 I valori sotto sono i default di fabbrica; quelli regolabili sono indicati nelle note.
 
@@ -134,8 +159,10 @@ I valori sotto sono i default di fabbrica; quelli regolabili sono indicati nelle
 | Durata massima per file | 60 min | configurabile; oltre il limite il file è abbandonato |
 | Tentativi falliti prima dell'abbandono | 15 | per singolo link, non si resetta tra cicli |
 | Refresh pool | ogni 30 s | refill se proxy vivi < 15 (si riarma a 30); refresh forzato oltre 5 min |
+| **Soglia refill adattiva** (con selezione per velocità) | floor 10, ×3 | `LOW = max(10, attivi × conn × 3)`, `HIGH = LOW × 2`. Con flag OFF resta statica (15/30). |
 | Target proxy vivi | 60 | la validazione si ferma in anticipo al raggiungimento; con i proxy gratuiti non è sempre raggiunto |
 | Candidati massimi alla validazione | 3000 | tetto per limitare la durata dell'avvio; scansiona prima lo stage 1, poi stage 2 fino al target |
+| **Pre-filtro fonti con metadati** (ProxyScrape JSON) | uptime ≥ 50%, latency ≤ 3000 ms | applicato dallo scraper prima della validazione; scarta i candidati che la fonte segnala come inaffidabili |
 | Cooldown proxy rate-limit | 90 s | escluso dalla rotazione e dal conteggio "vivi" alla ricezione di 403/509 dal CDN; torna disponibile allo scadere |
 | Validità cache proxy | 6 ore | voci più vecchie scartate all'avvio |
 | Punteggio proxy | 0 / +5 / −10 / morto sotto −20 | iniziale / successo / fallimento / soglia |
@@ -151,7 +178,7 @@ I valori sotto sono i default di fabbrica; quelli regolabili sono indicati nelle
 
 ---
 
-## 12. Comportamenti attesi
+## 13. Comportamenti attesi
 
 Alcuni comportamenti possono sembrare anomalie ma sono parte del normale funzionamento:
 
@@ -163,7 +190,7 @@ Alcuni comportamenti possono sembrare anomalie ma sono parte del normale funzion
 
 ---
 
-## 13. Limiti noti
+## 14. Limiti noti
 
 - I proxy gratuiti hanno mortalità elevata (~70%): la validazione ne scarta fisiologicamente la maggior parte.
 - La velocità è determinata dai proxy, non dal programma.

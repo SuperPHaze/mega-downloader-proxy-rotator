@@ -5,8 +5,8 @@ paths: ["src/proxy/**/*.py"]
 # Regole per il layer proxy
 
 ## Aggiungere una nuova fonte
-1. Aggiungere una voce in `PROXY_SOURCES` (`src/proxy/sources.py`) con `name`, `url`, `kind` e, se la fonte non è http, il campo opzionale `protocol` (`"socks4"`/`"socks5"`). Oggi sono 71 fonti registrate (51 http, 15 socks5, 5 socks4).
-2. `kind` supportati e dispatchati in `ProxyScraper._fetch_source`: `html_table`, `plain_text`, `geonode_json`, `databay_json`, `jsonl`. Se serve un nuovo `kind`, aggiungere un parser dedicato in `ProxyScraper` e wire-up nel dispatch.
+1. Aggiungere una voce in `PROXY_SOURCES` (`src/proxy/sources.py`) con `name`, `url`, `kind` e, se la fonte non è http, il campo opzionale `protocol` (`"socks4"`/`"socks5"`). Oggi sono 74 fonti registrate (51 http, 16 socks5, 6 socks4).
+2. `kind` supportati e dispatchati in `ProxyScraper._fetch_source`: `html_table`, `plain_text`, `geonode_json`, `databay_json`, `jsonl`, `proxyscrape_json`. Se serve un nuovo `kind`, aggiungere un parser dedicato in `ProxyScraper` e wire-up nel dispatch.
 3. Il parser DEVE restituire `list[dict]` con chiavi esatte: `host` (str), `port` (str numerica), `protocol` (sempre `"http"`: è un placeholder, `_fetch_source` lo sovrascrive col campo `protocol` della fonte — vedi punto 1 — quindi i parser non vanno toccati per supportare SOCKS).
 4. Mai sollevare eccezioni dal parser: una fonte rotta non deve bloccare le altre — già gestito a livello di `fetch_all`.
 

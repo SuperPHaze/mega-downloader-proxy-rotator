@@ -85,6 +85,17 @@ class BackgroundPoolRefresher:
             self.min_interval, self.max_interval, initial_force,
         )
 
+    def update_thresholds(self, low: int, high: int) -> None:
+        """Aggiorna le soglie di refill in base al carico attuale.
+
+        Chiamato dall'orchestrator quando cambia il numero di download attivi.
+        Thread-safe: in CPython l'assegnamento di int e' atomico (GIL), le
+        soglie vengono lette da _tick() sul thread daemon al prossimo ciclo.
+        """
+        self.threshold_low = low
+        self.threshold_high = high
+        log.info("Refresher: soglie aggiornate low=%d high=%d", low, high)
+
     def stop(self) -> None:
         self._stop.set()
         if self._thread is not None:

@@ -12,6 +12,8 @@ from PyQt6.QtCore import QObject, QThread, QTimer, pyqtSignal
 from PyQt6.QtWidgets import QApplication
 
 from src.core.config import (
+    ADAPTIVE_REFILL_FLOOR,
+    ADAPTIVE_REFILL_MULTIPLIER,
     MAX_CONCURRENT_DOWNLOADS,
     MAX_PROXIES_TO_VALIDATE,
     PARALLEL_CHUNK_SIZE_MB,
@@ -343,6 +345,12 @@ class DownloadOrchestrator(QObject):
         if self.connections_per_file is not None:
             self.pool.n_connections = max(1, int(self.connections_per_file))
 
+        # Soglie adattive iniziali (solo con speed selection attiva).
+        # A questo punto _active_count=0, quindi le soglie sono al floor (10/20).
+        if speed_selection_enabled:
+            low_init, high_init = self._compute_adaptive_thresholds()
+            self._refresher.update_thresholds(low_init, high_init)
+
         # Riga CONFIG a inizio sessione (vedi rules/logging.md): correla
         # config attiva <-> eventuale crash nei log raccolti dagli utenti.
         connessioni = self.connections_per_file or PARALLEL_CONNECTIONS_PER_FILE
@@ -355,7 +363,9 @@ class DownloadOrchestrator(QObject):
             speed_label = (
                 f"on (soglia {speed_selection_min_bps // 1024} KB/s, "
                 f"ammissione {SPEED_SELECTION_ADMISSION_BPS // 1024} KB/s, "
-                f"{SPEED_SELECTION_MAX_CANDIDATES} candidati, {connessioni} conn)"
+                f"{SPEED_SELECTION_MAX_CANDIDATES} candidati, {connessioni} conn, "
+                f"soglia_refill adattiva floor={ADAPTIVE_REFILL_FLOOR} "
+                f"{ADAPTIVE_REFILL_MULTIPLIER}x attuale low={low_init} high={high_init})"
             )
         else:
             speed_label = "off"
@@ -561,10 +571,29 @@ class DownloadOrchestrator(QObject):
         worker.abandoned.connect(self._on_worker_abandoned)
         self._workers.append(worker)
         self._active_count += 1
+        if self.speed_selection_enabled:
+            low, high = self._compute_adaptive_thresholds()
+            self._refresher.update_thresholds(low, high)
         worker.start()
+
+    def _compute_adaptive_thresholds(self) -> tuple[int, int]:
+        """Calcola le soglie LOW/HIGH per il refresher in base al carico.
+
+        Formula: low = max(FLOOR, attivi × connessioni × MOLTIPLICATORE)
+                 high = low × 2
+        Usata solo quando speed_selection_enabled=True.
+        """
+        conns = self.connections_per_file or PARALLEL_CONNECTIONS_PER_FILE
+        demand = self._active_count * conns
+        low = max(ADAPTIVE_REFILL_FLOOR, demand * ADAPTIVE_REFILL_MULTIPLIER)
+        high = low * 2
+        return low, high
 
     def _on_slot_freed(self, file_id: int) -> None:
         self._active_count = max(0, self._active_count - 1)
+        if self.speed_selection_enabled:
+            low, high = self._compute_adaptive_thresholds()
+            self._refresher.update_thresholds(low, high)
         log.info(
             "Slot liberato da file_id=%d (attivi=%d, in_coda=%d)",
             file_id,

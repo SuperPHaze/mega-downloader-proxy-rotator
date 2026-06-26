@@ -41,6 +41,7 @@ from src.gui.preferences import (
 )
 from src.gui.proxy_bar import ProxyBar
 from src.gui.stats_bar import StatsBar
+from src.gui.stats_panel import StatsPanel
 from src.gui import style as _style
 from src.gui.style import LIGHT_QSS, apply_theme
 from src.gui.update_banner import UpdateBanner
@@ -93,6 +94,7 @@ class MainWindow(QMainWindow):
         self.jobs_panel = JobsPanel()
         self.stats_bar = StatsBar(self.jobs_panel.model)
         self.proxy_bar = ProxyBar()
+        self._stats_panel = StatsPanel(self.jobs_panel.model)
 
         # Cruscotto su un'unica riga: zona download (StatsBar) | separatore
         # verticale | zona proxy (ProxyBar). Il colore del separatore segue
@@ -115,6 +117,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.update_banner, 0)
         layout.addWidget(self.controls, 0)
         layout.addLayout(dashboard_row)
+        layout.addWidget(self._stats_panel, 0)
         layout.addWidget(self.jobs_panel, 1)
 
         self.setCentralWidget(central)
@@ -221,6 +224,7 @@ class MainWindow(QMainWindow):
         self._links_by_id = {i: u for i, u in enumerate(links)}
         self._pending_delete.clear()
         self.stats_bar.start_clock()
+        self._stats_panel.start_clock()
         self.proxy_bar.reset()
         self._set_status("Raccolta proxy in corso…")
         self._expected_files = len(links)
@@ -415,6 +419,7 @@ class MainWindow(QMainWindow):
         self.jobs_panel.refresh_theme()
         self.stats_bar.refresh_theme()
         self.proxy_bar.refresh_theme()
+        self._stats_panel.refresh_theme()
         self._restyle_dashboard_separator()
 
     def _restyle_dashboard_separator(self) -> None:

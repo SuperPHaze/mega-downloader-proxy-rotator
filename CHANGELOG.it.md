@@ -4,6 +4,28 @@
 
 Tutte le modifiche rilevanti del progetto. Formato basato su [Keep a Changelog](https://keepachangelog.com/it/1.1.0/); versioni secondo [SemVer](https://semver.org/lang/it/).
 
+## [1.11.2] — 2026-06-26
+
+### Aggiunto
+- **Fonte ProxyScrape JSON** (mirror GitHub, ~22k proxy aggiornati ogni 5 min): 3 endpoint
+  separati per protocollo (http/socks5/socks4) con metadati pre-calcolati (`latency_ms`,
+  `uptime_percent`, `anonymity`) allegati al dict del proxy fino al pool. Pre-filtro nello
+  scraper che scarta i candidati con `uptime_percent < 50%` o `latency_ms > 3000` prima
+  della validazione, risparmiando tempo di stage 1/2. Timeout di 30s per queste fonti
+  (il JSON pesa diversi MB).
+- **Soglia refill adattiva** (solo con selezione per velocità attiva): la soglia statica del
+  refresher (15/30) viene sostituita da una soglia dinamica calcolata sul fabbisogno reale —
+  `max(10, download_attivi * connessioni * 3)` per LOW, doppio per HIGH. Le soglie vengono
+  aggiornate ogni volta che parte o termina un download, evitando refill inutili a carico
+  basso e alzando il margine quando il carico cresce. Con flag OFF il comportamento resta
+  identico (soglie statiche).
+- **Widget Statistiche** con metriche complete di sessione: volume totale scaricato (inclusi
+  parziali di job falliti/annullati), throughput effettivo (volume / tempo attivo), media
+  aritmetica per-download, picco/minima di sessione, tempo attivo con auto-freeze a fine sessione,
+  dettaglio riga-per-job, pulsante "Copia riepilogo" (testo plain negli appunti).
+- **Media finale per-download** mostrata sulle card a job terminato (sotto il badge di stato):
+  velocità media congelata, volume parziale e durata.
+
 ## [1.11.1] — 2026-06-26
 
 ### Aggiunto

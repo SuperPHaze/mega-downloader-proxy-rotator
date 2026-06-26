@@ -14,6 +14,12 @@ from src.proxy.sources import PROXY_SOURCES
 
 log = logging.getLogger(__name__)
 
+# Soglie di pre-filtro per le fonti con metadati pre-calcolati.
+# Applicate PRIMA della validazione: scartano i candidati che la fonte
+# stessa segnala come inaffidabili, risparmiando tempo di stage 1/2.
+_PREFILT_MIN_UPTIME = 50.0      # % uptime minimo (sotto = scartato)
+_PREFILT_MAX_LATENCY_MS = 3000  # ms latenza massima (sopra = scartato)
+
 
 class ProxyScraper:
     def __init__(self) -> None:
@@ -68,7 +74,10 @@ class ProxyScraper:
         return result
 
     def _fetch_source(self, source: dict) -> list[dict]:
-        resp = requests.get(source["url"], headers=self._headers, timeout=PROXY_TIMEOUT)
+        # Il JSON di ProxyScrape puo' pesare diversi MB (migliaia di proxy con
+        # metadati): timeout piu' generoso per evitare troncamenti.
+        timeout = 30 if source["kind"] == "proxyscrape_json" else PROXY_TIMEOUT
+        resp = requests.get(source["url"], headers=self._headers, timeout=timeout)
         resp.raise_for_status()
         if source["kind"] == "html_table":
             proxies = self._parse_html_table(resp.text)
@@ -80,6 +89,8 @@ class ProxyScraper:
             proxies = self._parse_jsonl(resp.text)
         elif source["kind"] == "databay_json":
             proxies = self._parse_databay_json(resp.text)
+        elif source["kind"] == "proxyscrape_json":
+            proxies = self._parse_proxyscrape_json(resp.text)
         else:
             proxies = []
         # I parser scrivono sempre "http": il protocollo della fonte (campo
@@ -124,6 +135,72 @@ class ProxyScraper:
             except (TypeError, ValueError):
                 pass
             out.append(item)
+        return out
+
+    @classmethod
+    def _parse_proxyscrape_json(cls, text: str) -> list[dict]:
+        # Array JSON di oggetti con metadati pre-calcolati da ProxyScrape.
+        # Applica pre-filtro su uptime/latenza prima di restituire i candidati.
+        try:
+            entries = json.loads(text)
+        except ValueError:
+            return []
+        if not isinstance(entries, list):
+            return []
+        out: list[dict] = []
+        skipped_uptime = 0
+        skipped_latency = 0
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            host = entry.get("ip")
+            port_raw = entry.get("port")
+            if not host:
+                continue
+            port_str = str(port_raw)
+            if not port_str.isdigit():
+                continue
+
+            uptime = entry.get("uptime_percent")
+            latency = entry.get("latency_ms")
+
+            if uptime is not None:
+                try:
+                    if float(uptime) < _PREFILT_MIN_UPTIME:
+                        skipped_uptime += 1
+                        continue
+                except (TypeError, ValueError):
+                    pass
+
+            if latency is not None:
+                try:
+                    if float(latency) > _PREFILT_MAX_LATENCY_MS:
+                        skipped_latency += 1
+                        continue
+                except (TypeError, ValueError):
+                    pass
+
+            item: dict = {"host": host, "port": port_str, "protocol": "http"}
+            try:
+                if latency is not None:
+                    item["latency_ms"] = int(float(latency))
+            except (TypeError, ValueError):
+                pass
+            try:
+                if uptime is not None:
+                    item["uptime_percent"] = float(uptime)
+            except (TypeError, ValueError):
+                pass
+            anonymity = entry.get("anonymity")
+            if anonymity:
+                item["anonymity"] = str(anonymity)
+            out.append(item)
+
+        log.info(
+            "proxyscrape_json: %d proxy nel JSON, %d passano il pre-filtro "
+            "(scartati: %d uptime basso, %d latenza alta)",
+            len(entries), len(out), skipped_uptime, skipped_latency,
+        )
         return out
 
     @staticmethod

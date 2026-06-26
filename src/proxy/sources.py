@@ -1,6 +1,6 @@
 # Elenco delle fonti di proxy gratuiti supportate.
 # Per aggiungere una fonte: estendere PROXY_SOURCES e (se serve) un parser in scraper.py.
-# Oggi sono 71 fonti (4 html, 64 plain, 3 json/jsonl); per protocollo: 51 http, 15 socks5, 5 socks4.
+# Oggi sono 74 fonti (4 html, 64 plain, 6 json/jsonl); per protocollo: 51 http, 16 socks5, 6 socks4.
 #
 # Tipi (`kind`) supportati:
 #   - "html_table" : pagina HTML con tabella standard host/porta nelle prime due colonne.
@@ -9,6 +9,10 @@
 #   - "jsonl"      : una riga = un JSON object (es. fate0/proxylist) con chiavi host/port/type.
 #   - "databay_json": API JSON di databay.com con filtro Strict-SSL upstream
 #                     (esclude proxy MITM-suspect). Array di {ip, port, ...}.
+#   - "proxyscrape_json": mirror GitHub ProxyScrape (~22k proxy, aggiornati ogni 5 min).
+#                     Array JSON con metadati pre-calcolati (latency_ms, uptime_percent,
+#                     anonymity): il parser applica un pre-filtro e allega i metadati al
+#                     dict cosi' il pool li usa senza doverli rimisurare.
 #
 # Campo opzionale `"protocol"`: "http" (default se assente), "socks4", "socks5".
 # Etichetta TUTTI i proxy di quella fonte con questo protocollo (vedi
@@ -192,6 +196,32 @@ PROXY_SOURCES = [
             "?protocol=http&ssl=strict&format=json&limit=1000"
         ),
         "kind": "databay_json",
+    },
+
+    # --- ProxyScrape GitHub mirror (JSON con metadati pre-calcolati) ---
+    # Fonte primaria ad alto volume (~22k proxy, aggiornati ogni 5 min).
+    # Il formato JSON include latency_ms e uptime_percent gia' misurati da
+    # ProxyScrape: il parser li allega al dict del proxy cosi' il pool e il
+    # pre-filtro dello scraper li usano senza doverli rimisurare.
+    # Tre endpoint separati per protocollo (il campo "protocol" della fonte
+    # e' ridondante qui — il JSON lo contiene gia' — ma lo mettiamo per
+    # coerenza con tutte le altre fonti SOCKS in sources.py).
+    {
+        "name": "proxyscrape-gh-http",
+        "url": "https://raw.githubusercontent.com/proxyscrape/free-proxy-list/main/proxies/protocols/http/data.json",
+        "kind": "proxyscrape_json",
+    },
+    {
+        "name": "proxyscrape-gh-socks5",
+        "url": "https://raw.githubusercontent.com/proxyscrape/free-proxy-list/main/proxies/protocols/socks5/data.json",
+        "kind": "proxyscrape_json",
+        "protocol": "socks5",
+    },
+    {
+        "name": "proxyscrape-gh-socks4",
+        "url": "https://raw.githubusercontent.com/proxyscrape/free-proxy-list/main/proxies/protocols/socks4/data.json",
+        "kind": "proxyscrape_json",
+        "protocol": "socks4",
     },
     {
         "name": "pubproxy-fresh",

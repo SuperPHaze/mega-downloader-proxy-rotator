@@ -22,7 +22,7 @@ src/
 │   ├── icon_loader.py     # build_app_icon(): QIcon robusta .ico->fallback .png, mai null senza log
 │   └── proxy_url.py       # build_proxy_url/build_proxies_dict: schema URL in base al campo protocol (http/socks4/socks5 -> socks5h), solo stdlib, usato da proxy/ e downloader/
 ├── proxy/
-│   ├── sources.py         # 71 fonti pubbliche (4 html, 64 plain, 3 json/jsonl); per protocollo: 51 http, 15 socks5, 5 socks4 (campo opzionale "protocol" per fonte)
+│   ├── sources.py         # 74 fonti pubbliche (4 html, 64 plain, 6 json/jsonl); per protocollo: 51 http, 16 socks5, 6 socks4 (campo opzionale "protocol" per fonte)
 │   ├── scraper.py         # ProxyScraper.fetch_all() multi-source; _fetch_source etichetta ogni proxy col "protocol" della fonte (sovrascrive l'"http" scritto dai parser)
 │   ├── validator.py       # 2-stage (o 3 con selezione per velocità attiva): stage1 alive + stage2 Mega + stage3 opzionale speed test
 │   ├── pool.py            # ProxyPool score-based round-robin; cooldown() mette un proxy a riposo N secondi (rate-limit 403/509) senza toccare lo score, ma MENTRE è in cooldown NON conta come vivo in size()/_count_alive_unlocked() (solo non selezionabile finché non scade — altrimenti size()>0 mentre get_next() non ha nulla, e il refill viene saltato all'infinito); contatori di sessione per la GUI (discarded_count/refill_count/seconds_since_last_refill, alimentati da note_refill())
@@ -44,8 +44,11 @@ src/
     ├── job_detail_dialog.py # dialog non-modale dettaglio job (doppio clic)
     ├── radial_gauge.py    # RadialGauge: anello/donut riusabile (velocita' come % del picco); matematica pura in gauge_fraction() (no Qt, testabile)
     ├── segment_bar.py     # SegmentBar: barra orizzontale a segmenti proporzionali riusabile; matematica pura in segment_widths() (no Qt, testabile)
+    ├── format_helpers.py  # helper di formattazione condivisi: fmt_speed/fmt_bytes/fmt_mmss/fmt_hhmmss (puro, no Qt)
+    ├── session_clock.py   # SessionClock: tempo sessione con auto-freeze a fine sessione (puro, no Qt/I/O)
     ├── session_speed.py   # SessionSpeedStats: media/picco/minima di sessione (puro, no Qt/I/O), campionato 1x/s da StatsBar
     ├── stats_bar.py       # cruscotto "spinta" compatto: zona velocita' (RadialGauge con % del picco + picco/media/minima/ETA/tempo) e zona Download (totale + SegmentBar + conteggi), separate da una linea verticale interna
+    ├── stats_panel.py     # StatsPanel: cruscotto Statistiche (volume, throughput effettivo, media per-download, picco/min, durata con auto-freeze, dettaglio per-job, pulsante copia riepilogo)
     ├── proxy_bar.py       # ProxyBar: zona proxy in stile "conservativo" — riga di card compatte (vivi/validazione/scartati/ricariche/ultimo refill), niente sparkline; popolata da pool_size_changed/setup_progress/proxy_stats dell'orchestrator
     ├── controls.py        # barra comandi: Avvia/Pausa/Annulla/Paralleli/Incolla/Tema/Info (in menu Impostazioni)
     ├── experimental_dialog.py # ExperimentalFeaturesDialog: 3 controlli con descrizione breve inline e icona "i" (QToolButton) → QMessageBox estesa: "Connessioni per file" (spinbox), "Budget per pezzo (s)" (spinbox), "Selezione per velocità" (checkbox + spinbox soglia KB/s); tutti persistono in preferences.json

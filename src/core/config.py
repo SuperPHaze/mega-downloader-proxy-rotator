@@ -1,7 +1,7 @@
 # Costanti globali dell'applicazione.
 from pathlib import Path
 
-APP_VERSION = "1.11.1"
+APP_VERSION = "1.11.2"
 APP_LICENSE = "MIT"
 
 # Repository GitHub usato dal controllo aggiornamenti (scheda Info).
@@ -331,3 +331,13 @@ VALIDATOR_SPEED_TEST_URL = "http://speedtest.tele2.net/1MB.zip"
 VALIDATOR_SPEED_TEST_BYTES = 1 * 1024 * 1024           # 1 MB
 VALIDATOR_SPEED_TEST_TIMEOUT = 15                      # connect+read per proxy
 VALIDATOR_SPEED_TEST_WORKERS = 30                      # concorrenza stage 3
+
+# Soglia refill adattiva (solo con selezione per velocita' attiva).
+# La soglia statica (POOL_REFRESH_THRESHOLD_LOW/HIGH) viene sostituita da
+# una soglia dinamica calcolata in base al fabbisogno reale:
+#   soglia_low = max(FLOOR, download_attivi * connessioni * MOLTIPLICATORE)
+#   soglia_high = soglia_low * 2
+# Questo evita refill inutili quando il carico e' basso (pochi download,
+# poche connessioni) e aumenta la soglia quando il carico cresce.
+ADAPTIVE_REFILL_FLOOR = 10           # proxy minimi anche con 0 download attivi
+ADAPTIVE_REFILL_MULTIPLIER = 3       # margine per mortalita' naturale dei proxy
