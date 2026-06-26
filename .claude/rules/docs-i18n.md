@@ -34,3 +34,11 @@ paths: ["README*.md", "CHANGELOG*.md", "Docs/**/*.md", "index*.html", "install.p
 
 ## Sito
 - `index.html` (EN default) + versione IT con toggle di lingua. [Da fare]
+
+## Navigazione per ancora (DOC_MAP)
+- Prima di modificare la documentazione, consulta `MyDocs/DOC_MAP.md` (se presente) e
+  targetizza la sezione per ancora invece di leggere i file interi.
+- Dopo aver modificato o aggiunto sezioni a un documento sorgente IT, aggiorna subito la mappa e
+  lancia `python MyDocs/check_doc_map.py` per verificare che tutte le ancore siano ancora valide.
+- Se `MyDocs/` non è presente (macchina di deploy, CI) questa regola degrada silenziosamente:
+  è un aiuto di lavoro locale, non una dipendenza di build.
