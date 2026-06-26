@@ -63,3 +63,21 @@ def load_segment_max_duration_s() -> int:
 
 def save_segment_max_duration_s(value: int) -> None:
     _save_pref("segment_max_duration_s", int(value))
+
+
+def load_speed_selection_enabled() -> bool:
+    return bool(_load_prefs().get("speed_selection_enabled", False))
+
+
+def save_speed_selection_enabled(enabled: bool) -> None:
+    _save_pref("speed_selection_enabled", enabled)
+
+
+def load_speed_selection_min_kbps() -> int:
+    """Soglia preferenza in KB/s (la GUI mostra KB/s, il motore usa B/s)."""
+    from src.core.config import SPEED_SELECTION_MIN_BPS
+    return int(_load_prefs().get("speed_selection_min_kbps", SPEED_SELECTION_MIN_BPS // 1024))
+
+
+def save_speed_selection_min_kbps(value: int) -> None:
+    _save_pref("speed_selection_min_kbps", int(value))

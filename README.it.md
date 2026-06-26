@@ -37,7 +37,7 @@ App **desktop per Windows** (Python + PyQt6) che scarica file da Mega.nz instrad
 ## ✨ Perché è diversa
 
 - **Specifica per Mega** — resolve del link pubblico e decifratura AES integrati (nessuna dipendenza da `mega.py`).
-- **Pool di proxy gratuiti validato e con punteggio** — scraping da decine di fonti (circa 70), validazione a due stadi, reputazione per proxy, cache su disco, rigenerazione in background.
+- **Pool di proxy gratuiti validato e con punteggio** — scraping da decine di fonti (circa 70), validazione a due stadi (opzionalmente a tre con test di velocità), reputazione per proxy, cache su disco, rigenerazione in background.
 - **Un proxy diverso per ogni chunk** — la rotazione è per-chunk, non per-file: se un proxy cade, perdi al massimo un chunk.
 - **Resume granulare** — i chunk completati sopravvivono a crash, cambio proxy e cambio numero di connessioni.
 
@@ -49,7 +49,7 @@ App **desktop per Windows** (Python + PyQt6) che scarica file da Mega.nz instrad
 - **Limite di tempo per file** configurabile; oltre la soglia il file viene abbandonato.
 - **Storico download** con avviso sui link già scaricati (dedup per handle Mega).
 - **Watchdog per chunk**: scarta i proxy troppo lenti o che non finiscono in tempo.
-- **Pannello "Funzioni sperimentali"** con il controllo delle connessioni per file (per test, senza ricompilare i default).
+- **Pannello "Funzioni sperimentali"** con connessioni per file, budget per pezzo e selezione per velocità con soglia configurabile (test di velocità reale + selezione proxy per throughput).
 - **Diagnostica crash passiva** sempre attiva (heartbeat di memoria, traceback multi-thread), log strutturato universale (`logs/events.jsonl`) e un generatore di report HTML (`tools/report.py`).
 - **Interfaccia** a schede con cruscotto compatto a 3 zone (velocità, download, proxy) — gauge radiale di velocità (% del picco di sessione), barra segmentata per lo stato dei download, card compatte per lo stato del pool proxy — filtri job a pulsanti, tema chiaro/scuro, pausa/ripresa/annullo globali e per singolo job.
 - **Modalità CLI** per macchine headless.

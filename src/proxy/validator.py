@@ -1,6 +1,8 @@
-# Filtra i proxy candidati con validazione a due stadi:
+# Filtra i proxy candidati con validazione a due stadi (o tre con speed test):
 #   stage1 = pre-filtro veloce (endpoint HTTP leggero, alta concorrenza, timeout corto)
 #   stage2 = validazione vera contro Mega (concorrenza moderata, timeout normale)
+#   stage3 = speed test reale (solo con selezione_velocita attiva): misura il
+#            throughput effettivo e scarta i proxy sotto soglia ammissione.
 # Solo i proxy che passano stage1 vengono testati allo stage2.
 # Atteso: ~70% dei proxy gratuiti viene scartato gia' a stage1 — e' la norma.
 from __future__ import annotations
@@ -14,7 +16,13 @@ from typing import Callable
 import requests
 
 from src.core.config import (
+    SPEED_SELECTION_ADMISSION_BPS,
+    SPEED_SELECTION_MIN_BPS,
     USER_AGENT,
+    VALIDATOR_SPEED_TEST_BYTES,
+    VALIDATOR_SPEED_TEST_TIMEOUT,
+    VALIDATOR_SPEED_TEST_URL,
+    VALIDATOR_SPEED_TEST_WORKERS,
     VALIDATOR_STAGE1_TIMEOUT,
     VALIDATOR_STAGE1_URL,
     VALIDATOR_STAGE1_WORKERS,
@@ -44,6 +52,8 @@ def _session() -> requests.Session:
 class ProxyValidator:
     def __init__(self) -> None:
         self._headers = {"User-Agent": USER_AGENT}
+        self._admission_threshold: int = SPEED_SELECTION_ADMISSION_BPS
+        self._preference_threshold: int = SPEED_SELECTION_MIN_BPS
 
     def validate_against_mega(
         self,
@@ -54,14 +64,23 @@ class ProxyValidator:
         target_alive: int | None = VALIDATOR_TARGET_ALIVE,
         progress_callback: Callable[[int, int, int], None] | None = None,
         return_stage_breakdown: bool = False,
+        speed_test: bool = False,
+        speed_admission_bps: int = SPEED_SELECTION_ADMISSION_BPS,
+        speed_preference_bps: int = SPEED_SELECTION_MIN_BPS,
     ):
-        # Se return_stage_breakdown=True, ritorna dict {stage1_alive, stage2_alive}
+        # Se return_stage_breakdown=True, ritorna dict {stage1_alive, stage2_alive[, stage3_alive]}
         # invece della lista finale (per telemetria per-fonte). Default False
         # preserva firma e nessun chiamante esistente si rompe.
         # progress_callback(done, total, alive_so_far) viene chiamato dopo ogni
         # check, sia in stage1 sia in stage2. La GUI vede una progress bar
         # continua: il `total` cambia tra stage (passa da N candidati ai vivi
         # di stage1) ma e' attesa la transizione.
+        # speed_test=True attiva lo stage3 (speed test reale su server esterno).
+        # I proxy sotto speed_admission_bps vengono scartati; quelli sopra
+        # ricevono proxy["throughput_bps"] per il pre-caricamento nel pool.
+        self._admission_threshold = speed_admission_bps
+        self._preference_threshold = speed_preference_bps
+
         if not proxies:
             log.warning("Nessun proxy candidato da validare")
             return {"stage1_alive": [], "stage2_alive": []} if return_stage_breakdown else []
@@ -106,9 +125,43 @@ class ProxyValidator:
             "[stage2] %d/%d proxy validi contro Mega",
             len(stage2_alive), len(stage1_alive),
         )
+
+        # --- Stage 3: speed test reale (solo se richiesto) ---
+        if speed_test and stage2_alive:
+            stage3_alive = self._run_stage(
+                stage2_alive,
+                self._check_speed,
+                VALIDATOR_SPEED_TEST_WORKERS,
+                progress_callback,
+                stage_name="stage3",
+                target_alive=None,  # nessun cortocircuito: processiamo tutti
+            )
+            above_pref = sum(
+                1 for p in stage3_alive
+                if p.get("throughput_bps", 0) >= speed_preference_bps
+            )
+            log.info(
+                "[stage3] %d/%d proxy sopra ammissione (%d KB/s), "
+                "di cui %d sopra preferenza (%d KB/s)",
+                len(stage3_alive), len(stage2_alive),
+                speed_admission_bps // 1024,
+                above_pref,
+                speed_preference_bps // 1024,
+            )
+            final = stage3_alive
+        else:
+            stage3_alive = None
+            final = stage2_alive
+
         if return_stage_breakdown:
-            return {"stage1_alive": stage1_alive, "stage2_alive": stage2_alive}
-        return stage2_alive
+            result: dict = {
+                "stage1_alive": stage1_alive,
+                "stage2_alive": stage2_alive,
+            }
+            if stage3_alive is not None:
+                result["stage3_alive"] = stage3_alive
+            return result
+        return final
 
     def _run_stage(
         self,
@@ -202,6 +255,36 @@ class ProxyValidator:
                 timeout=VALIDATOR_STAGE2_TIMEOUT,
                 allow_redirects=False,
             )
+            return True
+        except Exception:
+            return False
+
+    # --- Stage 3: speed test reale (solo con selezione_velocita attiva) ---
+    def _check_speed(self, proxy: dict) -> bool:
+        try:
+            t0 = time.monotonic()
+            resp = _session().get(
+                VALIDATOR_SPEED_TEST_URL,
+                headers=self._headers,
+                proxies=build_proxies_dict(proxy),
+                timeout=VALIDATOR_SPEED_TEST_TIMEOUT,
+                stream=True,
+            )
+            if resp.status_code != 200:
+                return False
+            bytes_read = 0
+            for chunk in resp.iter_content(chunk_size=8192):
+                bytes_read += len(chunk)
+                if bytes_read >= VALIDATOR_SPEED_TEST_BYTES:
+                    break
+            elapsed = max(time.monotonic() - t0, 0.001)
+            throughput_bps = bytes_read / elapsed
+            if throughput_bps < self._admission_threshold:
+                return False
+            # Annotato sul dict: ProxyPool.add_many lo legge per pre-popolare
+            # self._throughput[key] cosi' il ramo top-K di get_next() ha dati
+            # fin dal primo giro (senza aspettare record_throughput dal download).
+            proxy["throughput_bps"] = throughput_bps
             return True
         except Exception:
             return False

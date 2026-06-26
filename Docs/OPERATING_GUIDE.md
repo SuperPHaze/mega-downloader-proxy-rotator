@@ -20,7 +20,7 @@ The intended use is downloading files you have the right to access. Public proxi
 
 Every download session is made up of three phases that operate in parallel once started.
 
-**Pool provisioning.** Before downloading, the program builds a set of working proxies: it collects lists from numerous public sources and runs them through a two-stage validation (section 3). If a cache from a previous session is available, it starts "warm" from that and validates in the background.
+**Pool provisioning.** Before downloading, the program builds a set of working proxies: it collects lists from numerous public sources and runs them through a two-stage validation (three stages with speed-based selection active; section 3). If a cache from a previous session is available, it starts "warm" from that and validates in the background.
 
 **Download.** The file is resolved and split into a queue of fixed-size chunks, downloaded by several parallel HTTP Range connections, each routed through a different proxy, decrypted in streaming fashion, and reassembled (sections 4 and 6).
 
@@ -30,13 +30,15 @@ Every download session is made up of three phases that operate in parallel once 
 
 ## 3. The proxy pool: collection, validation, scoring
 
-Public proxy lists are large and largely made up of addresses that are no longer operational. Using them unfiltered would produce constant failures. The program therefore applies a **two-stage validation**, sized to quickly discard useless candidates and spend the more expensive test resources only on the promising ones.
+Public proxy lists are large and largely made up of addresses that are no longer operational. Using them unfiltered would produce constant failures. The program therefore applies a **two-stage validation** (three with speed-based selection active), sized to quickly discard useless candidates and spend the more expensive test resources only on the promising ones.
 
 **Stage 1 — reachability.** A fast, high-concurrency pre-filter (up to 100 workers, 4 s timeout) against a highly reliable connectivity endpoint (Google's `generate_204`). It only verifies that the proxy can complete an HTTP round trip; it does not judge Mega reachability. It serves to eliminate dead proxies without wasting a test on stage 2's limited capacity.
 
 **Stage 2 — Mega reachability.** Survivors are tested, at moderate concurrency (60 workers) because Mega rate-limits, against the host of Mega's download API — the same one used by real link resolution, not the homepage. The success criterion is any HTTP response received from the host, even an application-level error: it means the round trip reached its destination. A stricter criterion would discard proxies that are perfectly valid for downloading.
 
-Validation stops early once the target number of alive proxies (60) is reached, and in any case never exceeds a candidate cap (3000), so startup doesn't turn into minutes of waiting.
+Validation stops early once the target number of alive proxies (60) is reached, and in any case never exceeds a candidate cap (3 000, raised to 5 000 with speed-based selection active), so startup doesn't turn into minutes of waiting.
+
+**Stage 3 — speed test (optional).** If "Speed-based selection" is enabled in the Experimental Features panel, proxies that passed stage 2 are further filtered with a real throughput test: 1 MB is downloaded from an external server (not Mega) with a 15-second timeout and 30 parallel workers. Proxies below the fixed admission threshold (100 KB/s) are discarded; those above the configurable preference threshold (default 500 KB/s) are served first in the pool; those in between remain as fallback and are used when "fast" proxies are exhausted — the download degrades but does not stop.
 
 It is expected, and not a flaw, that out of hundreds or thousands of candidates only a few dozen survive: free proxies have a high mortality rate, on the order of 70%.
 
@@ -62,7 +64,9 @@ Writing follows the **`.part` + atomic rename** pattern: the transfer always hap
 
 ## 5. Experimental features
 
-The "Experimental Features" panel exposes two controls, each with a short description and an "i" icon that opens the extended explanation: the number of **connections per file** (how many parts of the same file to download in parallel, each over a different proxy; default 10) and the **per-chunk budget** (maximum time given to a proxy to finish a chunk before switching; default 180 s, section 6), to experiment without recompiling the defaults. Speed-based proxy selection remains internal (for future reuse) and is not configurable from the GUI.
+The "Experimental Features" panel exposes three controls, each with a short description and an "i" icon that opens the extended explanation: the number of **connections per file** (how many parts of the same file to download in parallel, each over a different proxy; default 10), the **per-chunk budget** (maximum time given to a proxy to finish a chunk before switching; default 180 s, section 6), and **speed-based selection** (checkbox + threshold spinbox in KB/s).
+
+**Speed-based selection** is an alternative download profile: when active it adds a stage 3 validation (real 1 MB speed test), raises candidates to 5 000, reduces connections per file to 5, and selects proxies by measured throughput. Fast proxies (above the configurable threshold, default 500 KB/s) are preferred; slow ones but above the fixed admission threshold (100 KB/s) remain as fallback. Off by default.
 
 > **A note on default values.** The program is tested on long sessions with the factory defaults. Changing the parameters (parallel downloads, connections per file, chunk size, per-chunk budget) may help in some scenarios and hurt in others, because the behaviour of free proxies is highly variable. Work is ongoing to improve throughput, proxy quality, and resilience on long sessions. For now it is recommended to keep **1 download at a time** and a **32 MB chunk size**.
 
@@ -135,6 +139,15 @@ The values below are factory defaults; the configurable ones are noted according
 | Rate-limit proxy cooldown | 90 s | excluded from rotation and from the "alive" count on 403/509 from the CDN; returns available when it expires |
 | Proxy cache validity | 6 hours | older entries discarded at startup |
 | Proxy score | 0 / +5 / −10 / dead below −20 | initial / success / failure / threshold |
+| **Speed-based selection** (Stage 3) | off | enabled from Experimental Features; adds speed test and throughput-based selection |
+| Preference threshold (speed-based selection) | 500 KB/s | configurable from Experimental Features; proxies above threshold served first |
+| Admission threshold (speed-based selection) | 100 KB/s | fixed; proxies below discarded at Stage 3 |
+| Connections per file (speed-based selection) | 5 | reduced from 10 when speed-based selection is active |
+| Maximum candidates (speed-based selection) | 5 000 | raised from 3 000 when speed-based selection is active |
+| Speed test URL (Stage 3) | http://speedtest.tele2.net/1MB.zip | external server, not Mega |
+| Bytes downloaded per speed test | 1 MB | measures real proxy throughput |
+| Speed test timeout | 15 s | connect+read per proxy during Stage 3 |
+| Stage 3 workers | 30 | speed test concurrency |
 
 ---
 

@@ -10,13 +10,14 @@ paths: ["src/proxy/**/*.py"]
 3. Il parser DEVE restituire `list[dict]` con chiavi esatte: `host` (str), `port` (str numerica), `protocol` (sempre `"http"`: è un placeholder, `_fetch_source` lo sovrascrive col campo `protocol` della fonte — vedi punto 1 — quindi i parser non vanno toccati per supportare SOCKS).
 4. Mai sollevare eccezioni dal parser: una fonte rotta non deve bloccare le altre — già gestito a livello di `fetch_all`.
 
-## Validazione (a due stadi)
+## Validazione (a due o tre stadi)
 - `ProxyValidator.validate_against_mega` esegue Stage 1 ("il proxy funziona?" su `VALIDATOR_STAGE1_URL` = `http://www.gstatic.com/generate_204`, `VALIDATOR_STAGE1_WORKERS=100`, timeout `VALIDATOR_STAGE1_TIMEOUT=4s`) poi Stage 2 ("il proxy raggiunge l'infrastruttura di download Mega?" su `VALIDATOR_STAGE2_URL` = host dell'API Mega `https://g.api.mega.co.nz/cs`, `VALIDATOR_STAGE2_WORKERS=60`, timeout `VALIDATOR_STAGE2_TIMEOUT=PROXY_TIMEOUT=8s`).
 - Solo i proxy che passano Stage 1 vengono testati allo Stage 2.
 - Stage 2 ha cortocircuito: se `VALIDATOR_TARGET_ALIVE` (default 200) viene raggiunto, i future rimanenti vengono cancellati.
 - Stage 1: valido un 2xx/3xx (l'endpoint risponde 204 per design). Stage 2: valida QUALSIASI risposta HTTP ricevuta dall'host API (anche un errore applicativo Mega, es. `-2`), non necessariamente 200 — un criterio più severo scarterebbe falsi negativi (proxy che funzionano benissimo per il download ma a cui Mega risponde con un errore applicativo sulla GET di test, che non e' una vera chiamata `g=1`). Niente redirect seguiti in nessuno dei due stage (`allow_redirects=False`): vogliamo la risposta diretta dell'host testato, non quella di un eventuale hop successivo.
 - Stage 1 popola `proxy["latency_ms"]` su successo: il pool lo usa come tiebreaker fra proxy a parità di score.
-- `progress_callback(done, total, alive)` viene chiamato dopo ogni check (utile per status bar / progress bar). `return_stage_breakdown=True` restituisce dict `{stage1_alive, stage2_alive}` per telemetria per-fonte.
+- `progress_callback(done, total, alive)` viene chiamato dopo ogni check (utile per status bar / progress bar). `return_stage_breakdown=True` restituisce dict `{stage1_alive, stage2_alive[, stage3_alive]}` per telemetria per-fonte.
+- **Stage 3 (opzionale, attivo solo se "Selezione per velocità" è abilitata nelle Funzioni Sperimentali)**: speed test reale — scarica `VALIDATOR_SPEED_TEST_BYTES` (1 MB) da `VALIDATOR_SPEED_TEST_URL` (server esterno, NON Mega), con `VALIDATOR_SPEED_TEST_WORKERS=30` worker e timeout `VALIDATOR_SPEED_TEST_TIMEOUT=15s`. Doppia soglia: ammissione fissa (`SPEED_SELECTION_ADMISSION_BPS` = 100 KB/s) scarta le zavorre; preferenza configurabile (`SPEED_SELECTION_MIN_BPS`, default 500 KB/s) determina l'ordinamento nel pool. I proxy sopra la soglia di preferenza vengono serviti per primi (selection_mode="throughput", top-K per EMA); quelli tra ammissione e preferenza restano come riserva e vengono usati se non ci sono proxy "veloci" disponibili. Quando Stage 3 è attivo i candidati salgono a 5000 (da 3000) e le connessioni per file scendono a 5.
 
 ## Cache proxy (hot-start)
 - `proxy/proxy_cache.py` persiste su `proxy_cache.json` (root progetto) un elenco serializzabile di proxy validi tra sessioni.

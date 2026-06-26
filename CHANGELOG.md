@@ -4,6 +4,16 @@
 
 All notable changes to this project. Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [SemVer](https://semver.org/).
 
+## [1.11.1] — 2026-06-26
+
+### Added
+- **Speed-based selection** (Experimental Features): alternative download profile that activates
+  a third validation stage (real 1 MB speed test), dual threshold (fixed admission at 100 KB/s +
+  configurable preference, default 500 KB/s), 5 000 candidates (instead of 3 000), connections
+  reduced to 5, and throughput-based round-robin selection. Slow proxies remain as fallback: the
+  download degrades rather than stopping. Enabled from the Experimental Features panel with a
+  checkbox and a threshold spinbox in KB/s.
+
 ## [1.11.0] — 2026-06-25
 
 ### Added

@@ -1,7 +1,7 @@
 # Costanti globali dell'applicazione.
 from pathlib import Path
 
-APP_VERSION = "1.11.0"
+APP_VERSION = "1.11.1"
 APP_LICENSE = "MIT"
 
 # Repository GitHub usato dal controllo aggiornamenti (scheda Info).
@@ -310,3 +310,24 @@ PROXY_CACHE_TTL_S = 6 * 3600               # entry oltre TTL = scartate al load
 PROXY_CACHE_SAVE_INTERVAL_S = 300          # salvataggio periodico
 PROXY_CACHE_SCHEMA_VERSION = 1             # incrementare al cambio formato
 PROXY_CACHE_MIN_SCORE_FOR_PERSISTENCE = 0  # solo proxy con score >= soglia
+
+# ---------------------------------------------------------------------------
+# Selezione per velocita' (Funzioni Sperimentali)
+# ---------------------------------------------------------------------------
+# Se abilitata, cambia il profilo di download: piu' candidati (5000 vs 3000),
+# validazione a 3 stadi con speed test reale, connessioni ridotte (5 vs 10),
+# selezione round-robin basata su throughput EMA (top-K).
+SPEED_SELECTION_ENABLED = False                        # default off
+SPEED_SELECTION_MIN_BPS = 500 * 1024                   # 500 KB/s soglia preferenza (GUI)
+SPEED_SELECTION_ADMISSION_BPS = 100 * 1024             # 100 KB/s soglia ammissione (fissa)
+SPEED_SELECTION_DEFAULT_CONNECTIONS = 5                # connessioni per file quando attivo
+SPEED_SELECTION_MAX_CANDIDATES = 5000                  # candidati alla validazione quando attivo
+
+# Stage 3: speed test reale (solo quando selezione per velocita' attiva).
+# Scarica VALIDATOR_SPEED_TEST_BYTES da un server esterno (NON Mega) per
+# misurare il throughput. L'URL deve essere un file statico su un server ad
+# alta banda, HTTP puro, nessun redirect.
+VALIDATOR_SPEED_TEST_URL = "http://speedtest.tele2.net/1MB.zip"
+VALIDATOR_SPEED_TEST_BYTES = 1 * 1024 * 1024           # 1 MB
+VALIDATOR_SPEED_TEST_TIMEOUT = 15                      # connect+read per proxy
+VALIDATOR_SPEED_TEST_WORKERS = 30                      # concorrenza stage 3

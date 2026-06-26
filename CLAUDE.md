@@ -10,7 +10,7 @@ Single-user, single-process, niente backend.
 src/
 ├── main.py                # entry point: QApplication + MainWindow
 ├── core/
-│   ├── config.py          # costanti globali (timeout, soglie, paths, UA)
+│   ├── config.py          # costanti globali (timeout, soglie, paths, UA); include SPEED_SELECTION_* e VALIDATOR_SPEED_TEST_* per la selezione per velocità
 │   ├── state.py           # SessionState thread-safe (pausa/annullo)
 │   ├── events.py          # EventBus opzionale (non usato dal flusso)
 │   ├── logging_setup.py   # setup root logger + sys.excepthook
@@ -24,7 +24,7 @@ src/
 ├── proxy/
 │   ├── sources.py         # 71 fonti pubbliche (4 html, 64 plain, 3 json/jsonl); per protocollo: 51 http, 15 socks5, 5 socks4 (campo opzionale "protocol" per fonte)
 │   ├── scraper.py         # ProxyScraper.fetch_all() multi-source; _fetch_source etichetta ogni proxy col "protocol" della fonte (sovrascrive l'"http" scritto dai parser)
-│   ├── validator.py       # 2-stage: stage1 alive + stage2 Mega
+│   ├── validator.py       # 2-stage (o 3 con selezione per velocità attiva): stage1 alive + stage2 Mega + stage3 opzionale speed test
 │   ├── pool.py            # ProxyPool score-based round-robin; cooldown() mette un proxy a riposo N secondi (rate-limit 403/509) senza toccare lo score, ma MENTRE è in cooldown NON conta come vivo in size()/_count_alive_unlocked() (solo non selezionabile finché non scade — altrimenti size()>0 mentre get_next() non ha nulla, e il refill viene saltato all'infinito); contatori di sessione per la GUI (discarded_count/refill_count/seconds_since_last_refill, alimentati da note_refill())
 │   ├── refresher.py       # BackgroundPoolRefresher (thread daemon)
 │   └── proxy_cache.py     # cache proxy persistente JSON (hot-start)
@@ -48,8 +48,8 @@ src/
     ├── stats_bar.py       # cruscotto "spinta" compatto: zona velocita' (RadialGauge con % del picco + picco/media/minima/ETA/tempo) e zona Download (totale + SegmentBar + conteggi), separate da una linea verticale interna
     ├── proxy_bar.py       # ProxyBar: zona proxy in stile "conservativo" — riga di card compatte (vivi/validazione/scartati/ricariche/ultimo refill), niente sparkline; popolata da pool_size_changed/setup_progress/proxy_stats dell'orchestrator
     ├── controls.py        # barra comandi: Avvia/Pausa/Annulla/Paralleli/Incolla/Tema/Info (in menu Impostazioni)
-    ├── experimental_dialog.py # ExperimentalFeaturesDialog: spinbox "Connessioni per file" e "Budget per pezzo (s)" (riesposti, persistono in preferences.json), ciascuno con descrizione breve inline e icona "i" (QToolButton) che apre la spiegazione estesa in QMessageBox; selezione per velocità resta ritirata dall'UI
-    ├── preferences.py     # carica/salva preferenze utente (tema, check aggiornamenti all'avvio) in preferences.json
+    ├── experimental_dialog.py # ExperimentalFeaturesDialog: 3 controlli con descrizione breve inline e icona "i" (QToolButton) → QMessageBox estesa: "Connessioni per file" (spinbox), "Budget per pezzo (s)" (spinbox), "Selezione per velocità" (checkbox + spinbox soglia KB/s); tutti persistono in preferences.json
+    ├── preferences.py     # carica/salva preferenze utente (tema, check aggiornamenti all'avvio, selezione per velocità abilitata + soglia KB/s) in preferences.json
     ├── about_dialog.py    # AboutDialog: nome/acronimo/autore/nick/link/logo (da branding) + licenza + controllo aggiornamenti manuale
     ├── update_check.py    # UpdateCheckWorker(QThread): GET releases/latest GitHub, fuori dal thread GUI
     ├── update_banner.py   # UpdateBanner: barra sottile richiudibile ("nuova versione disponibile")
@@ -77,7 +77,7 @@ package.ps1                # packaging: crea dist/MegaProxyRotator-X.Y.Z.zip
 ## Flusso dati
 1. Utente incolla link Mega in `LinkPanel` → clic "Avvia".
 2. `MainWindow._on_start` istanzia `DownloadOrchestrator(SessionState)` e gli passa la lista link.
-3. `Orchestrator.start()`: hot-start da `proxy_cache.load()` se disponibile, altrimenti `ProxyScraper.fetch_all()` → `ProxyValidator.validate_against_mega()` → `ProxyPool.add_many()`.
+3. `Orchestrator.start()`: hot-start da `proxy_cache.load()` se disponibile, altrimenti `ProxyScraper.fetch_all()` → `ProxyValidator.validate_against_mega()` → `ProxyPool.add_many()`. Se la selezione per velocità è attiva (preferenze), la validazione include uno stage 3 di speed test e i candidati salgono a 5000.
 4. Per ogni link viene avviato un `DownloadWorker(QThread)` che esegue `DOWNLOAD_CYCLES` cicli.
 5. A ogni ciclo: `ProxyPool.get_next()` → `MegaClient(proxy).get_egress_ip()` → se `PARALLEL_CONNECTIONS_PER_FILE > 1` (default 10) usa `ParallelMegaDownloader.download()`, altrimenti `MegaClient.download()`.
 6. Worker emette `progress / ip_logged / cycle_completed / failed / fatal_error / completed_info / all_done / cancelled / abandoned / throughput` → `JobsPanel` (via `JobsModel`). Su `completed_info` l'orchestrator persiste lo storico in `download_history.log` e lo riemette alla GUI per aggiornare nome file e path nelle card.

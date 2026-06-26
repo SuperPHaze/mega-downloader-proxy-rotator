@@ -88,6 +88,9 @@ class ProxyPool:
                 lat = p.get("latency_ms")
                 if isinstance(lat, (int, float)) and lat > 0:
                     self._latency[key] = int(lat)
+                bps = p.get("throughput_bps")
+                if isinstance(bps, (int, float)) and bps > 0:
+                    self._throughput[key] = float(bps)
             total = self._count_alive_unlocked()
         log.info("Pool: aggiunti %d proxy (vivi totali: %d)", len(proxies), total)
 
@@ -369,6 +372,9 @@ class ProxyPool:
                     lat = p.get("latency_ms")
                     if isinstance(lat, (int, float)) and lat > 0:
                         self._latency[key] = int(lat)
+                    bps = p.get("throughput_bps")
+                    if isinstance(bps, (int, float)) and bps > 0:
+                        self._throughput[key] = float(bps)
                     self._proxies.append(p)
                     added += 1
                 alive_now = self._count_alive_unlocked()

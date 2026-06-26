@@ -4,6 +4,16 @@
 
 Tutte le modifiche rilevanti del progetto. Formato basato su [Keep a Changelog](https://keepachangelog.com/it/1.1.0/); versioni secondo [SemVer](https://semver.org/lang/it/).
 
+## [1.11.1] — 2026-06-26
+
+### Aggiunto
+- **Selezione per velocità** (Funzioni Sperimentali): profilo di download alternativo che attiva
+  un terzo stadio di validazione (speed test reale da 1 MB), doppia soglia (ammissione fissa
+  100 KB/s + preferenza configurabile, default 500 KB/s), 5000 candidati (anziché 3000),
+  connessioni ridotte a 5, e selezione round-robin basata su throughput. I proxy lenti restano
+  come riserva: il download degrada anziché fermarsi. Abilitabile dal pannello Funzioni
+  Sperimentali con checkbox e spinbox soglia in KB/s.
+
 ## [1.11.0] — 2026-06-25
 
 ### Aggiunto

@@ -20,7 +20,7 @@ L'uso previsto è il download di file di cui si ha il diritto di disporre. I pro
 
 Ogni sessione di download si articola in tre fasi che operano in parallelo una volta avviate.
 
-**Approvvigionamento del pool.** Prima di scaricare, il programma costruisce un insieme di proxy funzionanti: raccoglie liste da numerose fonti pubbliche e le sottopone a una validazione a due stadi (sezione 3). Se è disponibile una cache da una sessione precedente, parte "a caldo" da quella e valida in background.
+**Approvvigionamento del pool.** Prima di scaricare, il programma costruisce un insieme di proxy funzionanti: raccoglie liste da numerose fonti pubbliche e le sottopone a una validazione a due stadi (tre con la selezione per velocità attiva; sezione 3). Se è disponibile una cache da una sessione precedente, parte "a caldo" da quella e valida in background.
 
 **Download.** Il file viene risolto e diviso in una coda di chunk a dimensione fissa, scaricati da più connessioni HTTP Range parallele, ciascuna su un proxy diverso, decifrati in streaming e riassemblati (sezioni 4 e 6).
 
@@ -30,13 +30,15 @@ Ogni sessione di download si articola in tre fasi che operano in parallelo una v
 
 ## 3. Il pool di proxy: raccolta, validazione, punteggio
 
-Le liste pubbliche di proxy sono ampie e in larga parte composte da indirizzi non più operativi. Usarle senza filtro produrrebbe fallimenti continui. Il programma applica quindi una **validazione a due stadi**, dimensionata per scartare in fretta i candidati inutili e spendere le risorse di test più costose solo su quelli promettenti.
+Le liste pubbliche di proxy sono ampie e in larga parte composte da indirizzi non più operativi. Usarle senza filtro produrrebbe fallimenti continui. Il programma applica quindi una **validazione a due stadi** (tre con la selezione per velocità attiva), dimensionata per scartare in fretta i candidati inutili e spendere le risorse di test più costose solo su quelli promettenti.
 
 **Stadio 1 — raggiungibilità.** Pre-filtro veloce e ad alta concorrenza (fino a 100 worker, timeout 4 s) contro un endpoint di connettività ad alta affidabilità (`generate_204` di Google). Verifica solo che il proxy regga un round-trip HTTP; non giudica Mega. Serve a eliminare i proxy morti senza sprecare un test sulla capacità limitata dello stadio 2.
 
 **Stadio 2 — raggiungibilità di Mega.** I superstiti vengono provati, con concorrenza moderata (60 worker) perché Mega rate-limita, contro l'host dell'API di download di Mega — lo stesso usato dalla risoluzione reale dei link, non la homepage. Il criterio di successo è qualsiasi risposta HTTP ricevuta dall'host, anche un errore applicativo: significa che il round-trip è arrivato a destinazione. Un criterio più severo scarterebbe proxy perfettamente validi per il download.
 
-La validazione si arresta in anticipo al raggiungimento del numero obiettivo di proxy vivi (60) e comunque non supera un tetto di candidati (3000), per non trasformare l'avvio in minuti di attesa.
+La validazione si arresta in anticipo al raggiungimento del numero obiettivo di proxy vivi (60) e comunque non supera un tetto di candidati (3000, elevato a 5000 con la selezione per velocità attiva), per non trasformare l'avvio in minuti di attesa.
+
+**Stadio 3 — speed test (opzionale).** Se la "Selezione per velocità" è abilitata nel pannello Funzioni Sperimentali, i proxy passati allo stadio 2 vengono ulteriormente filtrati con un test di throughput reale: viene scaricato 1 MB da un server esterno (non Mega) con un timeout di 15 secondi e 30 worker paralleli. I proxy sotto la soglia di ammissione fissa (100 KB/s) vengono scartati; quelli sopra la soglia di preferenza configurabile (default 500 KB/s) vengono serviti per primi nel pool; quelli nella fascia intermedia rimangono come riserva e vengono usati se i proxy "veloci" sono esauriti — il download degrada ma non si ferma.
 
 È atteso, e non è un difetto, che da centinaia o migliaia di candidati ne sopravvivano poche decine: i proxy gratuiti hanno una mortalità elevata, nell'ordine del 70%.
 
@@ -62,7 +64,9 @@ La scrittura segue il pattern **`.part` + rename atomico**: il trasferimento avv
 
 ## 5. Funzioni sperimentali
 
-Il pannello "Funzioni Sperimentali" espone due controlli, ciascuno con una breve descrizione e un'icona "i" che apre la spiegazione estesa: il numero di **connessioni per file** (quante parti dello stesso file scaricare in parallelo, ognuna su un proxy diverso; default 10) e il **budget per pezzo** (tempo massimo concesso a un proxy per completare un pezzo prima di cambiarlo; default 180 s, sezione 6), per fare prove senza ricompilare i default. La selezione dei proxy per throughput osservato resta invece interna (per riuso futuro) e non è configurabile dalla GUI.
+Il pannello "Funzioni Sperimentali" espone tre controlli, ciascuno con una breve descrizione e un'icona "i" che apre la spiegazione estesa: il numero di **connessioni per file** (quante parti dello stesso file scaricare in parallelo, ognuna su un proxy diverso; default 10), il **budget per pezzo** (tempo massimo concesso a un proxy per completare un pezzo prima di cambiarlo; default 180 s, sezione 6) e la **selezione per velocità** (checkbox + spinbox soglia in KB/s).
+
+La **selezione per velocità** è un profilo di download alternativo: quando attiva aggiunge uno stadio 3 di validazione (speed test reale da 1 MB), alza i candidati a 5000, riduce le connessioni per file a 5 e seleziona i proxy in base al throughput misurato. I proxy veloci (sopra la soglia configurabile, default 500 KB/s) vengono preferiti; quelli lenti ma sopra la soglia di ammissione fissa (100 KB/s) restano come riserva. Di default è disattivata.
 
 > **Nota sui valori predefiniti.** Il programma è collaudato su sessioni lunghe con i valori predefiniti impostati di serie. Modificare i parametri (download in parallelo, connessioni per file, dimensione del chunk, budget per pezzo) può portare benefici in alcuni scenari e penalizzare in altri, perché il comportamento dei proxy gratuiti è molto variabile. È in corso un lavoro per migliorare banda, qualità dei proxy e tenuta sulle sessioni lunghe. Per ora si consiglia di mantenere **1 download alla volta** e un **chunk da 32 MB**.
 
@@ -135,6 +139,15 @@ I valori sotto sono i default di fabbrica; quelli regolabili sono indicati nelle
 | Cooldown proxy rate-limit | 90 s | escluso dalla rotazione e dal conteggio "vivi" alla ricezione di 403/509 dal CDN; torna disponibile allo scadere |
 | Validità cache proxy | 6 ore | voci più vecchie scartate all'avvio |
 | Punteggio proxy | 0 / +5 / −10 / morto sotto −20 | iniziale / successo / fallimento / soglia |
+| **Selezione per velocità** (Stage 3) | off | abilitabile da Funzioni Sperimentali; aggiunge speed test e selezione per throughput |
+| Soglia preferenza (selezione per velocità) | 500 KB/s | configurabile da Funzioni Sperimentali; proxy sopra soglia serviti per primi |
+| Soglia ammissione (selezione per velocità) | 100 KB/s | fissa; proxy sotto soglia scartati dallo Stage 3 |
+| Connessioni per file (selezione per velocità) | 5 | ridotto da 10 quando la selezione per velocità è attiva |
+| Candidati massimi (selezione per velocità) | 5000 | elevato da 3000 quando la selezione per velocità è attiva |
+| URL speed test Stage 3 | http://speedtest.tele2.net/1MB.zip | server esterno, non Mega |
+| Bytes scaricati per speed test | 1 MB | misura il throughput reale del proxy |
+| Timeout speed test | 15 s | connect+read per proxy durante lo Stage 3 |
+| Worker Stage 3 | 30 | concorrenza del test di velocità |
 
 ---
 

@@ -18,6 +18,10 @@ from src.core.config import (
     PARALLEL_CONNECTIONS_PER_FILE,
     PROXY_CACHE_MIN_SCORE_FOR_PERSISTENCE,
     PROXY_CACHE_SAVE_INTERVAL_S,
+    SPEED_SELECTION_ADMISSION_BPS,
+    SPEED_SELECTION_DEFAULT_CONNECTIONS,
+    SPEED_SELECTION_MAX_CANDIDATES,
+    SPEED_SELECTION_MIN_BPS,
     VALIDATOR_STAGE1_WORKERS,
 )
 from src.core.download_history import extract_handle, record_completed
@@ -70,16 +74,30 @@ def _log_per_source_survival(
             log.debug("log_validation_result fallita per '%s'", source_name)
 
 
-def _scrape_and_validate() -> list[dict]:
+def _scrape_and_validate(
+    max_candidates: int = MAX_PROXIES_TO_VALIDATE,
+    speed_test: bool = False,
+    speed_admission_bps: int = SPEED_SELECTION_ADMISSION_BPS,
+    speed_preference_bps: int = SPEED_SELECTION_MIN_BPS,
+) -> list[dict]:
     # Helper riutilizzato sia dal setup iniziale sia dal refill del pool.
     scraper = ProxyScraper()
     candidates = scraper.fetch_all()
-    if len(candidates) > MAX_PROXIES_TO_VALIDATE:
-        log.info("Cap candidati a %d (su %d)", MAX_PROXIES_TO_VALIDATE, len(candidates))
-        candidates = candidates[:MAX_PROXIES_TO_VALIDATE]
+    if len(candidates) > max_candidates:
+        log.info("Cap candidati a %d (su %d)", max_candidates, len(candidates))
+        candidates = candidates[:max_candidates]
     validator = ProxyValidator()
-    breakdown = validator.validate_against_mega(candidates, return_stage_breakdown=True)
+    breakdown = validator.validate_against_mega(
+        candidates,
+        return_stage_breakdown=True,
+        speed_test=speed_test,
+        speed_admission_bps=speed_admission_bps,
+        speed_preference_bps=speed_preference_bps,
+    )
     _log_per_source_survival(candidates, breakdown["stage1_alive"], breakdown["stage2_alive"])
+    # Quando speed_test=True, i proxy finali sono in stage3_alive (ammissione passata).
+    if speed_test and "stage3_alive" in breakdown:
+        return breakdown["stage3_alive"]
     return breakdown["stage2_alive"]
 
 
@@ -93,9 +111,19 @@ class _SetupThread(QThread):
     setup_progress = pyqtSignal(int, int, int)
     setup_status = pyqtSignal(str)
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        max_candidates: int = MAX_PROXIES_TO_VALIDATE,
+        speed_test: bool = False,
+        speed_admission_bps: int = SPEED_SELECTION_ADMISSION_BPS,
+        speed_preference_bps: int = SPEED_SELECTION_MIN_BPS,
+    ) -> None:
         super().__init__()
         self.setObjectName("SetupThread")
+        self._max_candidates = max_candidates
+        self._speed_test = speed_test
+        self._speed_admission_bps = speed_admission_bps
+        self._speed_preference_bps = speed_preference_bps
 
     def run(self) -> None:
         try:
@@ -126,7 +154,7 @@ class _SetupThread(QThread):
                 self.hot_started.emit()
                 return
 
-            # === Flusso classico: scrape completo + validazione 2-stage. ===
+            # === Flusso classico: scrape completo + validazione 2-stage (o 3). ===
             self.setup_status.emit("Raccolta proxy dalle fonti pubbliche...")
             scraper = ProxyScraper()
             candidates = scraper.fetch_all()
@@ -134,9 +162,9 @@ class _SetupThread(QThread):
             if not candidates and not hot_alive:
                 self.failed.emit("Nessun proxy raccolto dalle fonti")
                 return
-            if len(candidates) > MAX_PROXIES_TO_VALIDATE:
-                log.info("Setup: cap a %d (su %d)", MAX_PROXIES_TO_VALIDATE, len(candidates))
-                candidates = candidates[:MAX_PROXIES_TO_VALIDATE]
+            if len(candidates) > self._max_candidates:
+                log.info("Setup: cap a %d (su %d)", self._max_candidates, len(candidates))
+                candidates = candidates[:self._max_candidates]
             # Se l'hot-start ha portato qualcosa ma sotto soglia, usalo come seed
             # in testa ai candidati. Dedup (host, port).
             if hot_alive:
@@ -158,11 +186,18 @@ class _SetupThread(QThread):
                 candidates,
                 progress_callback=lambda d, t, a: self.setup_progress.emit(d, t, a),
                 return_stage_breakdown=True,
+                speed_test=self._speed_test,
+                speed_admission_bps=self._speed_admission_bps,
+                speed_preference_bps=self._speed_preference_bps,
             )
             _log_per_source_survival(
                 candidates, breakdown["stage1_alive"], breakdown["stage2_alive"],
             )
-            alive = breakdown["stage2_alive"]
+            # Con speed_test=True i proxy finali sono quelli che hanno passato lo stage3.
+            if self._speed_test and "stage3_alive" in breakdown:
+                alive = breakdown["stage3_alive"]
+            else:
+                alive = breakdown["stage2_alive"]
             log.info("Setup completato: %d proxy vivi", len(alive))
             self.finished_ok.emit(alive)
         except Exception as exc:
@@ -227,6 +262,9 @@ class DownloadOrchestrator(QObject):
         # Budget temporale massimo per pezzo (Funzioni Sperimentali).
         # None = usa il default di config (comportamento storico).
         self.segment_max_duration_s: int | None = None
+        # Selezione per velocita' (Leva B): cambia profilo sessione se True.
+        self.speed_selection_enabled: bool = False
+        self.speed_selection_min_bps: int = SPEED_SELECTION_MIN_BPS
         # Timer che pubblica periodicamente la size del pool. Non attivato in
         # __init__/start(): viene avviato in _on_setup_ok dopo il primo
         # add_many, altrimenti emetterebbe 0 a ripetizione durante il setup.
@@ -263,20 +301,48 @@ class DownloadOrchestrator(QObject):
         connections_per_file: int | None = None,
         selection_mode: str | None = None,
         segment_max_duration_s: int | None = None,
+        speed_selection_enabled: bool = False,
+        speed_selection_min_bps: int = SPEED_SELECTION_MIN_BPS,
     ) -> None:
         if concurrency is not None:
             self.max_concurrent = max(1, int(concurrency))
         self.file_time_limit_s = file_time_limit_s
         self.chunk_size_bytes = chunk_size_bytes
-        self.connections_per_file = connections_per_file
-        self.selection_mode = selection_mode or "score"
         self.segment_max_duration_s = segment_max_duration_s
+        self.speed_selection_enabled = speed_selection_enabled
+        self.speed_selection_min_bps = speed_selection_min_bps
+
+        # F2: adattamento automatico del profilo quando la selezione per velocita' e' attiva.
+        if speed_selection_enabled:
+            self.selection_mode = "throughput"
+            # Se l'utente non ha impostato manualmente le connessioni, usa il
+            # default ridotto (5): meno pressione sul pool, i proxy durano di piu'.
+            self.connections_per_file = (
+                connections_per_file
+                if connections_per_file is not None
+                else SPEED_SELECTION_DEFAULT_CONNECTIONS
+            )
+            # Il refill del pool deve usare lo stesso profilo (speed test + cap 5000).
+            self.pool._refill_fn = lambda: _scrape_and_validate(
+                max_candidates=SPEED_SELECTION_MAX_CANDIDATES,
+                speed_test=True,
+                speed_admission_bps=SPEED_SELECTION_ADMISSION_BPS,
+                speed_preference_bps=self.speed_selection_min_bps,
+            )
+        else:
+            self.selection_mode = selection_mode or "score"
+            self.connections_per_file = connections_per_file
+            # Ripristina il refill standard (utile se in sessione precedente era stato
+            # sostituito con quello speed-test).
+            self.pool._refill_fn = _scrape_and_validate
+
         # Letti UNA volta all'avvio sessione (non a caldo): il pool condiviso
         # da tutti i worker adotta la modalita' di selezione e il K per il
         # ramo "throughput" prima che parta il primo download.
         self.pool.selection_mode = self.selection_mode
         if self.connections_per_file is not None:
             self.pool.n_connections = max(1, int(self.connections_per_file))
+
         # Riga CONFIG a inizio sessione (vedi rules/logging.md): correla
         # config attiva <-> eventuale crash nei log raccolti dagli utenti.
         connessioni = self.connections_per_file or PARALLEL_CONNECTIONS_PER_FILE
@@ -285,17 +351,24 @@ class DownloadOrchestrator(QObject):
             if self.chunk_size_bytes is not None
             else PARALLEL_CHUNK_SIZE_MB
         )
+        if speed_selection_enabled:
+            speed_label = (
+                f"on (soglia {speed_selection_min_bps // 1024} KB/s, "
+                f"ammissione {SPEED_SELECTION_ADMISSION_BPS // 1024} KB/s, "
+                f"{SPEED_SELECTION_MAX_CANDIDATES} candidati, {connessioni} conn)"
+            )
+        else:
+            speed_label = "off"
         log.info(
             "CONFIG connessioni=%d chunk_mb=%g selezione_velocita=%s "
             "file_paralleli=%d validator_stage1=%d",
-            connessioni, chunk_mb,
-            "on" if self.selection_mode == "throughput" else "off",
+            connessioni, chunk_mb, speed_label,
             self.max_concurrent, VALIDATOR_STAGE1_WORKERS,
             extra={
                 "event_type": "config",
                 "connessioni": connessioni,
                 "chunk_mb": chunk_mb,
-                "selezione_velocita": "on" if self.selection_mode == "throughput" else "off",
+                "selezione_velocita": speed_label,
             },
         )
         log.info(
@@ -304,7 +377,14 @@ class DownloadOrchestrator(QObject):
         )
         self.session_state.start()
         self._pending_links = list(links)
-        self._setup = _SetupThread()
+        # F3/F4: passa il cap e i parametri speed test al thread di setup.
+        max_cand = SPEED_SELECTION_MAX_CANDIDATES if speed_selection_enabled else MAX_PROXIES_TO_VALIDATE
+        self._setup = _SetupThread(
+            max_candidates=max_cand,
+            speed_test=speed_selection_enabled,
+            speed_admission_bps=SPEED_SELECTION_ADMISSION_BPS,
+            speed_preference_bps=speed_selection_min_bps,
+        )
         self._hot_started = False
         self._setup.setup_status.connect(self.setup_status)
         self._setup.setup_progress.connect(self.setup_progress)

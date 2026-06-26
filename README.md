@@ -37,7 +37,7 @@ A **Windows desktop app** (Python + PyQt6) that downloads files from Mega.nz by 
 ## ✨ What makes it different
 
 - **Built for Mega** — public-link resolution and AES decryption are built in (no dependency on `mega.py`).
-- **Validated, scored pool of free proxies** — scraped from dozens of sources (around 70), two-stage validation, per-proxy reputation, on-disk cache, background regeneration.
+- **Validated, scored pool of free proxies** — scraped from dozens of sources (around 70), two-stage validation (optionally three with a speed test), per-proxy reputation, on-disk cache, background regeneration.
 - **A different proxy for every fragment** — rotation is per-fragment, not per-file: if a proxy dies, you lose at most one fragment.
 - **Granular resume** — completed fragments survive crashes, proxy changes, and changes to the number of connections.
 
@@ -49,7 +49,7 @@ A **Windows desktop app** (Python + PyQt6) that downloads files from Mega.nz by 
 - **Configurable per-file time limit**; past the threshold the file is abandoned.
 - **Download history** with a warning for links already downloaded (deduplicated by Mega handle).
 - **Per-fragment watchdog**: drops proxies that are too slow or fail to finish in time.
-- **"Experimental Features" panel** with the connections-per-file control (for testing, without recompiling the defaults).
+- **"Experimental Features" panel** with connections per file, fragment budget, and speed-based selection with configurable threshold (real speed test + throughput-based proxy selection).
 - **Passive crash diagnostics**, always on (memory heartbeat, multi-thread tracebacks), universal structured logging (`logs/events.jsonl`), and an HTML report generator (`tools/report.py`).
 - **Tabbed interface** with a compact 3-zone dashboard (speed, downloads, proxy) — a radial speed gauge (% of session peak), a segmented bar for download status, compact cards for proxy pool status — button-based job filters, light/dark theme, global and per-job pause/resume/cancel.
 - **CLI mode** for headless machines.
