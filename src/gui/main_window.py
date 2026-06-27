@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import shutil
+from pathlib import Path
 
 from PyQt6.QtCore import Qt, QTimer, QUrl
 from PyQt6.QtGui import QDesktopServices
@@ -388,11 +389,23 @@ class MainWindow(QMainWindow):
         self._delete_folder_for(file_id)
 
     def _delete_folder_for(self, file_id: int) -> None:
-        url = self._links_by_id.get(file_id)
-        if url is None:
-            log.warning("Delete folder: file_id=%d non trovato", file_id)
-            return
-        path = job_output_dir(url, file_id)
+        # Usa il path corrente dal modello se disponibile (la cartella potrebbe
+        # essere stata rinominata col nome file dopo il resolve).
+        path: Path | None = None
+        job = self.jobs_panel.model.get_job(file_id)
+        if job and job.output_path:
+            p = Path(job.output_path)
+            # output_path è il file finale: OUTPUT_DIR/<nome>_<id>/ciclo_N/<file>
+            # La cartella base è 2 livelli sopra.
+            candidate = p.parent.parent
+            if candidate.is_dir():
+                path = candidate
+        if path is None:
+            url = self._links_by_id.get(file_id)
+            if url is None:
+                log.warning("Delete folder: file_id=%d non trovato", file_id)
+                return
+            path = job_output_dir(url, file_id)
         if not path.exists():
             self._set_status(f"File {file_id + 1}: cartella non presente su disco.")
             return

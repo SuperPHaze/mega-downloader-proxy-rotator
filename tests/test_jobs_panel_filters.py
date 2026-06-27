@@ -66,3 +66,21 @@ def test_filter_changes_card_visibility(qapp):
     panel._filter_buttons[FILTER_COMPLETED].click()
     assert panel._cards[0].isHidden() is False
     assert panel._cards[1].isHidden() is True
+
+
+def test_card_auto_hides_when_job_completes_in_progress_filter(qapp):
+    # Il filtro "In corso" deve aggiornare la visibilita' della card
+    # automaticamente, senza che l'utente clicchi nulla.
+    from PyQt6.QtWidgets import QApplication
+    panel = JobsPanel()
+    panel.reset(["https://mega.nz/file/AAA#bbb"])
+    # Avvia il job (transizione queued → running)
+    panel.model.set_progress(0, 10)
+    panel._filter_buttons[FILTER_IN_PROGRESS].click()
+    # Job in corso: card visibile
+    assert not panel._cards[0].isHidden()
+    # Completa il job senza chiamare _apply_filter manualmente
+    panel.model.mark_completed(0)
+    QApplication.processEvents()
+    # La card deve sparire automaticamente grazie a job_updated → _on_job_status_changed
+    assert panel._cards[0].isHidden() is True

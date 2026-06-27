@@ -81,3 +81,11 @@ def load_speed_selection_min_kbps() -> int:
 
 def save_speed_selection_min_kbps(value: int) -> None:
     _save_pref("speed_selection_min_kbps", int(value))
+
+
+def load_stats_panel_expanded() -> bool:
+    return bool(_load_prefs().get("stats_panel_expanded", True))
+
+
+def save_stats_panel_expanded(expanded: bool) -> None:
+    _save_pref("stats_panel_expanded", bool(expanded))

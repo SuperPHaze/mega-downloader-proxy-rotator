@@ -33,3 +33,22 @@ def fmt_bytes(n: int) -> str:
     if n >= 1024:
         return f"{n / 1024:.0f} KB"
     return f"{n} B"
+
+
+def build_header_summary(
+    elapsed_s: float,
+    total_bytes: int,
+    throughput_eff_bps: float,
+    totals_dict: dict,
+    all_terminated: bool,
+) -> str:
+    """Riassunto compatto per l'header del widget Statistiche (puro, senza Qt)."""
+    time_str = fmt_hhmmss(elapsed_s)
+    if all_terminated:
+        time_str += " (completata)"
+    vol_str = fmt_bytes(total_bytes)
+    thr_str = fmt_speed(throughput_eff_bps)
+    total = totals_dict.get("total", 0)
+    ok = totals_dict.get("ok", 0)
+    fallen = totals_dict.get("fallen", 0)
+    return f"{time_str} · {vol_str} · {thr_str} · {total} tot · {ok} ok · {fallen} fall."

@@ -25,9 +25,10 @@ def _qapp():
 def test_abandoned_after_max_attempts_logs_warning_not_error(tmp_path, caplog):
     worker = DownloadWorker(7, "https://mega.nz/file/AAA#BBB", ProxyPool(), SessionState())
     worker._total_attempts = MAX_ATTEMPTS_PER_FILE  # il prossimo tentativo supera il cap
+    worker._current_base_dir = tmp_path  # normalmente inizializzato da run()
 
     with caplog.at_level(logging.DEBUG, logger="src.downloader.worker"):
-        result = worker._run_cycle_until_success(1, tmp_path)
+        result = worker._run_cycle_until_success(1)
 
     assert result is False
     abbandono = [r for r in caplog.records if "abbandono link" in r.message]

@@ -145,3 +145,15 @@ def clear(*, path: Path | None = None) -> None:
         log.info("[proxy_cache] cache rimossa: %s", target.name)
     except OSError as exc:
         log.warning("[proxy_cache] clear fallita: %s", exc)
+
+
+def delete_proxy_cache(*, path: Path | None = None) -> bool:
+    """Cancella il file di cache. Ritorna True se il file esisteva ed è stato rimosso.
+    Propaga le eccezioni di I/O al chiamante (a differenza di clear())."""
+    target = path or cache_path()
+    if not target.exists():
+        log.info("[proxy_cache] nessuna cache da cancellare (%s)", target.name)
+        return False
+    target.unlink()
+    log.info("[proxy_cache] cache proxy cancellata: %s", target.name)
+    return True

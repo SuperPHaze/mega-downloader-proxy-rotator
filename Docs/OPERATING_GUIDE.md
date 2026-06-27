@@ -104,6 +104,8 @@ If the pool empties at a critical moment, it's the download itself that requests
 
 Building the pool for the first time takes a while (roughly half a minute to a couple of minutes). To avoid repeating that on every launch, the program persists the best proxies to disk and reloads them on the next launch, quickly re-validating them: proxies still alive are immediately available (a "warm" start), while a full search still starts in the background. Cache entries past their validity window (6 hours) are discarded on load. From the second session onward, startup is therefore noticeably faster.
 
+The **Reset cache** button in the proxy zone (at the bottom of the interface) deletes `proxy_cache.json` without closing the application: the next startup or session will start from scratch, useful when testing a different configuration without leftovers from the previous session. The deletion does not interrupt any download in progress.
+
 ---
 
 ## 9. Session controls and resume
@@ -116,7 +118,7 @@ Resume also covers involuntary interruptions (program closed, blackout, error). 
 
 ## 10. Statistics dashboard
 
-The **Statistics** panel, visible below the main dashboard, aggregates session metrics in a single place designed for comparing configurations during tests.
+The **Statistics** panel, visible below the main dashboard, aggregates session metrics in a single place designed for comparing configurations during tests. The panel is **collapsible**: clicking the header shrinks it to a single summary line (active time, volume, throughput and job counts) that remains always visible. The expanded/collapsed state is remembered between sessions.
 
 **What it shows:**
 
@@ -137,7 +139,7 @@ Each job card in a terminal state also shows a summary line with the final avera
 
 ## 11. Output, history, and logs
 
-Downloaded files are saved in dedicated subfolders inside the project's `downloads` folder. All diagnostic/operational logs are collected in the project's `logs/` folder: the history of completed downloads (deduplicated by Mega handle, used to warn when a link already downloaded is re-entered), the log of abandoned links, per-source proxy metrics, a general technical activity log, a universal structured log (`logs/events.jsonl`), and a raw capture of the entire terminal output of the current session (`logs/terminal-log.txt`, reset on every startup). They are not needed for normal use, but are available for diagnostics.
+Downloaded files are saved in dedicated subfolders inside the project's `downloads` folder. Each download occupies a folder named after the downloaded file with a numeric suffix (`<file_name>_<id>/`); inside it, the `ciclo_1/`, `ciclo_2/`, … subfolders hold the files produced by each cycle. The folder name is assigned on the first successful link resolve; until then a temporary name based on a URL hash is used. All diagnostic/operational logs are collected in the project's `logs/` folder: the history of completed downloads (deduplicated by Mega handle, used to warn when a link already downloaded is re-entered), the log of abandoned links, per-source proxy metrics, a general technical activity log, a universal structured log (`logs/events.jsonl`), and a raw capture of the entire terminal output of the current session (`logs/terminal-log.txt`, reset on every startup). They are not needed for normal use, but are available for diagnostics.
 
 A **passive diagnostics suite**, always on, complements these logs: native crash tracebacks, multi-thread exception capture, a periodic heartbeat with memory usage, and session start/clean-exit markers. In case of a crash, the command-line tool `tools/report.py` reads `logs/events.jsonl` and `logs/crash.log` and produces a readable HTML report in `logs/reports/`, useful for reconstructing what the program was doing shortly before the problem.
 

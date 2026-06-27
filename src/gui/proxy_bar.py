@@ -4,9 +4,10 @@
 from __future__ import annotations
 
 from PyQt6.QtGui import QFont
-from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QMessageBox, QPushButton, QVBoxLayout, QWidget
 
 from src.gui import style as _style
+from src.proxy.proxy_cache import delete_proxy_cache
 
 
 def _fmt_ago(seconds: float | None) -> str:
@@ -88,6 +89,14 @@ class ProxyBar(QWidget):
         )
         for card in self._cards:
             cards_row.addWidget(card)
+        cards_row.addStretch(1)
+        self._reset_btn = QPushButton("Reset cache")
+        self._reset_btn.setFixedHeight(22)
+        self._reset_btn.setToolTip(
+            "Cancella proxy_cache.json. Il prossimo avvio rifarà lo scrape da zero."
+        )
+        self._reset_btn.clicked.connect(self._on_reset_cache)
+        cards_row.addWidget(self._reset_btn)
         layout.addLayout(cards_row)
 
         self._restyle_micro()
@@ -126,6 +135,27 @@ class ProxyBar(QWidget):
         self._card_refills.set_value(str(self._refills))
         self._card_since.set_value(_fmt_ago(self._since_seconds))
 
+    # ---- reset cache ---------------------------------------------------------
+
+    def _on_reset_cache(self) -> None:
+        answer = QMessageBox.question(
+            self,
+            "Reset cache proxy",
+            "Cancellare la cache dei proxy?\n"
+            "Il prossimo avvio sarà più lento perché rifarà lo scrape da zero.",
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            deleted = delete_proxy_cache()
+        except OSError as exc:
+            QMessageBox.warning(self, "Errore", f"Impossibile cancellare la cache:\n{exc}")
+            return
+        if deleted:
+            QMessageBox.information(self, "Cache proxy", "Cache proxy cancellata.")
+        else:
+            QMessageBox.information(self, "Cache proxy", "Nessuna cache da cancellare.")
+
     # ---- reset / tema ---------------------------------------------------------
 
     def reset(self) -> None:
@@ -153,3 +183,9 @@ class ProxyBar(QWidget):
     def _restyle_cards(self) -> None:
         for card in self._cards:
             card.restyle()
+        p = _style.CURRENT_PALETTE
+        self._reset_btn.setStyleSheet(
+            f"QPushButton {{ color: {p['text_dim']}; border: 1px solid {p['border']}; "
+            f"border-radius: 4px; background: transparent; font-size: 8pt; padding: 2px 6px; }}"
+            f"QPushButton:hover {{ background-color: {p['panel_alt']}; }}"
+        )

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import os
 import time
 from pathlib import Path
 
@@ -16,6 +17,7 @@ from src.core.config import (
     OUTPUT_DIR,
     PARALLEL_CONNECTIONS_PER_FILE,
 )
+from src.core.file_naming import final_output_dir
 from src.core.state import SessionState
 from src.downloader.mega_client import MegaClient, MegaCryptoDependencyError
 from src.downloader.parallel_client import ParallelMegaDownloader
@@ -25,8 +27,9 @@ log = logging.getLogger(__name__)
 
 
 def job_output_dir(mega_url: str, file_id: int) -> Path:
-    # Stessa formula usata dentro run(): centralizzata qui per consentire
-    # alla GUI/orchestrator di sapere dove cancellare i file di un job.
+    # Path temporaneo (pre-resolve): basato sull'hash dell'URL, usato prima
+    # che il nome file sia noto. Dopo il primo resolve viene rinominato in
+    # final_output_dir(). Mantenuto come fallback per GUI/orchestrator.
     file_hash = hashlib.sha1(mega_url.encode("utf-8")).hexdigest()[:12]
     return OUTPUT_DIR / f"{file_hash}_{file_id}"
 
@@ -146,17 +149,19 @@ class DownloadWorker(QThread):
         # di rotazione IP / verifica integrita'). Senza file_id, due worker
         # con lo stesso URL condividerebbero il sidecar di resume e il
         # secondo skippa tutto.
-        base_dir = job_output_dir(self.mega_url, self.file_id)
+        # _current_base_dir parte hash-based e viene rinominato in
+        # final_output_dir() al primo resolve riuscito.
+        self._current_base_dir = job_output_dir(self.mega_url, self.file_id)
         # Calcola deadline wall-clock per-file (se limite configurato).
         if self._file_time_limit_s is not None:
             self._file_deadline = time.monotonic() + self._file_time_limit_s
             log.info("[file %d] deadline: %d s", self.file_id, self._file_time_limit_s)
-        log.info("[file %d] start url=%s base_dir=%s", self.file_id, self.mega_url, base_dir)
+        log.info("[file %d] start url=%s base_dir=%s", self.file_id, self.mega_url, self._current_base_dir)
 
         try:
             try:
                 for cycle in range(1, DOWNLOAD_CYCLES + 1):
-                    ok = self._run_cycle_until_success(cycle, base_dir)
+                    ok = self._run_cycle_until_success(cycle)
                     if not ok:
                         # Uscita anticipata: cancellazione globale o locale.
                         log.info("[file %d] interrotto al ciclo %d", self.file_id, cycle)
@@ -164,7 +169,7 @@ class DownloadWorker(QThread):
 
                 log.info(
                     "[file %d] tutti i %d cicli completati. Output: %s",
-                    self.file_id, DOWNLOAD_CYCLES, base_dir.resolve(),
+                    self.file_id, DOWNLOAD_CYCLES, self._current_base_dir.resolve(),
                 )
                 self._emit_completed_info()
                 self.all_done.emit(self.file_id)
@@ -185,15 +190,35 @@ class DownloadWorker(QThread):
             )
             raise
 
-    def _run_cycle_until_success(self, cycle: int, base_dir) -> bool:
+    def _run_cycle_until_success(self, cycle: int) -> bool:
         attempt = 0
-        cycle_dir = base_dir / f"ciclo_{cycle}"
         # Flag per evitare re-emissioni di file_resolved a ogni retry/re-resolve.
         _name_emitted = [False]
 
         def _resolved_cb(fn: str, fs: object, fp) -> None:
             if not _name_emitted[0]:
                 _name_emitted[0] = True
+                # Tenta rinomina cartella base da hash-based a nome-file.
+                new_base = final_output_dir(fn, self.file_id)
+                if new_base != self._current_base_dir:
+                    if new_base.exists():
+                        log.warning(
+                            "[file %d] cartella destinazione già esistente: %s. "
+                            "Mantengo il path corrente.",
+                            self.file_id, new_base,
+                        )
+                    else:
+                        try:
+                            os.rename(self._current_base_dir, new_base)
+                            self._current_base_dir = new_base
+                            updated_fp = self._current_base_dir / f"ciclo_{cycle}" / fn
+                            self.file_resolved.emit(self.file_id, fn, fs, str(updated_fp))
+                            return
+                        except OSError as exc:
+                            log.warning(
+                                "[file %d] rinomina cartella fallita (%s → %s): %s",
+                                self.file_id, self._current_base_dir, new_base, exc,
+                            )
                 self.file_resolved.emit(self.file_id, fn, fs, str(fp))
 
         # Resume: se il ciclo era gia' completato (run precedente / crash recovery)
@@ -203,6 +228,7 @@ class DownloadWorker(QThread):
         # client), non un sidecar `.progress.json*`. Un file con un sidecar
         # accanto e' un residuo del vecchio schema pre-.part: incompleto
         # (la migrazione la fa ParallelMegaDownloader al prossimo download).
+        cycle_dir = self._current_base_dir / f"ciclo_{cycle}"
         if cycle_dir.is_dir():
             def _is_final(p: Path) -> bool:
                 if not p.is_file():
@@ -262,6 +288,9 @@ class DownloadWorker(QThread):
                     self.file_id, self.mega_url, self._total_attempts - 1, last_err,
                 )
                 return False
+            # Ricalcola cycle_dir: _current_base_dir potrebbe essere stato
+            # rinominato da _resolved_cb nell'iterazione precedente.
+            cycle_dir = self._current_base_dir / f"ciclo_{cycle}"
             log.info("[file %d] ciclo %d tentativo %d: preleva proxy", self.file_id, cycle, attempt)
 
             proxy = self._get_proxy_blocking()

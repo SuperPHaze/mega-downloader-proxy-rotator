@@ -27,3 +27,16 @@ def test_save_then_load_segment_max_duration_s_roundtrip(tmp_path, monkeypatch):
     monkeypatch.setattr(preferences, "_PREFS_PATH", tmp_path / "preferences.json")
     preferences.save_segment_max_duration_s(300)
     assert preferences.load_segment_max_duration_s() == 300
+
+
+def test_stats_panel_expanded_default_true(tmp_path, monkeypatch):
+    monkeypatch.setattr(preferences, "_PREFS_PATH", tmp_path / "preferences.json")
+    assert preferences.load_stats_panel_expanded() is True
+
+
+def test_stats_panel_expanded_roundtrip(tmp_path, monkeypatch):
+    monkeypatch.setattr(preferences, "_PREFS_PATH", tmp_path / "preferences.json")
+    preferences.save_stats_panel_expanded(False)
+    assert preferences.load_stats_panel_expanded() is False
+    preferences.save_stats_panel_expanded(True)
+    assert preferences.load_stats_panel_expanded() is True

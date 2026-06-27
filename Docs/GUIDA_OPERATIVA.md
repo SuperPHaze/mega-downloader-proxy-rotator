@@ -104,6 +104,8 @@ Se il pool si svuota in un momento critico, è il download stesso a richiedere u
 
 La prima costruzione del pool richiede tempo (indicativamente da mezzo minuto a un paio di minuti). Per evitare di ripeterla a ogni avvio, il programma persiste su disco i proxy migliori e li ricarica all'apertura successiva, riconvalidandoli rapidamente: i proxy ancora vivi sono subito disponibili (avvio "a caldo"), mentre una ricerca completa riparte comunque in background. Le voci della cache oltre il tempo di validità (6 ore) vengono scartate al caricamento. Dalla seconda sessione in poi l'avvio è quindi sensibilmente più rapido.
 
+Il tasto **Reset cache** nella zona proxy (in basso nell'interfaccia) cancella il file `proxy_cache.json` senza uscire dall'applicazione: il prossimo avvio o la prossima sessione ripartirà da zero, utile quando si vuole testare una configurazione diversa senza residui della sessione precedente. La cancellazione non interrompe alcun download in corso.
+
 ---
 
 ## 9. Controlli di sessione e resume
@@ -116,7 +118,7 @@ Il resume copre anche le interruzioni non volontarie (chiusura del programma, bl
 
 ## 10. Cruscotto Statistiche
 
-Il pannello **Statistiche**, visibile sotto il cruscotto principale, aggrega le metriche di sessione in un unico punto pensato per confrontare configurazioni durante i test.
+Il pannello **Statistiche**, visibile sotto il cruscotto principale, aggrega le metriche di sessione in un unico punto pensato per confrontare configurazioni durante i test. Il pannello è **collassabile**: cliccando sull'intestazione si riduce a una singola riga riassuntiva (tempo attivo, volume, throughput e conteggi job), che rimane sempre visibile. Lo stato espanso/collassato viene ricordato tra le sessioni.
 
 **Cosa mostra:**
 
@@ -137,7 +139,7 @@ Ogni card di job in stato terminale mostra inoltre una riga di riepilogo con la 
 
 ## 11. Output, storico e log
 
-I file scaricati vengono salvati in sottocartelle dedicate dentro la cartella `downloads` del progetto. Tutti i log diagnostici/operativi sono raccolti nella cartella `logs/` del progetto: lo storico dei download completati (con deduplica per handle Mega, usato per avvisare quando si reinserisce un link già scaricato), il registro dei link abbandonati, le metriche per-fonte dei proxy, un log tecnico generale dell'attività, un log strutturato universale (`logs/events.jsonl`) e una cattura grezza dell'intero output del terminale della sessione corrente (`logs/terminal-log.txt`, riazzerato a ogni avvio). Non servono per l'uso ordinario, ma sono disponibili per la diagnostica.
+I file scaricati vengono salvati in sottocartelle dedicate dentro la cartella `downloads` del progetto. Ogni download occupa una cartella con il nome del file scaricato e un suffisso numerico (`<nome_file>_<id>/`); al suo interno le sottocartelle `ciclo_1/`, `ciclo_2/`, … contengono i file prodotti da ciascun ciclo. Il nome della cartella viene assegnato al primo resolve riuscito del link: fino a quel momento viene usato un nome temporaneo basato sull'hash dell'URL. Tutti i log diagnostici/operativi sono raccolti nella cartella `logs/` del progetto: lo storico dei download completati (con deduplica per handle Mega, usato per avvisare quando si reinserisce un link già scaricato), il registro dei link abbandonati, le metriche per-fonte dei proxy, un log tecnico generale dell'attività, un log strutturato universale (`logs/events.jsonl`) e una cattura grezza dell'intero output del terminale della sessione corrente (`logs/terminal-log.txt`, riazzerato a ogni avvio). Non servono per l'uso ordinario, ma sono disponibili per la diagnostica.
 
 Una **suite di diagnostica passiva**, sempre attiva, integra questi log: traceback dei crash nativi, cattura delle eccezioni su tutti i thread, un heartbeat periodico con uso di memoria e marcatori di avvio/chiusura della sessione. In caso di crash, lo strumento da riga di comando `tools/report.py` legge `logs/events.jsonl` e `logs/crash.log` e produce un report HTML leggibile in `logs/reports/`, utile per ricostruire cosa stava succedendo nel programma poco prima del problema.
 

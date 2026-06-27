@@ -495,6 +495,7 @@ class JobsPanel(QWidget):
         self._cards: dict[int, _JobCard] = {}
         self._filter_category: str = FILTER_IN_PROGRESS
         self.model.aggregates_changed.connect(self._on_aggregates_changed)
+        self.model.job_updated.connect(self._on_job_status_changed)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -613,6 +614,17 @@ class JobsPanel(QWidget):
         n = self.model.restartable_count()
         self._restart_all_btn.setText(f"Riavvia falliti ({n})")
         self._restart_all_btn.setEnabled(n > 0)
+
+    def _on_job_status_changed(self, file_id: int) -> None:
+        card = self._cards.get(file_id)
+        if card is None:
+            return
+        job = self.model.get_job(file_id)
+        if job is None:
+            card.setVisible(True)
+            return
+        allowed = _FILTER_CATEGORIES.get(self._filter_category, set())
+        card.setVisible(job.status in allowed)
 
     def _open_folder_for(self, file_id: int) -> None:
         job = self.model.get_job(file_id)

@@ -1,12 +1,12 @@
 # Cruscotto "Statistiche" di sessione: volume totale, throughput effettivo,
 # media aritmetica per-download, picco/minima, tempo attivo con auto-freeze,
-# dettaglio per-job, pulsante "Copia riepilogo". Aggiornamento event-driven
-# + tick 1 Hz per il clock e il campionamento velocita'.
+# dettaglio per-job, pulsante "Copia riepilogo". Header sempre visibile con
+# riassunto 1 Hz; body collassabile. Aggiornamento event-driven + tick 1 Hz.
 from __future__ import annotations
 
 import time
 
-from PyQt6.QtCore import QTimer
+from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
     QApplication,
@@ -16,16 +16,25 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
+    QSizePolicy,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
 
 from src.gui import style as _style
-from src.gui.format_helpers import fmt_bytes, fmt_hhmmss, fmt_mmss, fmt_speed
+from src.gui.format_helpers import (
+    build_header_summary,
+    fmt_bytes,
+    fmt_hhmmss,
+    fmt_mmss,
+    fmt_speed,
+)
 from src.gui.jobs_model import (
     JobsModel,
     STATUS_RUNNING,
 )
+from src.gui.preferences import load_stats_panel_expanded, save_stats_panel_expanded
 from src.gui.session_clock import SessionClock
 from src.gui.session_speed import SessionSpeedStats, is_plausible_bps
 
@@ -55,11 +64,22 @@ def _short_url(url: str, max_len: int = 40) -> str:
 class StatsPanel(QWidget):
     def __init__(self, model: JobsModel) -> None:
         super().__init__()
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
         self.model = model
         self._clock = SessionClock()
         self._speed_stats = SessionSpeedStats()
 
         self._build_ui()
+
+        # Imposta stato iniziale da preferenze prima di connettere il segnale toggle
+        expanded = load_stats_panel_expanded()
+        self._body.setVisible(expanded)
+        self._update_toggle_icon(expanded)
+        self._toggle_btn.setChecked(not expanded)
+
+        # Connetti dopo l'impostazione iniziale per evitare salvataggio spurio
+        self._toggle_btn.toggled.connect(self._on_toggle)
+
         model.aggregates_changed.connect(self.refresh)
         self._tick = QTimer(self)
         self._tick.setInterval(1000)
@@ -74,32 +94,55 @@ class StatsPanel(QWidget):
         outer.setContentsMargins(0, 2, 0, 0)
         outer.setSpacing(0)
 
-        self._box = QGroupBox("Statistiche")
+        self._box = QGroupBox()
+        self._box.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
         outer.addWidget(self._box)
 
         vl = QVBoxLayout(self._box)
         vl.setSpacing(3)
         vl.setContentsMargins(8, 6, 8, 6)
 
-        # Riga sessione + pulsante copia
+        # Header sempre visibile: toggle ▾/▸ + "Statistiche" + riassunto + Copia
         header_row = QHBoxLayout()
-        self._session_lbl = QLabel("Sessione: —")
-        self._session_lbl.setFont(QFont("Segoe UI", 10))
-        header_row.addWidget(self._session_lbl, 1)
+        header_row.setSpacing(6)
+        header_row.setContentsMargins(0, 0, 0, 0)
+
+        self._toggle_btn = QToolButton()
+        self._toggle_btn.setCheckable(True)
+        self._toggle_btn.setFixedSize(20, 20)
+        header_row.addWidget(self._toggle_btn)
+
+        title_lbl = QLabel("Statistiche")
+        title_lbl.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
+        header_row.addWidget(title_lbl)
+
+        self._summary_lbl = QLabel("—")
+        self._summary_lbl.setFont(QFont("Segoe UI", 9))
+        header_row.addWidget(self._summary_lbl, 1)
+
         self._copy_btn = QPushButton("Copia riepilogo")
         self._copy_btn.setFixedHeight(24)
         self._copy_btn.clicked.connect(self._on_copy)
         header_row.addWidget(self._copy_btn)
+
         vl.addLayout(header_row)
 
-        # Volume
-        self._volume_lbl = QLabel("Volume scaricato:  —")
-        vl.addWidget(self._volume_lbl)
+        # Body collassabile: tutto il contenuto dettagliato
+        self._body = QWidget()
+        body_vl = QVBoxLayout(self._body)
+        body_vl.setSpacing(3)
+        body_vl.setContentsMargins(0, 4, 0, 0)
 
-        # Velocità
+        self._session_lbl = QLabel("Sessione: —")
+        self._session_lbl.setFont(QFont("Segoe UI", 10))
+        body_vl.addWidget(self._session_lbl)
+
+        self._volume_lbl = QLabel("Volume scaricato:  —")
+        body_vl.addWidget(self._volume_lbl)
+
         speed_hdr = QLabel("Velocità di sessione")
         speed_hdr.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
-        vl.addWidget(speed_hdr)
+        body_vl.addWidget(speed_hdr)
 
         speed_cols = QHBoxLayout()
         speed_cols.setSpacing(24)
@@ -124,30 +167,43 @@ class StatsPanel(QWidget):
         right.addWidget(self._min_lbl)
         speed_cols.addLayout(right, 1)
 
-        vl.addLayout(speed_cols)
+        body_vl.addLayout(speed_cols)
 
-        # Conteggi job
         self._counts_lbl = QLabel("Job: —")
-        vl.addWidget(self._counts_lbl)
+        body_vl.addWidget(self._counts_lbl)
         self._rate_lbl = QLabel("Tasso completati: —")
-        vl.addWidget(self._rate_lbl)
+        body_vl.addWidget(self._rate_lbl)
 
-        # Dettaglio per-job
         detail_hdr = QLabel("Dettaglio per-download:")
         detail_hdr.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
-        vl.addWidget(detail_hdr)
+        body_vl.addWidget(detail_hdr)
 
         self._detail_text = QPlainTextEdit()
         self._detail_text.setReadOnly(True)
         self._detail_text.setFont(QFont("Consolas", 9))
         self._detail_text.setMaximumHeight(120)
         self._detail_text.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
-        vl.addWidget(self._detail_text)
+        body_vl.addWidget(self._detail_text)
+
+        vl.addWidget(self._body)
+
+    # ---- toggle collassa/espandi -----------------------------------------
+
+    def _on_toggle(self, checked: bool) -> None:
+        expanded = not checked
+        self._body.setVisible(expanded)
+        self._update_toggle_icon(expanded)
+        save_stats_panel_expanded(expanded)
+
+    def _update_toggle_icon(self, expanded: bool) -> None:
+        self._toggle_btn.setArrowType(
+            Qt.ArrowType.DownArrow if expanded else Qt.ArrowType.RightArrow
+        )
 
     # ---- ciclo di vita sessione ------------------------------------------
 
     def start_clock(self) -> None:
-        """Resetta clock e statistiche e avvia la sessione. Chiamato da MainWindow su "Avvia"."""
+        """Resetta clock e statistiche e avvia la sessione. Chiamato da MainWindow su 'Avvia'."""
         self._clock.reset()
         self._clock.start(time.time())
         self._speed_stats.reset()
@@ -175,32 +231,46 @@ class StatsPanel(QWidget):
         p = _style.CURRENT_PALETTE
         elapsed = self._clock.elapsed(now)
         all_term = bool(agg.get("all_terminated", False))
+        total_bytes = int(agg.get("total_downloaded_bytes", 0))
+        total = int(agg.get("total", 0))
+        ok = int(agg.get("completed", 0))
+        failed = int(agg.get("failed", 0))
+        abandoned = int(agg.get("abandoned", 0))
+        cancelled = int(agg.get("cancelled", 0))
+        fallen = failed + cancelled + abandoned
 
-        # Sessione
+        eff_bps = total_bytes / elapsed if elapsed > 0 and total_bytes > 0 else 0.0
+
+        # Header summary: sempre aggiornato anche con body nascosto
+        self._summary_lbl.setText(build_header_summary(
+            elapsed_s=elapsed,
+            total_bytes=total_bytes,
+            throughput_eff_bps=eff_bps,
+            totals_dict={"total": total, "ok": ok, "fallen": fallen},
+            all_terminated=all_term,
+        ))
+
+        if not self._body.isVisible():
+            return
+
+        # Body labels
         status_str = "completata" if all_term else "in corso"
         self._session_lbl.setText(f"Sessione: {fmt_hhmmss(elapsed)}  ({status_str})")
         self._session_lbl.setStyleSheet(f"color: {p['text']};")
 
-        # Volume
-        total_bytes = int(agg.get("total_downloaded_bytes", 0))
         self._volume_lbl.setText(f"Volume scaricato:  {fmt_bytes(total_bytes)}")
         self._volume_lbl.setStyleSheet(f"color: {p['text']};")
 
-        # Throughput effettivo
-        eff_str = "—"
-        if elapsed > 0 and total_bytes > 0:
-            eff_str = fmt_speed(total_bytes / elapsed)
+        eff_str = fmt_speed(eff_bps) if eff_bps > 0 else "—"
         self._throughput_lbl.setText(f"  Throughput effettivo : {eff_str}")
         self._throughput_lbl.setStyleSheet(f"color: {p['text_dim']};")
 
-        # Media aritmetica per-download
         arith = agg.get("arithmetic_avg_bps")
         self._avg_dl_lbl.setText(
             f"  Media per-download   : {fmt_speed(arith) if arith is not None else '—'}"
         )
         self._avg_dl_lbl.setStyleSheet(f"color: {p['text_dim']};")
 
-        # Picco e minima
         peak = self._speed_stats.peak
         minimum = self._speed_stats.minimum
         self._peak_lbl.setText(
@@ -212,12 +282,6 @@ class StatsPanel(QWidget):
         )
         self._min_lbl.setStyleSheet(f"color: {p['text_dim']};")
 
-        # Conteggi job
-        total = int(agg.get("total", 0))
-        ok = int(agg.get("completed", 0))
-        failed = int(agg.get("failed", 0))
-        abandoned = int(agg.get("abandoned", 0))
-        cancelled = int(agg.get("cancelled", 0))
         running = int(agg.get("running", 0))
         queued = int(agg.get("queued", 0))
         self._counts_lbl.setText(
@@ -230,7 +294,6 @@ class StatsPanel(QWidget):
         self._rate_lbl.setText(f"Tasso completati: {tasso_str}")
         self._rate_lbl.setStyleSheet(f"color: {p['text_dim']};")
 
-        # Dettaglio per-job
         lines = []
         for job in self.model.jobs_iter():
             name = job.file_name if job.file_name else _short_url(job.url, 40)
@@ -258,9 +321,8 @@ class StatsPanel(QWidget):
         all_term = bool(agg.get("all_terminated", False))
         total_bytes = int(agg.get("total_downloaded_bytes", 0))
 
-        eff_str = "—"
-        if elapsed > 0 and total_bytes > 0:
-            eff_str = fmt_speed(total_bytes / elapsed)
+        eff_bps = total_bytes / elapsed if elapsed > 0 and total_bytes > 0 else 0.0
+        eff_str = fmt_speed(eff_bps) if eff_bps > 0 else "—"
 
         arith = agg.get("arithmetic_avg_bps")
         peak = self._speed_stats.peak

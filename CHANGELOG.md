@@ -4,6 +4,25 @@
 
 All notable changes to this project. Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [SemVer](https://semver.org/).
 
+## [1.11.3] — 2026-06-27
+
+### Added
+- **"Reset cache" button in the proxy zone**: deletes `proxy_cache.json` on demand so the
+  next startup performs a fresh scrape from scratch. Useful for repeated configuration tests.
+- **Collapsible Statistics widget** with a summary header always visible (time, volume,
+  throughput, job counts). Expanded/collapsed state persisted in preferences.
+
+### Fixed
+- **"In progress" filter not updating on job completion**: the card disappeared only after
+  manually switching the filter. `JobsPanel` now subscribes to `job_updated` and updates
+  the individual card's visibility on status change, with no user action required.
+- **Download folders renamed with the file name**: previously `downloads/<hash>_<id>/`.
+  On the first successful resolve the folder is renamed to `<sanitised_file_name>_<id>/`,
+  making the `downloads/` directory immediately recognisable. Windows-safe sanitisation
+  (strips `<>:"/\|?*` and control characters, max 120 chars). If rename is not possible
+  (collision, lock, permissions), the old path is kept and a warning is logged — the
+  download is not interrupted.
+
 ## [1.11.2] — 2026-06-26
 
 ### Added
