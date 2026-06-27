@@ -76,7 +76,7 @@ USER_AGENT = (
 # VALIDATOR_TARGET_ALIVE): lo stage 2 verso Mega ha una resa molto bassa
 # (~30-40 vivi anche partendo da migliaia di candidati), quindi il cap resta
 # largo per dare margine, non per inseguire un target a centinaia.
-MAX_PROXIES_TO_VALIDATE = 3000
+MAX_PROXIES_TO_VALIDATE = 12000
 
 # Validazione a due stadi.
 # Stage 1: "il proxy funziona?" — pre-filtro veloce su un endpoint di
@@ -86,7 +86,7 @@ MAX_PROXIES_TO_VALIDATE = 3000
 # dei falsi negativi che httpbin.org/ip produceva quando era sotto carico.
 # Alta concorrenza, timeout aggressivi: scarta i proxy morti senza
 # sprecare un round-trip sulla capacita' limitata del test Mega (stage 2).
-VALIDATOR_STAGE1_WORKERS = 100
+VALIDATOR_STAGE1_WORKERS = 200
 VALIDATOR_STAGE1_TIMEOUT = 4                                # connect+read combinati
 VALIDATOR_STAGE1_URL = "http://www.gstatic.com/generate_204"
 
@@ -102,7 +102,7 @@ VALIDATOR_STAGE1_URL = "http://www.gstatic.com/generate_204"
 # negativo), esattamente il difetto che questo stage deve evitare.
 # Concorrenza moderata (Mega rate-limita) e stop anticipato al target,
 # invariati rispetto a prima.
-VALIDATOR_STAGE2_WORKERS = 60
+VALIDATOR_STAGE2_WORKERS = 120
 VALIDATOR_STAGE2_TIMEOUT = PROXY_TIMEOUT                    # resta 8s
 VALIDATOR_STAGE2_URL = "https://g.api.mega.co.nz/cs"
 
@@ -114,7 +114,7 @@ VALIDATOR_STAGE2_URL = "https://g.api.mega.co.nz/cs"
 # occhi del refresher; 60 e' un tetto realistico che lascia comunque scattare
 # l'early-stop nelle sessioni piu' fortunate, senza inseguire un numero che
 # non si raggiunge mai.
-VALIDATOR_TARGET_ALIVE = 60
+VALIDATOR_TARGET_ALIVE = 300
 
 # DEPRECATO: alias retro-compatibile per VALIDATOR_STAGE2_WORKERS.
 # Codice nuovo deve usare VALIDATOR_STAGE2_WORKERS direttamente.
@@ -168,8 +168,8 @@ POOL_REFRESH_INTERVAL = 30          # secondi tra check
 # VALIDATOR_TARGET_ALIVE): LOW < HIGH < resa tipica, altrimenti il refresher
 # non si riarmerebbe mai (HIGH >= resa reale = disarmato per sempre) oppure
 # scatenerebbe un refill quasi a ogni ciclo (LOW troppo vicino alla resa).
-POOL_REFRESH_THRESHOLD_LOW = 15     # armato + vivi < LOW -> refill, poi disarma
-POOL_REFRESH_THRESHOLD_HIGH = 30    # disarmato + vivi >= HIGH -> riarma
+POOL_REFRESH_THRESHOLD_LOW = 80     # armato + vivi < LOW -> refill, poi disarma
+POOL_REFRESH_THRESHOLD_HIGH = 160   # disarmato + vivi >= HIGH -> riarma
 POOL_REFRESH_MIN_INTERVAL_S = 45    # mai due refill a meno di N secondi l'uno dall'altro
 
 # DEPRECATO: alias retro-compatibile pre-isteresi. Codice nuovo deve usare
