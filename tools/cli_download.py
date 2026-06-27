@@ -14,6 +14,7 @@ Per scaricare lo stesso link in due cartelle distinte:
 """
 from __future__ import annotations
 
+import argparse
 import logging
 import sys
 
@@ -26,9 +27,29 @@ from src.downloader.orchestrator import DownloadOrchestrator
 log = logging.getLogger("cli_download")
 
 
-def main(links: list[str]) -> int:
+def main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(
+        prog="cli_download",
+        description="Runner CLI headless (riusa DownloadOrchestrator, senza GUI).",
+    )
+    parser.add_argument("links", nargs="*", help="URL Mega da scaricare (1+).")
+    parser.add_argument(
+        "--selection-mode", choices=("score", "throughput"), default="score",
+        help="Modalita' di selezione proxy del pool (default: score).",
+    )
+    parser.add_argument(
+        "--connections", type=int, default=None,
+        help="Connessioni HTTP Range parallele per file (default: config).",
+    )
+    parser.add_argument(
+        "--concurrency", type=int, default=None,
+        help="File scaricati in parallelo (default: config).",
+    )
+    args = parser.parse_args(argv)
+    links = args.links
     if not links:
-        print("Uso: python -m tools.cli_download <url1> [<url2> ...]")
+        print("Uso: python -m tools.cli_download [--selection-mode score|throughput] "
+              "[--connections N] [--concurrency N] <url1> [<url2> ...]")
         return 2
 
     setup_logging()
@@ -88,8 +109,16 @@ def main(links: list[str]) -> int:
     orch.fatal_error.connect(on_fatal_error)
     orch.failed.connect(on_failed)
 
-    QTimer.singleShot(0, lambda: orch.start(links))
-    log.info("CLI: avvio con %d link", len(links))
+    QTimer.singleShot(0, lambda: orch.start(
+        links,
+        concurrency=args.concurrency,
+        connections_per_file=args.connections,
+        selection_mode=args.selection_mode,
+    ))
+    log.info(
+        "CLI: avvio con %d link (selezione=%s, connessioni=%s, concorrenza=%s)",
+        len(links), args.selection_mode, args.connections, args.concurrency,
+    )
     app.exec()
     # Teardown esplicito: ferma worker/refresher/timer e chiude la telemetria
     # (telemetry.close() drena la coda e chiude i file). Senza questo, l'ultimo
@@ -104,3 +133,4 @@ def main(links: list[str]) -> int:
 
 if __name__ == "__main__":
     sys.exit(main(sys.argv[1:]))
+
