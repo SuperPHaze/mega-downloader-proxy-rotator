@@ -99,6 +99,16 @@ def main(argv: list[str]) -> int:
     def on_failed(fid: int, cycle: int, reason: str) -> None:
         log.warning("[file %d] ciclo %d tentativo fallito: %s", fid, cycle, reason)
 
+    def on_abandoned(fid: int, url: str, attempts: int, last_error: str) -> None:
+        # Senza questo handler il file abbandonato non viene mai rimosso da
+        # `pending` e il runner resta appeso fino al timeout esterno.
+        log.warning("[file %d] ABBANDONATO dopo %d tentativi: %s", fid, attempts, last_error)
+        pending.discard(fid)
+        exit_code["value"] = 1
+        if not pending:
+            log.info("[done] tutti i download conclusi (con abbandoni), esco")
+            QCoreApplication.quit()
+
     orch.setup_status.connect(on_setup_status)
     orch.setup_progress.connect(on_setup_progress)
     orch.pool_ready.connect(on_pool_ready)
@@ -108,6 +118,7 @@ def main(argv: list[str]) -> int:
     orch.all_done.connect(on_all_done)
     orch.fatal_error.connect(on_fatal_error)
     orch.failed.connect(on_failed)
+    orch.abandoned.connect(on_abandoned)
 
     QTimer.singleShot(0, lambda: orch.start(
         links,
