@@ -307,6 +307,12 @@ class ProxyPool:
             else:
                 self._latency[key] = int(latency_ms)
 
+    def score_of(self, proxy: dict) -> int:
+        """Score corrente del proxy (sola lettura). Per la telemetria."""
+        key = (proxy["host"], proxy["port"])
+        with self._lock:
+            return self._score.get(key, POOL_SCORE_INITIAL)
+
     def size(self) -> int:
         with self._lock:
             return self._count_alive_unlocked()

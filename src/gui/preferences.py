@@ -83,6 +83,18 @@ def save_speed_selection_min_kbps(value: int) -> None:
     _save_pref("speed_selection_min_kbps", int(value))
 
 
+def load_link_speed_mbps() -> float:
+    """Ultima banda misurata (Mbit/s). 0.0 = mai misurata."""
+    try:
+        return float(_load_prefs().get("link_speed_mbps", 0.0))
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def save_link_speed_mbps(value: float) -> None:
+    _save_pref("link_speed_mbps", float(value))
+
+
 def load_stats_panel_expanded() -> bool:
     return bool(_load_prefs().get("stats_panel_expanded", True))
 

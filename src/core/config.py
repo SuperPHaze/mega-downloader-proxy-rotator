@@ -1,7 +1,7 @@
 # Costanti globali dell'applicazione.
 from pathlib import Path
 
-APP_VERSION = "1.11.3"
+APP_VERSION = "1.12.0"
 APP_LICENSE = "MIT"
 
 # Repository GitHub usato dal controllo aggiornamenti (scheda Info).
@@ -137,7 +137,10 @@ PARALLEL_CONNECTIONS_PER_FILE = 10
 # Funzioni Sperimentali e' stata svuotata). PARALLEL_CONNECTIONS_PER_FILE
 # resta il DEFAULT; il range [MIN, MAX] e' mantenuto per riuso futuro.
 PARALLEL_CONNECTIONS_MIN = 2
-PARALLEL_CONNECTIONS_MAX = 16
+# Alzato da 16 a 64 per consentire lo sweep di N della campagna telemetria
+# (15 -> 25 -> 40): con linee larghe servono molte piu' corsie per saturare la
+# banda. Lo spinbox in experimental_dialog.py usa questa costante come massimo.
+PARALLEL_CONNECTIONS_MAX = 64
 
 # Dimensione minima di un segmento parallelo. File piu' piccoli vanno
 # direttamente in seriale (non vale la pena di splittarli).
@@ -186,16 +189,15 @@ PARALLEL_MAX_FAILED_CHUNKS = 3
 
 # Watchdog throughput per segmento: se la velocita' media negli ultimi
 # WINDOW secondi scende sotto MIN_BPS, abortiamo il tentativo e cambiamo
-# proxy. Serve contro i proxy che trickle-streamano (qualche byte ogni
-# tanto, abbastanza per evitare il read_timeout, ma di fatto inutili).
-# 200 KB/s e' il floor utile: sotto questa soglia un segmento da 500 MB
-# richiederebbe >40 min e la connessione cade prima della fine
-# (IncompleteRead), buttando via tutti i byte gia' scaricati.
-PARALLEL_MIN_THROUGHPUT_BPS = 200 * 1024  # 200 KB/s minimi
-PARALLEL_THROUGHPUT_WINDOW = 20           # finestra di misura (s)
+# proxy. NOTA: l'esperimento "slow-kill aggressivo" (400 KB/s, window 12,
+# grace 10) ha REGREDITO — run 20260627-194714: corsie attive 14->6, util
+# 18%->5%, vincolo lane_supply_bound (il pool non regge le corsie quando si
+# scartano troppi proxy troppo presto). Ripristinati i valori baseline.
+PARALLEL_MIN_THROUGHPUT_BPS = 200 * 1024  # 200 KB/s minimi (baseline)
+PARALLEL_THROUGHPUT_WINDOW = 20           # finestra di misura (s) (baseline)
 # Grace period iniziale: i primi N secondi non valutiamo throughput,
 # diamo tempo al TCP slow-start e al primo buffer.
-PARALLEL_THROUGHPUT_GRACE = 15
+PARALLEL_THROUGHPUT_GRACE = 15            # (baseline)
 
 # Budget temporale ASSOLUTO per singolo tentativo di segmento. A prescindere
 # dal throughput istantaneo, se un tentativo dura piu' di N secondi viene
@@ -235,6 +237,27 @@ REPORTS_DIR = LOGS_DIR / "reports"
 EVENTS_LOG = "events.jsonl"
 EVENTS_LOG_MAX_BYTES = 20_000_000   # 20 MB: il JSONL a DEBUG cresce più di app.log
 EVENTS_LOG_BACKUPS = 5
+
+# ---------------------------------------------------------------------------
+# Telemetria "scatola nera" (Fase 1 — cattura grezza per analisi offline)
+# ---------------------------------------------------------------------------
+# Recorder strutturato asincrono: un record per tentativo-chunk + campioni a
+# 1 Hz, su file separati per sessione in logs/telemetry/<session_id>/. Il
+# thread di download fa solo enqueue O(1); un writer daemon scrive a batch.
+# Disattivabile a costo zero (ogni hook diventa un no-op).
+TELEMETRY_ENABLED = True
+TELEMETRY_DIR = LOGS_DIR / "telemetry"
+# Intervallo (s) di flush del writer asincrono. Più basso = meno backlog in RAM,
+# più write; più alto = batch più grandi. 0.25s è un buon compromesso.
+TELEMETRY_FLUSH_INTERVAL_S = 0.25
+# Campionamento aggregato del download (s). 1 Hz è sufficiente per la curva di
+# throughput nel tempo senza gonfiare samples.jsonl.
+TELEMETRY_SAMPLE_INTERVAL_S = 1.0
+# Firehose intra-chunk: tieni il delta di ogni lettura da 64 KB dentro il record
+# del tentativo-chunk (array compatto [t_offset_ms, cum_bytes]). 0 = illimitato
+# (firehose pieno). >0 = tetto di sicurezza sul numero di campioni per chunk
+# (downsampling oltre il tetto) per evitare record patologici su chunk enormi.
+TELEMETRY_INTRA_CHUNK_MAX_SAMPLES = 0
 
 # File log dedicato ai link abbandonati. Una riga per link, formato
 # JSON Lines per parsing successivo. Rotante per evitare crescita
@@ -341,3 +364,15 @@ VALIDATOR_SPEED_TEST_WORKERS = 30                      # concorrenza stage 3
 # poche connessioni) e aumenta la soglia quando il carico cresce.
 ADAPTIVE_REFILL_FLOOR = 10           # proxy minimi anche con 0 download attivi
 ADAPTIVE_REFILL_MULTIPLIER = 3       # margine per mortalita' naturale dei proxy
+
+# ---------------------------------------------------------------------------
+# Speed test della LINEA dell'utente (diretto, FUORI dai proxy)
+# ---------------------------------------------------------------------------
+# Misura la banda disponibile da mostrare in GUI e usare come denominatore per
+# la "% di linea usata" nell'analisi telemetria. Parallelo perche' una singola
+# connessione TCP spesso non satura una linea larga (slow-start + limiti
+# per-connessione): K stream diretti danno una stima realistica di cio' che il
+# downloader multi-connessione puo' sfruttare.
+LINE_SPEEDTEST_URL = "http://speedtest.tele2.net/10MB.zip"
+LINE_SPEEDTEST_STREAMS = 4          # connessioni dirette parallele
+LINE_SPEEDTEST_TIMEOUT = 20         # secondi per stream

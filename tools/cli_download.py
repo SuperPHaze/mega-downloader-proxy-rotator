@@ -91,6 +91,13 @@ def main(links: list[str]) -> int:
     QTimer.singleShot(0, lambda: orch.start(links))
     log.info("CLI: avvio con %d link", len(links))
     app.exec()
+    # Teardown esplicito: ferma worker/refresher/timer e chiude la telemetria
+    # (telemetry.close() drena la coda e chiude i file). Senza questo, l'ultimo
+    # batch entro TELEMETRY_FLUSH_INTERVAL_S puo' restare non scritto.
+    try:
+        orch.shutdown()
+    except Exception:  # noqa: BLE001 — il teardown non deve mascherare l'esito
+        log.exception("CLI: errore durante shutdown()")
     log.info("CLI: terminato con exit_code=%d", exit_code["value"])
     return exit_code["value"]
 

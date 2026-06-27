@@ -35,12 +35,15 @@ from src.gui.preferences import (
     load_check_updates_on_startup,
     load_connections_per_file,
     load_dark_theme,
+    load_link_speed_mbps,
     load_segment_max_duration_s,
     load_speed_selection_enabled,
     load_speed_selection_min_kbps,
     save_dark_theme,
+    save_link_speed_mbps,
 )
 from src.gui.proxy_bar import ProxyBar
+from src.gui.speedtest_worker import SpeedTestWorker
 from src.gui.stats_bar import StatsBar
 from src.gui.stats_panel import StatsPanel
 from src.gui import style as _style
@@ -67,6 +70,7 @@ class MainWindow(QMainWindow):
         self._pending_delete: set[int] = set()
         self._dark_theme = False
         self._startup_update_worker: UpdateCheckWorker | None = None
+        self._speedtest_worker: SpeedTestWorker | None = None
 
         # LinkPanel: nascosto dall'UI ma funzionale come gestore della lista link.
         self.link_panel = LinkPanel()
@@ -96,6 +100,13 @@ class MainWindow(QMainWindow):
         self.stats_bar = StatsBar(self.jobs_panel.model)
         self.proxy_bar = ProxyBar()
         self._stats_panel = StatsPanel(self.jobs_panel.model)
+
+        # Banda della linea: mostra subito l'ultimo valore misurato (proprieta'
+        # della linea, persistita) e collega il pulsante di ri-misura.
+        cached = load_link_speed_mbps()
+        if cached > 0:
+            self.proxy_bar.on_speedtest_result(cached, True)
+        self.proxy_bar.speedtest_requested.connect(self._run_speedtest)
 
         # Cruscotto su un'unica riga: zona download (StatsBar) | separatore
         # verticale | zona proxy (ProxyBar). Il colore del separatore segue
@@ -148,6 +159,9 @@ class MainWindow(QMainWindow):
         self.jobs_panel.restart_all_failed_requested.connect(self._on_restart_all_failed_requested)
 
         self._maybe_check_updates_on_startup()
+        # Misura automatica della banda della linea all'avvio (diretta, fuori
+        # dai proxy, in QThread: non blocca la GUI).
+        self._run_speedtest()
 
         # Heartbeat diagnostico: una riga INFO periodica su app.log con
         # memoria/thread/job attivi/pool vivi. Passivo, non influenza il
@@ -190,6 +204,23 @@ class MainWindow(QMainWindow):
     def _on_startup_check_done(self, status: str, latest_version: str) -> None:
         if status == STATUS_AVAILABLE:
             self.update_banner.show_update(latest_version)
+
+    # ---- speed test banda linea -------------------------------------------
+
+    def _run_speedtest(self) -> None:
+        if self._speedtest_worker is not None and self._speedtest_worker.isRunning():
+            return
+        self.proxy_bar.on_speedtest_running()
+        self._speedtest_worker = SpeedTestWorker()
+        self._speedtest_worker.finished_test.connect(
+            self._on_speedtest_done, Qt.ConnectionType.QueuedConnection
+        )
+        self._speedtest_worker.start()
+
+    def _on_speedtest_done(self, mbit: float, ok: bool) -> None:
+        self.proxy_bar.on_speedtest_result(mbit, ok)
+        if ok and mbit > 0:
+            save_link_speed_mbps(mbit)
 
     # ---- stato status bar ------------------------------------------------
 
@@ -240,6 +271,9 @@ class MainWindow(QMainWindow):
         segment_max_duration_s = load_segment_max_duration_s()
         speed_enabled = load_speed_selection_enabled()
         speed_min_bps = load_speed_selection_min_kbps() * 1024  # GUI KB/s → motore B/s
+        # Banda della linea (Mbit/s): la GUI la legge dalle preferenze e la passa
+        # all'orchestrator come config di sessione (il downloader non importa la GUI).
+        link_mbit = load_link_speed_mbps()
         self.orchestrator = DownloadOrchestrator(self.session_state)
         qc = Qt.ConnectionType.QueuedConnection
         self.orchestrator.progress.connect(self.jobs_panel.on_progress, qc)
@@ -282,6 +316,7 @@ class MainWindow(QMainWindow):
             segment_max_duration_s=segment_max_duration_s,
             speed_selection_enabled=speed_enabled,
             speed_selection_min_bps=speed_min_bps,
+            link_capacity_mbit=link_mbit if link_mbit > 0 else None,
         )
 
     # ---- pausa / annullo globale -----------------------------------------
@@ -502,6 +537,8 @@ class MainWindow(QMainWindow):
                 log.warning("closeEvent: shutdown incompleto, chiudo comunque")
         if self._startup_update_worker is not None and self._startup_update_worker.isRunning():
             self._startup_update_worker.wait(2000)
+        if self._speedtest_worker is not None and self._speedtest_worker.isRunning():
+            self._speedtest_worker.wait(3000)
         # Marcatore di chiusura volontaria: se nel log compare un SESSION
         # START senza questo prima del successivo START, e' stato un crash o
         # un kill esterno (non una chiusura dall'utente).

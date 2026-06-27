@@ -17,6 +17,7 @@ from src.core.config import (
     OUTPUT_DIR,
     PARALLEL_CONNECTIONS_PER_FILE,
 )
+from src.core import telemetry
 from src.core.file_naming import final_output_dir
 from src.core.state import SessionState
 from src.downloader.mega_client import MegaClient, MegaCryptoDependencyError
@@ -157,6 +158,7 @@ class DownloadWorker(QThread):
             self._file_deadline = time.monotonic() + self._file_time_limit_s
             log.info("[file %d] deadline: %d s", self.file_id, self._file_time_limit_s)
         log.info("[file %d] start url=%s base_dir=%s", self.file_id, self.mega_url, self._current_base_dir)
+        telemetry.event("file_started", file_id=self.file_id, cycles=DOWNLOAD_CYCLES)
 
         try:
             try:
@@ -178,6 +180,7 @@ class DownloadWorker(QThread):
                 # notifica l'orchestrator cosi' libera lo slot ed eventualmente
                 # cancella la cartella di lavoro.
                 if self._local_cancelled and not self.session_state.is_cancelled():
+                    telemetry.event("file_cancelled", file_id=self.file_id)
                     self.cancelled.emit(self.file_id)
         except Exception:
             # Rete di sicurezza diagnostica: qualunque eccezione non gia'
@@ -267,6 +270,11 @@ class DownloadWorker(QThread):
             if self._effective_state.is_cancelled():
                 if self._is_deadline_expired():
                     limit_min = (self._file_time_limit_s or 0) // 60
+                    telemetry.event(
+                        "file_abandoned", file_id=self.file_id,
+                        attempts=self._total_attempts,
+                        last_error=f"superato il limite di {limit_min} minuti",
+                    )
                     self.abandoned.emit(
                         self.file_id, self.mega_url, self._total_attempts,
                         f"superato il limite di {limit_min} minuti",
@@ -283,6 +291,10 @@ class DownloadWorker(QThread):
                 log.warning(
                     "[file %d] ciclo %d: %d tentativi falliti, abbandono link",
                     self.file_id, cycle, MAX_ATTEMPTS_PER_FILE,
+                )
+                telemetry.event(
+                    "file_abandoned", file_id=self.file_id,
+                    attempts=self._total_attempts - 1, last_error=last_err,
                 )
                 self.abandoned.emit(
                     self.file_id, self.mega_url, self._total_attempts - 1, last_err,
@@ -332,6 +344,11 @@ class DownloadWorker(QThread):
                 if self._effective_state.is_cancelled():
                     if self._is_deadline_expired():
                         limit_min = (self._file_time_limit_s or 0) // 60
+                        telemetry.event(
+                            "file_abandoned", file_id=self.file_id,
+                            attempts=self._total_attempts,
+                            last_error=f"superato il limite di {limit_min} minuti",
+                        )
                         self.abandoned.emit(
                             self.file_id, self.mega_url, self._total_attempts,
                             f"superato il limite di {limit_min} minuti",
@@ -360,6 +377,7 @@ class DownloadWorker(QThread):
                             self.file_id, float(bps), dl, tot
                         ),
                         resolved_callback=_resolved_cb,
+                        file_id=self.file_id,
                     )
                 else:
                     final_path = client.download(

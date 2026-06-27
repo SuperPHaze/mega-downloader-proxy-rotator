@@ -16,17 +16,20 @@
 #   il client si rompe in modo esplicito.
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
 import requests
 
+from src.core import telemetry
 from src.core.config import (
     PARALLEL_CHUNK_SIZE_MB,
     PARALLEL_MAX_FAILED_CHUNKS,
@@ -40,6 +43,8 @@ from src.core.config import (
     PROXY_CONNECT_TIMEOUT,
     PROXY_READ_TIMEOUT,
     PROXY_TIMEOUT,
+    TELEMETRY_INTRA_CHUNK_MAX_SAMPLES,
+    TELEMETRY_SAMPLE_INTERVAL_S,
     USER_AGENT,
 )
 from src.core.proxy_url import build_proxies_dict as _proxies_dict
@@ -183,6 +188,7 @@ class ParallelMegaDownloader:
         ip_callback: Callable[[str, int], None] | None = None,
         speed_callback: Callable[[float, int, int], None] | None = None,
         resolved_callback: Callable[[str, object, "Path"], None] | None = None,
+        file_id: int | None = None,
     ) -> Path:
         """Scarica un link Mega in parallelo usando una coda di chunk a dimensione fissa.
 
@@ -202,8 +208,20 @@ class ParallelMegaDownloader:
         self._mega_url = mega_url
 
         # === Fase 1: resolve URL via mega.py usando il proxy del worker. ===
+        self._url_hash = hashlib.sha1(
+            mega_url.encode("utf-8", "replace")
+        ).hexdigest()[:12]
+        self._file_id = file_id
+        _t0 = time.monotonic()
         file_handle, k, iv, cdn_url, file_size, file_name = self._resolve_cdn(
             mega_url, resolver_proxy,
+        )
+        telemetry.event(
+            "file_resolved",
+            file_id=file_id, url_hash=self._url_hash,
+            resolve_ms=round((time.monotonic() - _t0) * 1000, 1),
+            file_size=file_size, file_name=file_name,
+            cdn_host=cdn_url.split("/")[2] if "://" in cdn_url else None,
         )
         self._file_handle = file_handle
         self._k_tuple = k
@@ -260,6 +278,13 @@ class ParallelMegaDownloader:
         # indipendentemente da N connessioni (al contrario dei vecchi segmenti).
         already_done = _load_progress(part_path, file_handle, file_size, self.chunk_size)
         already_done = already_done & set(chunks)
+
+        telemetry.event(
+            "file_plan", file_id=file_id, url_hash=self._url_hash,
+            n_chunks=len(chunks), chunk_size=self.chunk_size,
+            eff_conn=eff_conn, file_size=file_size,
+            resumed_chunks=len(already_done),
+        )
 
         # === Fase 3: scarica chunk in parallelo. ===
         k_str = a32_to_str(k)
@@ -381,7 +406,50 @@ class ParallelMegaDownloader:
         if progress_callback:
             progress_callback(100)
         log.info("[parallel] download completato: %s (%d B)", final_path, file_size)
+        telemetry.event(
+            "file_completed", file_id=file_id, url_hash=self._url_hash,
+            file_size=file_size,
+        )
         return final_path
+
+    def _emit_attempt(self, rec, outcome, pool_action, _t0, error=None, backoff=None):
+        # Chiude e accoda il record del tentativo-chunk una sola volta per
+        # tentativo. Telemetria pura: nessun effetto sul flusso.
+        rec["outcome"] = outcome
+        rec["pool_action"] = pool_action
+        if error is not None:
+            rec["error"] = str(error)[:300]
+        if backoff is not None:
+            rec["backoff_s"] = backoff
+        rec["t_total_ms"] = round((time.monotonic() - _t0) * 1000, 1)
+        telemetry.chunk_attempt(rec)
+
+    @staticmethod
+    def _classify(exc: Exception) -> str:
+        """Classifica un'eccezione di tentativo per il campo outcome della
+        telemetria. Sola lettura del messaggio: non cambia il flusso."""
+        msg = str(exc).lower()
+        if "cancellato" in msg:
+            return "cancelled"
+        if "abort locale" in msg or "abort durante" in msg:
+            return "aborted_local"
+        if "budget temporale" in msg:
+            return "budget_exceeded"
+        if "troppo lento" in msg:
+            return "slow_killed"
+        if "ignora range" in msg:
+            return "range_ignored"
+        if "ricevuti" in msg and "attesi" in msg:
+            return "size_mismatch"
+        if isinstance(exc, requests.exceptions.ConnectTimeout):
+            return "timeout_connect"
+        if isinstance(exc, requests.exceptions.ReadTimeout):
+            return "timeout_read"
+        if isinstance(exc, requests.exceptions.Timeout):
+            return "timeout_read"
+        if isinstance(exc, requests.exceptions.ConnectionError):
+            return "conn_error"
+        return "other"
 
     def _download_chunk(
         self,
@@ -411,7 +479,13 @@ class ParallelMegaDownloader:
             attempt += 1
             proxy = self.pool.get_next()
             if proxy is None:
-                self.pool.refill_blocking()
+                added = self.pool.refill_blocking()
+                telemetry.event(
+                    "pool_empty",
+                    file_id=getattr(self, "_file_id", None),
+                    url_hash=getattr(self, "_url_hash", None),
+                    chunk_idx=chunk_idx, added=added,
+                )
                 proxy = self.pool.get_next()
             if proxy is None:
                 last_exc = RuntimeError("pool proxy vuoto")
@@ -420,6 +494,31 @@ class ParallelMegaDownloader:
                 continue
             proxies = _proxies_dict(proxy)
             current_url = self._cdn_url or cdn_url
+            rec = {
+                "file_id": getattr(self, "_file_id", None),
+                "url_hash": getattr(self, "_url_hash", None),
+                "chunk_idx": chunk_idx, "attempt": attempt,
+                "attempt_of": PARALLEL_SEGMENT_RETRIES,
+                "chunk_start": start, "chunk_end": end,
+                "chunk_bytes": chunk_size_actual,
+                "ts_start": datetime.now().isoformat(timespec="milliseconds"),
+                "proxy_host": proxy["host"], "proxy_port": proxy["port"],
+                "proxy_protocol": proxy.get("protocol", "http"),
+                "proxy_source": proxy.get("_source", "cache"),
+                "proxy_score_before": self.pool.score_of(proxy),
+                "proxy_latency_ms": proxy.get("latency_ms"),
+                "proxy_uptime_pct": proxy.get("uptime_percent"),
+                "proxy_anonymity": proxy.get("anonymity"),
+                "pool_alive": self.pool.size(),
+                "pool_cooldown": self.pool.cooldown_count(),
+                "egress_ip": None, "http_status": None,
+                "t_headers_ms": None, "t_firstbyte_ms": None,
+                "t_transfer_ms": None, "t_total_ms": None,
+                "bytes_downloaded": 0, "throughput_bps": None,
+                "intra_samples": [], "outcome": None, "pool_action": None,
+                "error": None, "backoff_s": None,
+            }
+            _attempt_t0 = time.monotonic()
             log.info(
                 "[parallel] chunk=%d tentativo=%d/%d range=%d-%d (%d B) via %s:%s",
                 chunk_idx, attempt, PARALLEL_SEGMENT_RETRIES,
@@ -427,6 +526,7 @@ class ParallelMegaDownloader:
             )
             cdn_error = False
             try:
+                rec["egress_ip"] = f"{proxy['host']}:{proxy['port']}"
                 if ip_callback:
                     try:
                         ip_callback(f"{proxy['host']}:{proxy['port']}", chunk_idx)
@@ -444,7 +544,9 @@ class ParallelMegaDownloader:
                     timeout=(PROXY_CONNECT_TIMEOUT, PROXY_READ_TIMEOUT),
                     stream=True,
                 )
+                rec["t_headers_ms"] = round((time.monotonic() - _attempt_t0) * 1000, 1)
                 with resp:
+                    rec["http_status"] = resp.status_code
                     if resp.status_code in (403, 509):
                         last_exc = RuntimeError(
                             f"CDN {resp.status_code} (rate-limit proxy)"
@@ -457,6 +559,10 @@ class ParallelMegaDownloader:
                         self.pool.cooldown(proxy)
                         cdn_error = True
                         backoff = min(PARALLEL_SEGMENT_BACKOFF_MAX, 2 ** min(attempt, 6))
+                        self._emit_attempt(
+                            rec, "http_%d" % resp.status_code, "cooldown",
+                            _attempt_t0, error=last_exc, backoff=backoff,
+                        )
                         if self._sleep_interruptible(backoff):
                             raise RuntimeError(f"chunk {chunk_idx}: abort durante backoff")
                         continue
@@ -471,6 +577,10 @@ class ParallelMegaDownloader:
                         cdn_error = True
                         self._refresh_cdn_url(current_url)
                         backoff = min(PARALLEL_SEGMENT_BACKOFF_MAX, 2 ** min(attempt, 6))
+                        self._emit_attempt(
+                            rec, "http_503", "penalize_hard",
+                            _attempt_t0, error=last_exc, backoff=backoff,
+                        )
                         if self._sleep_interruptible(backoff):
                             raise RuntimeError(f"chunk {chunk_idx}: abort durante backoff")
                         continue
@@ -506,12 +616,23 @@ class ParallelMegaDownloader:
                                 )
                             if not net_chunk:
                                 continue
+                            if rec["t_firstbyte_ms"] is None:
+                                rec["t_firstbyte_ms"] = round(
+                                    (time.monotonic() - _attempt_t0) * 1000, 1
+                                )
                             fp.write(aes.decrypt(net_chunk))
                             downloaded += len(net_chunk)
                             with self._bytes_lock:
                                 self._bytes_downloaded += len(net_chunk)
                             window_bytes += len(net_chunk)
                             now = time.monotonic()
+                            samples = rec["intra_samples"]
+                            samples.append(
+                                [round((now - _attempt_t0) * 1000), downloaded]
+                            )
+                            if (TELEMETRY_INTRA_CHUNK_MAX_SAMPLES > 0
+                                    and len(samples) > TELEMETRY_INTRA_CHUNK_MAX_SAMPLES):
+                                rec["intra_samples"] = samples[::2]
                             elapsed_attempt = now - attempt_start
                             if elapsed_attempt > self.segment_max_duration_s:
                                 raise RuntimeError(
@@ -561,6 +682,12 @@ class ParallelMegaDownloader:
                     "[parallel] chunk=%d OK (%d B in %d tentativi)",
                     chunk_idx, chunk_size_actual, attempt,
                 )
+                rec["bytes_downloaded"] = downloaded
+                rec["t_transfer_ms"] = round(chunk_elapsed * 1000, 1)
+                rec["throughput_bps"] = (
+                    downloaded / chunk_elapsed if chunk_elapsed > 0 else None
+                )
+                self._emit_attempt(rec, "ok", "record_success", _attempt_t0)
                 return
             except requests.exceptions.HTTPError as exc:
                 last_exc = exc
@@ -572,6 +699,7 @@ class ParallelMegaDownloader:
                     )
                     self.pool.cooldown(proxy)
                     cdn_error = True
+                    rec_outcome, rec_action = "http_%d" % code, "cooldown"
                 elif code == 503:
                     log.warning(
                         "[parallel] chunk=%d HTTP 503 -> proxy %s:%s marcato "
@@ -581,22 +709,42 @@ class ParallelMegaDownloader:
                     self.pool.penalize(proxy, hard=True)
                     cdn_error = True
                     self._refresh_cdn_url(current_url)
+                    rec_outcome, rec_action = "http_503", "penalize_hard"
                 else:
                     log.warning(
                         "[parallel] chunk=%d tentativo=%d fallito: HTTP %d",
                         chunk_idx, attempt, code,
                     )
+                    rec_outcome, rec_action = "http_other", "penalize_soft"
             except Exception as exc:
                 last_exc = exc
                 log.warning(
                     "[parallel] chunk=%d tentativo=%d fallito: %s",
                     chunk_idx, attempt, exc,
                 )
+                rec_outcome = self._classify(exc)
+                rec_action = None if cdn_error else "penalize_soft"
             if not cdn_error:
                 self.pool.penalize(proxy, hard=False)
             backoff = min(PARALLEL_SEGMENT_BACKOFF_MAX, 2 ** min(attempt, 6))
+            self._emit_attempt(
+                rec, rec_outcome, rec_action, _attempt_t0,
+                error=last_exc, backoff=backoff,
+            )
             if self._sleep_interruptible(backoff):
                 raise RuntimeError(f"chunk {chunk_idx}: abort durante backoff")
+        rec_final = {
+            "file_id": getattr(self, "_file_id", None),
+            "url_hash": getattr(self, "_url_hash", None),
+            "chunk_idx": chunk_idx, "attempt": attempt,
+            "attempt_of": PARALLEL_SEGMENT_RETRIES,
+            "chunk_start": start, "chunk_end": end,
+            "chunk_bytes": chunk_size_actual,
+            "ts_start": datetime.now().isoformat(timespec="milliseconds"),
+        }
+        self._emit_attempt(
+            rec_final, "retries_exhausted", None, time.monotonic(), error=last_exc,
+        )
         raise RuntimeError(
             f"chunk {chunk_idx}: esauriti {PARALLEL_SEGMENT_RETRIES} tentativi ({last_exc})"
         )
@@ -640,9 +788,18 @@ class ParallelMegaDownloader:
             if getattr(self, "_cdn_url", None) and self._cdn_url != current_url:
                 return self._cdn_url
             log.info("[parallel] re-resolve CDN URL (la precedente sembra scaduta)")
+            _rr_t0 = time.monotonic()
+            _rr_tried = 0
             # Provo fino a 3 proxy diversi per il re-resolve.
             for _ in range(3):
                 if self._abort.is_set():
+                    telemetry.event(
+                        "re_resolve",
+                        file_id=getattr(self, "_file_id", None),
+                        url_hash=getattr(self, "_url_hash", None),
+                        outcome="aborted", proxies_tried=_rr_tried, cdn_host=None,
+                        elapsed_ms=round((time.monotonic() - _rr_t0) * 1000, 1),
+                    )
                     return None
                 proxy = self.pool.get_next()
                 if proxy is None:
@@ -650,18 +807,41 @@ class ParallelMegaDownloader:
                     proxy = self.pool.get_next()
                 if proxy is None:
                     log.warning("[parallel] re-resolve: pool vuoto, abort")
+                    telemetry.event(
+                        "re_resolve",
+                        file_id=getattr(self, "_file_id", None),
+                        url_hash=getattr(self, "_url_hash", None),
+                        outcome="pool_empty", proxies_tried=_rr_tried, cdn_host=None,
+                        elapsed_ms=round((time.monotonic() - _rr_t0) * 1000, 1),
+                    )
                     return None
+                _rr_tried += 1
                 try:
                     _, _, _, new_url, _, _ = self._resolve_cdn(self._mega_url, proxy)
                     self._cdn_url = new_url
                     log.info("[parallel] nuova CDN URL ottenuta: %s",
                              new_url.split("/")[2] if "://" in new_url else "?")
+                    telemetry.event(
+                        "re_resolve",
+                        file_id=getattr(self, "_file_id", None),
+                        url_hash=getattr(self, "_url_hash", None),
+                        outcome="ok", proxies_tried=_rr_tried,
+                        cdn_host=new_url.split("/")[2] if "://" in new_url else None,
+                        elapsed_ms=round((time.monotonic() - _rr_t0) * 1000, 1),
+                    )
                     return new_url
                 except Exception as exc:
                     log.warning("[parallel] re-resolve fallito via %s:%s: %s",
                                 proxy["host"], proxy["port"], exc)
                     # Resolve fallito = errore transitorio: penalita' soft.
                     self.pool.penalize(proxy, hard=False)
+            telemetry.event(
+                "re_resolve",
+                file_id=getattr(self, "_file_id", None),
+                url_hash=getattr(self, "_url_hash", None),
+                outcome="failed", proxies_tried=_rr_tried, cdn_host=None,
+                elapsed_ms=round((time.monotonic() - _rr_t0) * 1000, 1),
+            )
             return None
 
     @staticmethod
@@ -686,6 +866,8 @@ class ParallelMegaDownloader:
         with self._bytes_lock:
             prev_bytes = self._bytes_downloaded
         prev_time = time.monotonic()
+        last_bps = 0.0
+        last_sample_t = 0.0
         while not stop.is_set():
             with self._bytes_lock:
                 done = self._bytes_downloaded
@@ -696,15 +878,34 @@ class ParallelMegaDownloader:
                 except Exception:
                     pass
                 last_pct = pct
+            # Un solo time.monotonic() per giro, riusato da speed_cb e dal
+            # campione di telemetria (evita di alterare il timing del poller).
+            now = time.monotonic()
             if speed_cb and total_size > 0:
-                now = time.monotonic()
                 dt = now - prev_time
                 if dt >= 0.5:
                     bps = (done - prev_bytes) / dt
+                    last_bps = max(0.0, bps)
                     prev_bytes = done
                     prev_time = now
                     try:
-                        speed_cb(max(0.0, bps), done, total_size)
+                        speed_cb(last_bps, done, total_size)
                     except Exception:
                         pass
+            # Campione aggregato a 1 Hz (telemetria scatola nera). Il guard
+            # is_active() evita di toccare self.pool quando la cattura e' OFF
+            # (o il pool e' None, es. nei test del poller in isolamento).
+            if (telemetry.is_active()
+                    and now - last_sample_t >= TELEMETRY_SAMPLE_INTERVAL_S):
+                last_sample_t = now
+                telemetry.sample({
+                    "file_id": getattr(self, "_file_id", None),
+                    "url_hash": getattr(self, "_url_hash", None),
+                    "bytes_done": done, "total_size": total_size,
+                    "instant_bps": last_bps,
+                    "pool_alive": self.pool.size(),
+                    "pool_cooldown": self.pool.cooldown_count(),
+                    "pool_discarded": self.pool.discarded_count(),
+                    "refill_count": self.pool.refill_count(),
+                })
             stop.wait(0.5)

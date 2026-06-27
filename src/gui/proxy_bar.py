@@ -3,6 +3,7 @@
 # dell'orchestrator (pool_size_changed, setup_progress, proxy_stats).
 from __future__ import annotations
 
+from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QMessageBox, QPushButton, QVBoxLayout, QWidget
 
@@ -56,6 +57,9 @@ class _MetricCard(QFrame):
 
 
 class ProxyBar(QWidget):
+    # Richiesta di un nuovo speed test della linea (gestita da MainWindow).
+    speedtest_requested = pyqtSignal()
+
     def __init__(self) -> None:
         super().__init__()
         self._validation_text = "—"
@@ -80,15 +84,28 @@ class ProxyBar(QWidget):
         self._card_discarded = _MetricCard("Scartati")
         self._card_refills = _MetricCard("Ricariche")
         self._card_since = _MetricCard("Ultimo refill")
+        self._card_band = _MetricCard("Banda")
         self._cards = (
             self._card_alive,
             self._card_validation,
             self._card_discarded,
             self._card_refills,
             self._card_since,
+            self._card_band,
         )
         for card in self._cards:
             cards_row.addWidget(card)
+
+        # Pulsante per rifare la misura della banda della linea (diretto, fuori
+        # dai proxy). La misura iniziale parte da MainWindow all'avvio.
+        self._speedtest_btn = QPushButton("↻ Banda")
+        self._speedtest_btn.setFixedHeight(22)
+        self._speedtest_btn.setToolTip(
+            "Misura la banda della linea (download diretto, senza proxy)."
+        )
+        self._speedtest_btn.clicked.connect(self.speedtest_requested.emit)
+        cards_row.addWidget(self._speedtest_btn)
+
         cards_row.addStretch(1)
         self._reset_btn = QPushButton("Reset cache")
         self._reset_btn.setFixedHeight(22)
@@ -135,6 +152,18 @@ class ProxyBar(QWidget):
         self._card_refills.set_value(str(self._refills))
         self._card_since.set_value(_fmt_ago(self._since_seconds))
 
+    # ---- slot speed test linea -----------------------------------------------
+
+    def on_speedtest_running(self) -> None:
+        self._card_band.set_value("…")
+
+    def on_speedtest_result(self, mbit: float, ok: bool) -> None:
+        p = _style.CURRENT_PALETTE
+        if ok and mbit > 0:
+            self._card_band.set_value(f"{mbit:.0f} Mbit", p["accent_ok"])
+        else:
+            self._card_band.set_value("—", p["text_dim"])
+
     # ---- reset cache ---------------------------------------------------------
 
     def _on_reset_cache(self) -> None:
@@ -169,6 +198,9 @@ class ProxyBar(QWidget):
         self._card_discarded.set_value("0")
         self._card_refills.set_value("0")
         self._card_since.set_value("—")
+        # NB: la card "Banda" NON viene azzerata: e' una proprieta' della linea
+        # dell'utente (non della sessione), re-mostrata da MainWindow dal valore
+        # in preferences e aggiornata dallo speed test.
 
     def refresh_theme(self) -> None:
         self._restyle_micro()
@@ -184,8 +216,10 @@ class ProxyBar(QWidget):
         for card in self._cards:
             card.restyle()
         p = _style.CURRENT_PALETTE
-        self._reset_btn.setStyleSheet(
+        btn_qss = (
             f"QPushButton {{ color: {p['text_dim']}; border: 1px solid {p['border']}; "
             f"border-radius: 4px; background: transparent; font-size: 8pt; padding: 2px 6px; }}"
             f"QPushButton:hover {{ background-color: {p['panel_alt']}; }}"
         )
+        self._reset_btn.setStyleSheet(btn_qss)
+        self._speedtest_btn.setStyleSheet(btn_qss)

@@ -11,20 +11,36 @@ from datetime import datetime
 from PyQt6.QtCore import QObject, QThread, QTimer, pyqtSignal
 from PyQt6.QtWidgets import QApplication
 
+from src.core import telemetry
 from src.core.config import (
     ADAPTIVE_REFILL_FLOOR,
     ADAPTIVE_REFILL_MULTIPLIER,
+    APP_VERSION,
     MAX_CONCURRENT_DOWNLOADS,
     MAX_PROXIES_TO_VALIDATE,
     PARALLEL_CHUNK_SIZE_MB,
     PARALLEL_CONNECTIONS_PER_FILE,
+    PARALLEL_MAX_FAILED_CHUNKS,
+    PARALLEL_MIN_THROUGHPUT_BPS,
+    PARALLEL_SEGMENT_ATTEMPT_MAX_DURATION_S,
+    PARALLEL_SEGMENT_BACKOFF_MAX,
+    PARALLEL_SEGMENT_RETRIES,
+    PARALLEL_THROUGHPUT_GRACE,
+    PARALLEL_THROUGHPUT_WINDOW,
+    POOL_SCORE_DEAD_THRESHOLD,
+    POOL_SCORE_ON_FAILURE,
+    POOL_SCORE_ON_SUCCESS,
     PROXY_CACHE_MIN_SCORE_FOR_PERSISTENCE,
     PROXY_CACHE_SAVE_INTERVAL_S,
+    PROXY_CONNECT_TIMEOUT,
+    PROXY_COOLDOWN_SECONDS,
+    PROXY_READ_TIMEOUT,
     SPEED_SELECTION_ADMISSION_BPS,
     SPEED_SELECTION_DEFAULT_CONNECTIONS,
     SPEED_SELECTION_MAX_CANDIDATES,
     SPEED_SELECTION_MIN_BPS,
     VALIDATOR_STAGE1_WORKERS,
+    VALIDATOR_TARGET_ALIVE,
 )
 from src.core.download_history import extract_handle, record_completed
 from src.core.failed_log import log_failed_link
@@ -305,6 +321,7 @@ class DownloadOrchestrator(QObject):
         segment_max_duration_s: int | None = None,
         speed_selection_enabled: bool = False,
         speed_selection_min_bps: int = SPEED_SELECTION_MIN_BPS,
+        link_capacity_mbit: float | None = None,
     ) -> None:
         if concurrency is not None:
             self.max_concurrent = max(1, int(concurrency))
@@ -385,6 +402,48 @@ class DownloadOrchestrator(QObject):
             "Orchestrator.start: %d link, max %d concorrenti",
             len(links), self.max_concurrent,
         )
+
+        # Telemetria "scatola nera": apre una sessione di cattura grezza
+        # (no-op se TELEMETRY_ENABLED=False). session_id = timestamp: una
+        # campagna "N file in una sessione" = una cartella.
+        chunk_size_bytes_eff = (
+            self.chunk_size_bytes
+            if self.chunk_size_bytes is not None
+            else PARALLEL_CHUNK_SIZE_MB * 1024 * 1024
+        )
+        session_id = datetime.now().strftime("%Y%m%d-%H%M%S")
+        telemetry.start_session(session_id, manifest={
+            "app_version": APP_VERSION,
+            "selection_mode": self.selection_mode,
+            "connections_per_file": connessioni,
+            "chunk_size_bytes": chunk_size_bytes_eff,
+            "speed_selection_enabled": speed_selection_enabled,
+            "n_links": len(links),
+            "link_capacity_mbit": link_capacity_mbit or None,
+            "link_capacity_bps": (
+                int(link_capacity_mbit * 1_000_000 / 8) if link_capacity_mbit else None
+            ),
+            "config": {
+                "PARALLEL_CHUNK_SIZE_MB": PARALLEL_CHUNK_SIZE_MB,
+                "PARALLEL_CONNECTIONS_PER_FILE": PARALLEL_CONNECTIONS_PER_FILE,
+                "PARALLEL_SEGMENT_RETRIES": PARALLEL_SEGMENT_RETRIES,
+                "PARALLEL_SEGMENT_BACKOFF_MAX": PARALLEL_SEGMENT_BACKOFF_MAX,
+                "PARALLEL_SEGMENT_ATTEMPT_MAX_DURATION_S": PARALLEL_SEGMENT_ATTEMPT_MAX_DURATION_S,
+                "PARALLEL_MIN_THROUGHPUT_BPS": PARALLEL_MIN_THROUGHPUT_BPS,
+                "PARALLEL_THROUGHPUT_WINDOW": PARALLEL_THROUGHPUT_WINDOW,
+                "PARALLEL_THROUGHPUT_GRACE": PARALLEL_THROUGHPUT_GRACE,
+                "PARALLEL_MAX_FAILED_CHUNKS": PARALLEL_MAX_FAILED_CHUNKS,
+                "PROXY_CONNECT_TIMEOUT": PROXY_CONNECT_TIMEOUT,
+                "PROXY_READ_TIMEOUT": PROXY_READ_TIMEOUT,
+                "PROXY_COOLDOWN_SECONDS": PROXY_COOLDOWN_SECONDS,
+                "POOL_SCORE_ON_SUCCESS": POOL_SCORE_ON_SUCCESS,
+                "POOL_SCORE_ON_FAILURE": POOL_SCORE_ON_FAILURE,
+                "POOL_SCORE_DEAD_THRESHOLD": POOL_SCORE_DEAD_THRESHOLD,
+                "MAX_PROXIES_TO_VALIDATE": MAX_PROXIES_TO_VALIDATE,
+                "VALIDATOR_TARGET_ALIVE": VALIDATOR_TARGET_ALIVE,
+            },
+        })
+
         self.session_state.start()
         self._pending_links = list(links)
         # F3/F4: passa il cap e i parametri speed test al thread di setup.
@@ -451,6 +510,9 @@ class DownloadOrchestrator(QObject):
                 app.aboutToQuit.disconnect(self._persist_cache)
             except TypeError:
                 pass  # gia' disconnesso (shutdown ripetuto)
+        # Chiude la sessione di telemetria per ultima: drena la coda e scrive
+        # gli ultimi record (no-op se nessuna sessione attiva).
+        telemetry.close()
         log.info("Orchestrator.shutdown completato (all_stopped=%s)", all_stopped)
         return all_stopped
 
