@@ -32,6 +32,8 @@ import requests
 from src.core import telemetry
 from src.core.config import (
     PARALLEL_CHUNK_SIZE_MB,
+    PARALLEL_HTTP_429_BACKOFF_MAX_S,
+    PARALLEL_HTTP_429_BACKOFF_S,
     PARALLEL_MAX_FAILED_CHUNKS,
     PARALLEL_MIN_SEGMENT_BYTES,
     PARALLEL_MIN_THROUGHPUT_BPS,
@@ -467,6 +469,11 @@ class ParallelMegaDownloader:
         chunk_size_actual = end - start + 1
         attempt = 0
         last_exc: Exception | None = None
+        # Proxy "appiccicoso" per il 429 (too many concurrent IPs): quando il
+        # CDN risponde 429, si RI-PROVA LO STESSO proxy (stesso IP) invece di
+        # pescarne uno nuovo, per non aumentare il numero di IP concorrenti sul
+        # file. Settato nel branch 429, consumato qui alla selezione successiva.
+        sticky_proxy: dict | None = None
         while attempt < PARALLEL_SEGMENT_RETRIES:
             if self._abort.is_set():
                 raise RuntimeError(
@@ -477,7 +484,13 @@ class ParallelMegaDownloader:
             if self.session_state is not None:
                 self.session_state.wait_if_paused()
             attempt += 1
-            proxy = self.pool.get_next()
+            if sticky_proxy is not None:
+                # Ri-uso lo stesso IP dopo un 429 (vedi branch 429): non aggiungo
+                # un IP nuovo al conteggio concorrente del file.
+                proxy = sticky_proxy
+                sticky_proxy = None
+            else:
+                proxy = self.pool.get_next()
             if proxy is None:
                 added = self.pool.refill_blocking()
                 telemetry.event(
@@ -583,6 +596,32 @@ class ParallelMegaDownloader:
                         )
                         if self._sleep_interruptible(backoff):
                             raise RuntimeError(f"chunk {chunk_idx}: abort durante backoff")
+                        continue
+                    if resp.status_code == 429:
+                        # Limite PER-FILE di Mega (troppi IP concorrenti sullo
+                        # stesso file): NON e' colpa del proxy. Cambiare proxy
+                        # aggiungerebbe un IP e peggiorerebbe il 429 -> ri-provo
+                        # lo STESSO proxy dopo un backoff (sticky), senza
+                        # penalizzare ne' mettere in cooldown. cdn_error=True per
+                        # non penalizzare nel cleanup finale del loop.
+                        last_exc = RuntimeError("CDN 429 (too many concurrent IPs)")
+                        log.warning(
+                            "[parallel] chunk=%d 429 (troppi IP concorrenti sul "
+                            "file) -> ri-provo lo stesso IP %s:%s dopo backoff",
+                            chunk_idx, proxy["host"], proxy["port"],
+                        )
+                        sticky_proxy = proxy
+                        cdn_error = True
+                        backoff = min(
+                            PARALLEL_HTTP_429_BACKOFF_MAX_S,
+                            PARALLEL_HTTP_429_BACKOFF_S * attempt,
+                        )
+                        self._emit_attempt(
+                            rec, "http_429", "sticky_retry",
+                            _attempt_t0, error=last_exc, backoff=backoff,
+                        )
+                        if self._sleep_interruptible(backoff):
+                            raise RuntimeError(f"chunk {chunk_idx}: abort durante backoff 429")
                         continue
                     resp.raise_for_status()
                     if resp.status_code != 206 and chunk_size_actual != self._content_length(resp):

@@ -199,6 +199,16 @@ PARALLEL_THROUGHPUT_WINDOW = 20           # finestra di misura (s) (baseline)
 # diamo tempo al TCP slow-start e al primo buffer.
 PARALLEL_THROUGHPUT_GRACE = 15            # (baseline)
 
+# 429 "Too Many Concurrent IP Addresses": e' un limite PER-FILE di Mega sul
+# numero di IP DISTINTI che scaricano lo stesso file contemporaneamente (NON un
+# problema del singolo proxy). Cambiare proxy su un 429 AGGIUNGE un IP nuovo e
+# PEGGIORA il limite (spirale di 429 -> abbandono). La risposta corretta e'
+# ri-provare lo STESSO proxy (stesso IP) dopo un backoff, lasciando decadere il
+# conteggio IP concorrenti lato Mega. Questo backoff base (s) viene scalato per
+# tentativo. Il proxy NON viene penalizzato (non e' colpa sua).
+PARALLEL_HTTP_429_BACKOFF_S = 6
+PARALLEL_HTTP_429_BACKOFF_MAX_S = 20
+
 # Budget temporale ASSOLUTO per singolo tentativo di segmento. A prescindere
 # dal throughput istantaneo, se un tentativo dura piu' di N secondi viene
 # abortito e il proxy marcato dead. Difesa contro proxy che si mantengono
