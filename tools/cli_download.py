@@ -45,6 +45,11 @@ def main(argv: list[str]) -> int:
         "--concurrency", type=int, default=None,
         help="File scaricati in parallelo (default: config).",
     )
+    parser.add_argument(
+        "--speed-admission", type=int, default=None, metavar="KBS",
+        help="Ammette nel pool SOLO proxy con speed test >= KBS KB/s (stage3), "
+             "mantenendo selezione score e N normale. Disattivo se assente.",
+    )
     args = parser.parse_args(argv)
     links = args.links
     if not links:
@@ -120,15 +125,21 @@ def main(argv: list[str]) -> int:
     orch.failed.connect(on_failed)
     orch.abandoned.connect(on_abandoned)
 
+    speed_admission_bps = (
+        args.speed_admission * 1024 if args.speed_admission is not None else None
+    )
     QTimer.singleShot(0, lambda: orch.start(
         links,
         concurrency=args.concurrency,
         connections_per_file=args.connections,
         selection_mode=args.selection_mode,
+        speed_admission_bps=speed_admission_bps,
     ))
     log.info(
-        "CLI: avvio con %d link (selezione=%s, connessioni=%s, concorrenza=%s)",
+        "CLI: avvio con %d link (selezione=%s, connessioni=%s, concorrenza=%s, "
+        "speed_admission=%s KB/s)",
         len(links), args.selection_mode, args.connections, args.concurrency,
+        args.speed_admission,
     )
     app.exec()
     # Teardown esplicito: ferma worker/refresher/timer e chiude la telemetria

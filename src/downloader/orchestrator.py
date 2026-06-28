@@ -321,6 +321,7 @@ class DownloadOrchestrator(QObject):
         segment_max_duration_s: int | None = None,
         speed_selection_enabled: bool = False,
         speed_selection_min_bps: int = SPEED_SELECTION_MIN_BPS,
+        speed_admission_bps: int | None = None,
         link_capacity_mbit: float | None = None,
     ) -> None:
         if concurrency is not None:
@@ -330,6 +331,13 @@ class DownloadOrchestrator(QObject):
         self.segment_max_duration_s = segment_max_duration_s
         self.speed_selection_enabled = speed_selection_enabled
         self.speed_selection_min_bps = speed_selection_min_bps
+        # Speed-admission DISACCOPPIATO: ammette nel pool solo proxy che superano
+        # lo stage3 (speed test reale >= soglia), MA mantiene selection_mode="score"
+        # e N di default (a differenza di speed_selection_enabled, che forza
+        # throughput + N=5). None = disattivo. Pensato per la missione 20MB/s:
+        # meno proxy ma piu' veloci -> meno IP per saturare, meno 429/churn.
+        self.speed_admission_bps = speed_admission_bps
+        use_speed_test = speed_selection_enabled or (speed_admission_bps is not None)
 
         # F2: adattamento automatico del profilo quando la selezione per velocita' e' attiva.
         if speed_selection_enabled:
@@ -347,6 +355,18 @@ class DownloadOrchestrator(QObject):
                 speed_test=True,
                 speed_admission_bps=SPEED_SELECTION_ADMISSION_BPS,
                 speed_preference_bps=self.speed_selection_min_bps,
+            )
+        elif speed_admission_bps is not None:
+            # Solo AMMISSIONE per velocita': il pool si riempie di proxy veloci
+            # (stage3 >= soglia) ma la rotazione resta "score" e N resta quello
+            # scelto (default 10). Refill con speed test alla stessa soglia.
+            self.selection_mode = selection_mode or "score"
+            self.connections_per_file = connections_per_file
+            self.pool._refill_fn = lambda: _scrape_and_validate(
+                max_candidates=MAX_PROXIES_TO_VALIDATE,
+                speed_test=True,
+                speed_admission_bps=speed_admission_bps,
+                speed_preference_bps=speed_admission_bps,
             )
         else:
             self.selection_mode = selection_mode or "score"
@@ -447,12 +467,16 @@ class DownloadOrchestrator(QObject):
         self.session_state.start()
         self._pending_links = list(links)
         # F3/F4: passa il cap e i parametri speed test al thread di setup.
+        # use_speed_test copre sia speed_selection (throughput+N5) sia
+        # speed_admission disaccoppiato (solo ammissione, score+N normale).
         max_cand = SPEED_SELECTION_MAX_CANDIDATES if speed_selection_enabled else MAX_PROXIES_TO_VALIDATE
+        adm_bps = speed_admission_bps if speed_admission_bps is not None else SPEED_SELECTION_ADMISSION_BPS
+        pref_bps = speed_admission_bps if speed_admission_bps is not None else speed_selection_min_bps
         self._setup = _SetupThread(
             max_candidates=max_cand,
-            speed_test=speed_selection_enabled,
-            speed_admission_bps=SPEED_SELECTION_ADMISSION_BPS,
-            speed_preference_bps=speed_selection_min_bps,
+            speed_test=use_speed_test,
+            speed_admission_bps=adm_bps,
+            speed_preference_bps=pref_bps,
         )
         self._hot_started = False
         self._setup.setup_status.connect(self.setup_status)
