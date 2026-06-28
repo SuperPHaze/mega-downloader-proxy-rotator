@@ -12,6 +12,7 @@ src/
 ├── core/
 │   ├── config.py          # costanti globali (timeout, soglie, paths, UA); include SPEED_SELECTION_* e VALIDATOR_SPEED_TEST_* per la selezione per velocità
 │   ├── state.py           # SessionState thread-safe (pausa/annullo)
+│   ├── telemetry.py       # telemetria "scatola nera": recorder asincrono (writer daemon) di tentativi-chunk + campioni 1Hz in logs/telemetry/<id>/; no-op se TELEMETRY_ENABLED=False
 │   ├── events.py          # EventBus opzionale (non usato dal flusso)
 │   ├── logging_setup.py   # setup root logger + sys.excepthook
 │   ├── failed_log.py      # logger JSONL dei link abbandonati
@@ -61,9 +62,10 @@ src/
     └── style.py           # PALETTE_LIGHT/DARK, CURRENT_PALETTE, build_qss(), apply_theme()
 
 tools/
-├── cli_download.py        # runner CLI senza GUI (riusa Orchestrator)
+├── cli_download.py        # runner CLI senza GUI (riusa Orchestrator); flag --selection-mode/--connections/--concurrency/--speed-admission
 ├── monitor_gui.py         # GUI live monitor velocita' download
 ├── monitor_speed.py       # CLI polling cartella downloads/
+├── analyze_telemetry.py   # analizzatore offline della telemetria scatola nera (sola lettura): CSV + report HTML/MD + export AI; --link-mbit per la % di linea usata
 └── report.py              # report HTML diagnostico (sola lettura) da logs/events.jsonl + logs/crash.log
 
 scripts/
@@ -106,6 +108,7 @@ package.ps1                # packaging: crea dist/MegaProxyRotator-X.Y.Z.zip
 - mega.py è stato vendorizzato: le primitive crypto e l'API pubblica sono in `src/downloader/mega_crypto.py` e `src/downloader/mega_api.py`. Nessuna dipendenza esterna `mega.py`, nessun conflitto tenacity/pathlib.
 - Mega può rate-limitare lo stesso file anche da IP diversi: è atteso, è proprio ciò che il test misura.
 - **403/509 dal CDN Mega indica rate-limit del proxy, NON scadenza URL**: un re-resolve dell'URL CDN ritorna sistematicamente lo stesso host. Il proxy va messo in cooldown (`pool.cooldown`, temporaneo: torna in rotazione dopo `PROXY_COOLDOWN_SECONDS`), non marcato dead; il re-resolve va riservato ai casi di URL effettivamente cambiata (es. 503 di overload).
+- **429 "Too Many Concurrent IP Addresses" è un limite PER-FILE di Mega** (numero di IP distinti che scaricano lo stesso file contemporaneamente), NON un problema del singolo proxy. In `parallel_client._download_chunk` il 429 NON penalizza e NON fa cooldown: ri-prova lo STESSO proxy (`sticky_proxy`) dopo un backoff (`PARALLEL_HTTP_429_BACKOFF_S/MAX_S`). Cambiare proxy aggiungerebbe un IP e peggiorerebbe il limite (spirale → abbandono). Conseguenza architetturale: aumentare le corsie o concentrare i proxy sullo stesso file regredisce oltre una certa soglia (misurato). I 20 MB/s su file singolo sono limitati da questo tetto + dalla qualità dei free-proxy (vedi `MyDocs/autonomous-mission-report.md`).
 - L'import di `pycryptodome` (pesante) avviene localmente dentro `MegaClient.download()` e `ParallelMegaDownloader.download()` per non rallentare l'avvio della GUI.
 
 ## Logging

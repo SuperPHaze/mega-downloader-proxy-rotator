@@ -4,6 +4,41 @@
 
 All notable changes to this project. Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [SemVer](https://semver.org/).
 
+## [1.13.0] — 2026-06-28
+
+### Changed
+- **Markedly improved download throughput** (≈ +148% on average in tests on large files, from ~5.8 to
+  ~14.3 MB/s): the pool of validated proxies is much larger. Target alive proxies **60 → 300**, maximum
+  validation candidates **3000 → 12000**, validation workers **100 → 200** (stage 1) and **60 → 120**
+  (stage 2), background resupplier thresholds **15/30 → 80/160**. More alive proxies means fuller lanes
+  and, above all, fewer speed drops over long sessions (the pool doesn't "burn out" because it resupplies
+  faster).
+- Throughput watchdog reverted to baseline values (minimum **200 KB/s** over a **20 s** window, **15 s**
+  grace) after a more aggressive experiment that had regressed (it dropped too many proxies too early,
+  leaving lanes empty).
+
+### Added
+- **"Black-box" telemetry**: structured, asynchronous capture of every chunk attempt and 1 Hz samples,
+  in per-session files under `logs/telemetry/`, at negligible cost to the download. A command-line tool
+  `tools/analyze_telemetry.py` turns it into an HTML/Markdown report + CSV datasets + a compact AI export
+  — useful to understand *where* speed is lost (per-source quality, stragglers, line utilization,
+  dominant constraint).
+- **Speed-admission** (experimental, command-line `--speed-admission KB/s`): admits into the pool only
+  proxies that pass a real speed test at the given threshold, while keeping score-based selection and the
+  normal connection count. Useful to favor proxy quality.
+- Headless runner flags for `tools/cli_download.py`: `--selection-mode`, `--connections`,
+  `--concurrency` for controlled, GUI-less tests.
+
+### Fixed
+- **Handling of Mega's `429 "Too Many Concurrent IP Addresses"`**: it is a *per-file* limit on the number
+  of distinct IPs downloading the same file at once. It was previously treated as a generic error and the
+  program switched to another proxy — adding an IP and *worsening* the limit, up to abandoning the file.
+  It now **retries the same proxy** (same IP) after a short wait, without penalizing it. More robust
+  downloads and fewer abandonments.
+- **Headless CLI runner hung on an abandoned link**: it did not handle the `abandoned` signal, so a link
+  that exhausted its attempts was never removed and the process stayed waiting. It now terminates
+  correctly.
+
 ## [1.11.3] — 2026-06-27
 
 ### Added

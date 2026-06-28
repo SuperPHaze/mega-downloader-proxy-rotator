@@ -34,9 +34,9 @@ Le liste pubbliche di proxy sono ampie e in larga parte composte da indirizzi no
 
 **Pre-filtro fonti con metadati (ProxyScrape JSON).** Le fonti che forniscono metadati pre-calcolati — in particolare i tre endpoint ProxyScrape JSON — includono nel payload informazioni come `uptime_percent` e `latency_ms` per ogni candidato. Lo scraper li usa come pre-filtro prima della validazione, scartando i candidati con `uptime < 50%` o `latency > 3000 ms`. Risparmia tempo di stadio 1/2 senza sostituire la validazione: i proxy che passano il pre-filtro vengono comunque validati normalmente.
 
-**Stadio 1 — raggiungibilità.** Pre-filtro veloce e ad alta concorrenza (fino a 100 worker, timeout 4 s) contro un endpoint di connettività ad alta affidabilità (`generate_204` di Google). Verifica solo che il proxy regga un round-trip HTTP; non giudica Mega. Serve a eliminare i proxy morti senza sprecare un test sulla capacità limitata dello stadio 2.
+**Stadio 1 — raggiungibilità.** Pre-filtro veloce e ad alta concorrenza (fino a 200 worker, timeout 4 s) contro un endpoint di connettività ad alta affidabilità (`generate_204` di Google). Verifica solo che il proxy regga un round-trip HTTP; non giudica Mega. Serve a eliminare i proxy morti senza sprecare un test sulla capacità limitata dello stadio 2.
 
-**Stadio 2 — raggiungibilità di Mega.** I superstiti vengono provati, con concorrenza moderata (60 worker) perché Mega rate-limita, contro l'host dell'API di download di Mega — lo stesso usato dalla risoluzione reale dei link, non la homepage. Il criterio di successo è qualsiasi risposta HTTP ricevuta dall'host, anche un errore applicativo: significa che il round-trip è arrivato a destinazione. Un criterio più severo scarterebbe proxy perfettamente validi per il download.
+**Stadio 2 — raggiungibilità di Mega.** I superstiti vengono provati, con concorrenza moderata (120 worker) perché Mega rate-limita, contro l'host dell'API di download di Mega — lo stesso usato dalla risoluzione reale dei link, non la homepage. Il criterio di successo è qualsiasi risposta HTTP ricevuta dall'host, anche un errore applicativo: significa che il round-trip è arrivato a destinazione. Un criterio più severo scarterebbe proxy perfettamente validi per il download.
 
 La validazione si arresta in anticipo al raggiungimento del numero obiettivo di proxy vivi (60) e comunque non supera un tetto di candidati (3000, elevato a 5000 con la selezione per velocità attiva), per non trasformare l'avvio in minuti di attesa.
 
@@ -92,9 +92,9 @@ I numerosi tentativi falliti visibili durante l'uso sono quindi un comportamento
 
 ## 7. Mantenimento del pool
 
-I proxy gratuiti si consumano: uno valido pochi minuti fa può non esserlo più. Se il programma usasse solo l'insieme raccolto all'avvio, finirebbe per restare a secco. Un **rifornitore in background** controlla a intervalli regolari (ogni 30 secondi) il numero di proxy vivi e, se scende sotto la soglia (15), avvia uno scrape e una validazione senza interrompere i download in corso. Per evitare raffiche di rifornimenti quando il pool oscilla appena intorno alla soglia, il rifornitore si "disarma" dopo ogni intervento e si riarma solo quando i proxy vivi tornano sopra una soglia più alta (30). Per intercettare il degrado silenzioso (proxy che rallentano progressivamente senza morire del tutto), forza comunque un rifornimento se l'ultimo è avvenuto da più di 5 minuti.
+I proxy gratuiti si consumano: uno valido pochi minuti fa può non esserlo più. Se il programma usasse solo l'insieme raccolto all'avvio, finirebbe per restare a secco. Un **rifornitore in background** controlla a intervalli regolari (ogni 30 secondi) il numero di proxy vivi e, se scende sotto la soglia (80), avvia uno scrape e una validazione senza interrompere i download in corso. Per evitare raffiche di rifornimenti quando il pool oscilla appena intorno alla soglia, il rifornitore si "disarma" dopo ogni intervento e si riarma solo quando i proxy vivi tornano sopra una soglia più alta (160). Per intercettare il degrado silenzioso (proxy che rallentano progressivamente senza morire del tutto), forza comunque un rifornimento se l'ultimo è avvenuto da più di 5 minuti.
 
-Con la **selezione per velocità attiva**, le soglie diventano adattive: la soglia bassa è `max(10, download_attivi × connessioni × 3)`, quella alta è il doppio. Si aggiornano automaticamente ogni volta che parte o termina un download, così il margine di riserva cresce in proporzione al carico reale. Con la selezione disattivata il comportamento è identico a quello descritto sopra (soglie statiche 15/30).
+Con la **selezione per velocità attiva**, le soglie diventano adattive: la soglia bassa è `max(10, download_attivi × connessioni × 3)`, quella alta è il doppio. Si aggiornano automaticamente ogni volta che parte o termina un download, così il margine di riserva cresce in proporzione al carico reale. Con la selezione disattivata il comportamento è identico a quello descritto sopra (soglie statiche 80/160).
 
 Se il pool si svuota in un momento critico, è il download stesso a richiedere un rifornimento e ad attendere il tempo necessario: in quei frangenti si può osservare una pausa, durante la quale il programma sta ricostruendo il pool prima di proseguire. Il tutto è automatico e non richiede intervento.
 
@@ -160,10 +160,11 @@ I valori sotto sono i default di fabbrica; quelli regolabili sono indicati nelle
 | Budget per tentativo di chunk | 180 s | configurabile (Funzioni Sperimentali); limite assoluto, indipendente dal throughput |
 | Durata massima per file | 60 min | configurabile; oltre il limite il file è abbandonato |
 | Tentativi falliti prima dell'abbandono | 15 | per singolo link, non si resetta tra cicli |
-| Refresh pool | ogni 30 s | refill se proxy vivi < 15 (si riarma a 30); refresh forzato oltre 5 min |
-| **Soglia refill adattiva** (con selezione per velocità) | floor 10, ×3 | `LOW = max(10, attivi × conn × 3)`, `HIGH = LOW × 2`. Con flag OFF resta statica (15/30). |
-| Target proxy vivi | 60 | la validazione si ferma in anticipo al raggiungimento; con i proxy gratuiti non è sempre raggiunto |
-| Candidati massimi alla validazione | 3000 | tetto per limitare la durata dell'avvio; scansiona prima lo stage 1, poi stage 2 fino al target |
+| Refresh pool | ogni 30 s | refill se proxy vivi < 80 (si riarma a 160); refresh forzato oltre 5 min |
+| **Soglia refill adattiva** (con selezione per velocità) | floor 10, ×3 | `LOW = max(10, attivi × conn × 3)`, `HIGH = LOW × 2`. Con flag OFF resta statica (80/160). |
+| Target proxy vivi | 300 | la validazione si ferma in anticipo al raggiungimento; con i proxy gratuiti non è sempre raggiunto (resa tipica ~150-170) |
+| Candidati massimi alla validazione | 12000 | tetto per limitare la durata dell'avvio; scansiona prima lo stage 1, poi stage 2 fino al target |
+| Worker di validazione | 200 (stage 1) / 120 (stage 2) | concorrenza dei due stadi di validazione |
 | **Pre-filtro fonti con metadati** (ProxyScrape JSON) | uptime ≥ 50%, latency ≤ 3000 ms | applicato dallo scraper prima della validazione; scarta i candidati che la fonte segnala come inaffidabili |
 | Cooldown proxy rate-limit | 90 s | escluso dalla rotazione e dal conteggio "vivi" alla ricezione di 403/509 dal CDN; torna disponibile allo scadere |
 | Validità cache proxy | 6 ore | voci più vecchie scartate all'avvio |
@@ -197,4 +198,5 @@ Alcuni comportamenti possono sembrare anomalie ma sono parte del normale funzion
 - I proxy gratuiti hanno mortalità elevata (~70%): la validazione ne scarta fisiologicamente la maggior parte.
 - La velocità è determinata dai proxy, non dal programma.
 - Mega può applicare rate-limit allo stesso file anche da IP diversi (403/509 dal CDN): è il comportamento che il tool è nato per misurare. Il proxy colpito non viene scartato ma messo a riposo per 90 secondi, poi torna in rotazione.
+- Mega impone inoltre un **limite di IP concorrenti per singolo file** (risposta `429 "Too Many Concurrent IP Addresses"`): troppi proxy diversi che scaricano lo stesso file nello stesso momento vengono respinti. Il programma lo gestisce **ri-provando lo stesso proxy** (stesso IP) dopo una breve attesa, invece di passarne a uno nuovo — cambiare IP peggiorerebbe il limite. Conseguenza pratica: oltre una certa soglia, aggiungere connessioni o proxy sullo stesso file non aumenta la banda. La velocità massima su un singolo file è quindi limitata sia dalla qualità dei proxy sia da questo tetto di Mega.
 - La verifica dell'integrità tramite MAC del file scaricato non è ancora implementata: è una funzionalità pianificata.

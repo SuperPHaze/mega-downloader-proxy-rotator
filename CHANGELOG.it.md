@@ -4,6 +4,41 @@
 
 Tutte le modifiche rilevanti del progetto. Formato basato su [Keep a Changelog](https://keepachangelog.com/it/1.1.0/); versioni secondo [SemVer](https://semver.org/lang/it/).
 
+## [1.13.0] — 2026-06-28
+
+### Modificato
+- **Throughput dei download migliorato in modo netto** (≈ +148% sulla media nei test su file grandi,
+  da ~5,8 a ~14,3 MB/s): il pool di proxy validati è molto più grande. Target proxy vivi **60 → 300**,
+  candidati massimi alla validazione **3000 → 12000**, worker di validazione **100 → 200** (stadio 1) e
+  **60 → 120** (stadio 2), soglie del refresher in background **15/30 → 80/160**. Più proxy vivi
+  disponibili significa corsie più piene e, soprattutto, meno cali di velocità sulle sessioni lunghe
+  (il pool non si "brucia" perché si rifornisce più in fretta).
+- Watchdog di throughput riportato ai valori di riferimento (minimo **200 KB/s** su finestra **20 s**,
+  grazia **15 s**) dopo un esperimento più aggressivo che era regredito (scartava troppi proxy troppo
+  presto, lasciando le corsie vuote).
+
+### Aggiunto
+- **Telemetria "scatola nera"**: cattura strutturata e asincrona di ogni tentativo di chunk e di
+  campioni a 1 Hz, su file separati per sessione in `logs/telemetry/`, a costo trascurabile sul
+  download. Strumento da riga di comando `tools/analyze_telemetry.py` che la trasforma in un report
+  HTML/Markdown + dataset CSV + un export compatto per l'analisi — utile per capire *dove* si perde
+  velocità (qualità per-fonte, stragglers, utilizzo della linea, vincolo dominante).
+- **Speed-admission** (sperimentale, da riga di comando `--speed-admission KB/s`): ammette nel pool
+  solo i proxy che superano un test di velocità reale alla soglia data, mantenendo la selezione a
+  punteggio e il numero di connessioni normale. Utile per privilegiare la qualità dei proxy.
+- Flag del runner headless `tools/cli_download.py`: `--selection-mode`, `--connections`,
+  `--concurrency` per test controllati senza interfaccia.
+
+### Corretto
+- **Gestione del `429 "Too Many Concurrent IP Addresses"` di Mega**: è un limite *per-file* sul numero
+  di IP distinti che scaricano lo stesso file contemporaneamente. Prima veniva trattato come un errore
+  generico e il programma passava a un altro proxy — aggiungendo un IP e *peggiorando* il limite, fino
+  ad abbandonare il file. Ora **ri-prova lo stesso proxy** (stesso IP) dopo una breve attesa, senza
+  penalizzarlo. Download più robusti e meno abbandoni.
+- **Runner CLI headless appeso su link abbandonato**: non gestiva il segnale `abandoned`, quindi un
+  link che esauriva i tentativi non veniva mai rimosso e il processo restava in attesa. Ora termina
+  correttamente.
+
 ## [1.11.3] — 2026-06-27
 
 ### Aggiunto

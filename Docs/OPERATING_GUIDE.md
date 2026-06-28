@@ -34,9 +34,9 @@ Public proxy lists are large and largely made up of addresses that are no longer
 
 **Pre-filter for sources with metadata (ProxyScrape JSON).** Sources that provide pre-calculated metadata — in particular the three ProxyScrape JSON endpoints — include in their payload fields such as `uptime_percent` and `latency_ms` for each candidate. The scraper uses them as a pre-filter before validation, discarding candidates with `uptime < 50%` or `latency > 3000 ms`. This saves stage 1/2 time without replacing validation: proxies that pass the pre-filter are still validated normally.
 
-**Stage 1 — reachability.** A fast, high-concurrency pre-filter (up to 100 workers, 4 s timeout) against a highly reliable connectivity endpoint (Google's `generate_204`). It only verifies that the proxy can complete an HTTP round trip; it does not judge Mega reachability. It serves to eliminate dead proxies without wasting a test on stage 2's limited capacity.
+**Stage 1 — reachability.** A fast, high-concurrency pre-filter (up to 200 workers, 4 s timeout) against a highly reliable connectivity endpoint (Google's `generate_204`). It only verifies that the proxy can complete an HTTP round trip; it does not judge Mega reachability. It serves to eliminate dead proxies without wasting a test on stage 2's limited capacity.
 
-**Stage 2 — Mega reachability.** Survivors are tested, at moderate concurrency (60 workers) because Mega rate-limits, against the host of Mega's download API — the same one used by real link resolution, not the homepage. The success criterion is any HTTP response received from the host, even an application-level error: it means the round trip reached its destination. A stricter criterion would discard proxies that are perfectly valid for downloading.
+**Stage 2 — Mega reachability.** Survivors are tested, at moderate concurrency (120 workers) because Mega rate-limits, against the host of Mega's download API — the same one used by real link resolution, not the homepage. The success criterion is any HTTP response received from the host, even an application-level error: it means the round trip reached its destination. A stricter criterion would discard proxies that are perfectly valid for downloading.
 
 Validation stops early once the target number of alive proxies (60) is reached, and in any case never exceeds a candidate cap (3 000, raised to 5 000 with speed-based selection active), so startup doesn't turn into minutes of waiting.
 
@@ -92,9 +92,9 @@ The many failed attempts visible during use are therefore expected behavior, not
 
 ## 7. Pool maintenance
 
-Free proxies wear out: one that was valid a few minutes ago may no longer be. If the program only used the set collected at startup, it would eventually run dry. A **background resupplier** checks at regular intervals (every 30 seconds) how many proxies are alive and, if it drops below the threshold (15), starts a scrape and validation without interrupting downloads in progress. To avoid bursts of resupplies when the pool oscillates right around the threshold, the resupplier "disarms" itself after each run and only re-arms once alive proxies climb back above a higher threshold (30). To catch silent degradation (proxies progressively slowing down without fully dying), it also forces a resupply if the last one happened more than 5 minutes ago.
+Free proxies wear out: one that was valid a few minutes ago may no longer be. If the program only used the set collected at startup, it would eventually run dry. A **background resupplier** checks at regular intervals (every 30 seconds) how many proxies are alive and, if it drops below the threshold (80), starts a scrape and validation without interrupting downloads in progress. To avoid bursts of resupplies when the pool oscillates right around the threshold, the resupplier "disarms" itself after each run and only re-arms once alive proxies climb back above a higher threshold (160). To catch silent degradation (proxies progressively slowing down without fully dying), it also forces a resupply if the last one happened more than 5 minutes ago.
 
-With **speed-based selection active**, these thresholds become adaptive: the low threshold is `max(10, active downloads × connections × 3)`, and the high threshold is double that. They update automatically every time a download starts or ends, so the reserve margin grows in proportion to the actual load. With speed-based selection off, behavior is identical to what is described above (static thresholds 15/30).
+With **speed-based selection active**, these thresholds become adaptive: the low threshold is `max(10, active downloads × connections × 3)`, and the high threshold is double that. They update automatically every time a download starts or ends, so the reserve margin grows in proportion to the actual load. With speed-based selection off, behavior is identical to what is described above (static thresholds 80/160).
 
 If the pool empties at a critical moment, it's the download itself that requests an immediate resupply and waits as long as needed: at those times you may see a pause, during which the program is rebuilding the pool before continuing. All of this is automatic and requires no intervention.
 
@@ -160,10 +160,11 @@ The values below are factory defaults; the configurable ones are noted according
 | Per-segment attempt budget | 180 s | configurable (Experimental Features); absolute limit, independent of throughput |
 | Maximum duration per file | 60 min | configurable; beyond the limit the file is abandoned |
 | Failed attempts before abandoning | 15 | per individual link, does not reset between cycles |
-| Pool refresh | every 30 s | refill if alive proxies < 15 (re-arms at 30); forced refresh after 5 min |
-| **Adaptive refill threshold** (with speed-based selection) | floor 10, ×3 | `LOW = max(10, active × conn × 3)`, `HIGH = 2 × LOW`. With flag OFF: static (15/30). |
-| Target alive proxies | 60 | validation stops early once reached; with free proxies it is not always achieved |
-| Maximum validation candidates | 3000 | cap to limit startup duration; scans stage 1 first, then stage 2 up to the target |
+| Pool refresh | every 30 s | refill if alive proxies < 80 (re-arms at 160); forced refresh after 5 min |
+| **Adaptive refill threshold** (with speed-based selection) | floor 10, ×3 | `LOW = max(10, active × conn × 3)`, `HIGH = 2 × LOW`. With flag OFF: static (80/160). |
+| Target alive proxies | 300 | validation stops early once reached; with free proxies it is not always achieved (typical yield ~150-170) |
+| Maximum validation candidates | 12000 | cap to limit startup duration; scans stage 1 first, then stage 2 up to the target |
+| Validation workers | 200 (stage 1) / 120 (stage 2) | concurrency of the two validation stages |
 | **Pre-filter for metadata sources** (ProxyScrape JSON) | uptime ≥ 50%, latency ≤ 3000 ms | applied by the scraper before validation; discards candidates the source flags as unreliable |
 | Rate-limit proxy cooldown | 90 s | excluded from rotation and from the "alive" count on 403/509 from the CDN; returns available when it expires |
 | Proxy cache validity | 6 hours | older entries discarded at startup |
@@ -197,4 +198,5 @@ Some behaviors may look like anomalies but are part of normal operation:
 - Free proxies have a high mortality rate (~70%): validation physiologically discards most of them.
 - Speed is determined by the proxies, not the program.
 - Mega can rate-limit the same file even from different IPs (403/509 from the CDN): this is the behavior the tool was originally built to measure. The affected proxy is not discarded but put to rest for 90 seconds, then returns to rotation.
+- Mega also enforces a **per-file concurrent-IP limit** (response `429 "Too Many Concurrent IP Addresses"`): too many different proxies downloading the same file at the same moment get rejected. The program handles it by **retrying the same proxy** (same IP) after a short wait, instead of switching to a new one — changing IP would make the limit worse. Practical consequence: beyond a certain point, adding connections or proxies to the same file does not increase bandwidth. The peak speed on a single file is therefore bounded by both proxy quality and this Mega ceiling.
 - Integrity verification via the downloaded file's MAC is not yet implemented: it is a planned feature.
