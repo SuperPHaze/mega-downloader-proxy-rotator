@@ -33,3 +33,6 @@ sync-docs.bat
 
 # Privato di lavoro: tutto sotto MyDocs/ è escluso da git. Docs/ contiene solo documentazione pubblica.
 MyDocs/
+
+# Editor: Obsidian config locale
+.obsidian/
