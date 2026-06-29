@@ -68,6 +68,33 @@ def test_filter_changes_card_visibility(qapp):
     assert panel._cards[1].isHidden() is True
 
 
+def test_filter_buttons_show_zero_counts_when_empty(qapp):
+    panel = JobsPanel()
+    assert panel._filter_buttons[FILTER_IN_PROGRESS].text() == "In corso (0)"
+    assert panel._filter_buttons[FILTER_COMPLETED].text() == "Completati (0)"
+    assert panel._filter_buttons[FILTER_NOT_COMPLETED].text() == "Non completati (0)"
+
+
+def test_filter_button_counts_track_job_states(qapp):
+    panel = JobsPanel()
+    panel.reset([
+        "https://mega.nz/file/AAA#bbb",
+        "https://mega.nz/file/CCC#ddd",
+        "https://mega.nz/file/EEE#fff",
+    ])
+    # Tutti in coda → contano come "In corso" (in coda + in corso).
+    assert panel._filter_buttons[FILTER_IN_PROGRESS].text() == "In corso (3)"
+    assert panel._filter_buttons[FILTER_COMPLETED].text() == "Completati (0)"
+    assert panel._filter_buttons[FILTER_NOT_COMPLETED].text() == "Non completati (0)"
+
+    panel.model.mark_completed(0)
+    panel.model.mark_cancelled(1)
+    # 0 completato, 1 annullato, 2 ancora in coda.
+    assert panel._filter_buttons[FILTER_IN_PROGRESS].text() == "In corso (1)"
+    assert panel._filter_buttons[FILTER_COMPLETED].text() == "Completati (1)"
+    assert panel._filter_buttons[FILTER_NOT_COMPLETED].text() == "Non completati (1)"
+
+
 def test_card_auto_hides_when_job_completes_in_progress_filter(qapp):
     # Il filtro "In corso" deve aggiornare la visibilita' della card
     # automaticamente, senza che l'utente clicchi nulla.

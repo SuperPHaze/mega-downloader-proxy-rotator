@@ -4,6 +4,16 @@
 
 Tutte le modifiche rilevanti del progetto. Formato basato su [Keep a Changelog](https://keepachangelog.com/it/1.1.0/); versioni secondo [SemVer](https://semver.org/lang/it/).
 
+## [1.13.3] — 2026-06-29
+
+### Modificato
+- **I pulsanti filtro della lista download mostrano il conteggio dei file per stato.**
+  Ogni pulsante riporta tra parentesi quanti file ricadono nella sua categoria —
+  «In corso (N)» (in coda + in corso), «Completati (N)» e «Non completati (N)»
+  (falliti + annullati + abbandonati). I conteggi si aggiornano in tempo reale a
+  ogni cambio di stato dei download, così si vede a colpo d'occhio la composizione
+  della sessione senza dover passare da un filtro all'altro.
+
 ## [1.13.2] — 2026-06-29
 
 ### Aggiunto

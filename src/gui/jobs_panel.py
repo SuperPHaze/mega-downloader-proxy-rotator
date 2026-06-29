@@ -507,11 +507,14 @@ class JobsPanel(QWidget):
         self._filter_group = QButtonGroup(self)
         self._filter_group.setExclusive(True)
         self._filter_buttons: dict[str, QPushButton] = {}
-        for category, label in (
-            (FILTER_IN_PROGRESS, "In corso"),
-            (FILTER_COMPLETED, "Completati"),
-            (FILTER_NOT_COMPLETED, "Non completati"),
-        ):
+        # Etichette base (senza conteggio): il numero di file per categoria
+        # viene appeso da _update_filter_counts a ogni cambio di aggregati.
+        self._filter_base_labels: dict[str, str] = {
+            FILTER_IN_PROGRESS: "In corso",
+            FILTER_COMPLETED: "Completati",
+            FILTER_NOT_COMPLETED: "Non completati",
+        }
+        for category, label in self._filter_base_labels.items():
             btn = QPushButton(label)
             btn.setCheckable(True)
             btn.setChecked(category == FILTER_IN_PROGRESS)
@@ -519,6 +522,7 @@ class JobsPanel(QWidget):
             self._filter_group.addButton(btn)
             self._filter_buttons[category] = btn
             filter_row.addWidget(btn)
+        self._update_filter_counts()
         self._style_filter_buttons()
         filter_row.addStretch(1)
         # Pulsante bulk per riavviare tutti i job falliti/abbandonati/annullati.
@@ -610,7 +614,24 @@ class JobsPanel(QWidget):
                     f"QPushButton:hover {{ background-color: {p['panel_alt']}; }}"
                 )
 
+    def _category_counts(self) -> dict[str, int]:
+        # Conteggio file per categoria di filtro, derivato dagli aggregati del
+        # modello (le tre categorie coprono tutti gli stati possibili).
+        agg = self.model.aggregates()
+        return {
+            FILTER_IN_PROGRESS: agg["queued"] + agg["running"],
+            FILTER_COMPLETED: agg["completed"],
+            FILTER_NOT_COMPLETED: agg["failed"] + agg["cancelled"] + agg["abandoned"],
+        }
+
+    def _update_filter_counts(self) -> None:
+        counts = self._category_counts()
+        for category, btn in self._filter_buttons.items():
+            base = self._filter_base_labels[category]
+            btn.setText(f"{base} ({counts.get(category, 0)})")
+
     def _on_aggregates_changed(self) -> None:
+        self._update_filter_counts()
         n = self.model.restartable_count()
         self._restart_all_btn.setText(f"Riavvia falliti ({n})")
         self._restart_all_btn.setEnabled(n > 0)

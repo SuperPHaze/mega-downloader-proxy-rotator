@@ -114,6 +114,8 @@ La zona proxy mostra anche due misure di banda affiancate, distinte per colore. 
 
 Durante una sessione i controlli disponibili sono pausa/ripresa e annullo, sia globali sia per singolo file dalla tabella. La pausa non comporta la perdita dei proxy: alla ripresa il lavoro riparte dal punto in cui era stato sospeso. L'annullo di un singolo file può, a scelta, rimuoverne anche i dati già scaricati dal disco.
 
+La lista dei download può essere filtrata con tre pulsanti a selezione esclusiva — **In corso**, **Completati** e **Non completati** — che insieme coprono tutti gli stati possibili (i job in coda e in corso ricadono in «In corso»; falliti, annullati e abbandonati in «Non completati»). Ogni pulsante riporta tra parentesi il numero di file nella sua categoria, aggiornato in tempo reale: così la composizione della sessione è leggibile a colpo d'occhio senza cambiare filtro.
+
 Il resume copre anche le interruzioni non volontarie (chiusura del programma, blackout, errore). Grazie allo schema `.part` + sidecar, alla ripresa vengono riscaricati solo i chunk mancanti; un ciclo è considerato completo unicamente quando esiste il file finale rinominato, quindi un file interrotto non viene mai scambiato per completo.
 
 ---

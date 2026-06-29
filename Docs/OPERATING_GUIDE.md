@@ -114,6 +114,8 @@ The proxy zone also shows two side-by-side bandwidth measurements, distinguished
 
 During a session, the available controls are pause/resume and cancel, both globally and per individual file from the table. Pausing does not lose the proxies: on resume, work continues from where it was suspended. Canceling a single file can optionally also remove its already-downloaded data from disk.
 
+The download list can be filtered with three mutually exclusive buttons — **In corso** (in progress), **Completati** (completed) and **Non completati** (not completed) — which together cover every possible state (queued and running jobs fall under "In corso"; failed, cancelled and abandoned ones under "Non completati"). Each button reports in parentheses the number of files in its category, updated in real time, so the makeup of the session is readable at a glance without switching filters.
+
 Resume also covers involuntary interruptions (program closed, blackout, error). Thanks to the `.part` + sidecar scheme, on resume only the missing chunks are re-downloaded; a cycle is considered complete only when the final renamed file exists, so an interrupted file is never mistaken for complete.
 
 ---

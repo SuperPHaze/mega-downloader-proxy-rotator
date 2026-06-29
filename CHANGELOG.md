@@ -4,6 +4,16 @@
 
 All notable changes to this project. Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [SemVer](https://semver.org/).
 
+## [1.13.3] — 2026-06-29
+
+### Changed
+- **The download-list filter buttons now show the file count per state.**
+  Each button reports in parentheses how many files fall into its category —
+  "In corso (N)" (queued + running), "Completati (N)" (completed) and
+  "Non completati (N)" (failed + cancelled + abandoned). The counts update in
+  real time on every download status change, so the makeup of the session is
+  visible at a glance without switching between filters.
+
 ## [1.13.2] — 2026-06-29
 
 ### Added
