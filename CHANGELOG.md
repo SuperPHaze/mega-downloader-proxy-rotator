@@ -4,6 +4,30 @@
 
 All notable changes to this project. Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [SemVer](https://semver.org/).
 
+## [1.13.2] — 2026-06-29
+
+### Added
+- **Proxy speed test in the proxy zone**, distinct from the direct line speed test. There are now two
+  side-by-side measurements, differentiated at a glance (different colors):
+  - **Banda** (green): line bandwidth, direct download **without proxy** (the pre-existing measure).
+  - **Banda proxy** (blue): real aggregate bandwidth the **live proxy pool** can deliver, measured by
+    sampling the best proxies and downloading through them in parallel.
+  The **↻ Banda proxy** button is enabled only during a session (at rest there are no proxies to
+  test). The measurement is resilient: a slow or dead proxy contributes only the bytes actually
+  downloaded, without failing the whole test. Comparing the two figures shows how close the proxy pool
+  gets to your own line capacity.
+
+## [1.13.1] — 2026-06-29
+
+### Fixed
+- **Speed test (Speed-based selection) reporting unrealistic values**: the timer started before the
+  request, so the measured time included the connection phase (connect + TLS + time-to-first-byte)
+  through the proxy. With free proxies this latency is often several seconds and, on a download of just
+  1 MB, *dominates* the calculation: a proxy that actually runs at ~1 MB/s was measured at ~260 KB/s
+  (−75%). Now only the **body transfer** is timed (the clock starts at the first byte received,
+  excluding the connection), yielding the real sustained throughput (residual error ≈ 1%). Fast proxies
+  with high latency are no longer discarded or ranked incorrectly.
+
 ## [1.13.0] — 2026-06-28
 
 ### Changed

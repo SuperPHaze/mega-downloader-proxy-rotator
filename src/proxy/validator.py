@@ -262,7 +262,6 @@ class ProxyValidator:
     # --- Stage 3: speed test reale (solo con selezione_velocita attiva) ---
     def _check_speed(self, proxy: dict) -> bool:
         try:
-            t0 = time.monotonic()
             resp = _session().get(
                 VALIDATOR_SPEED_TEST_URL,
                 headers=self._headers,
@@ -272,11 +271,25 @@ class ProxyValidator:
             )
             if resp.status_code != 200:
                 return False
+            # Cronometro avviato al PRIMO byte del corpo, non prima della GET:
+            # con i proxy gratuiti il connect + TLS + time-to-first-byte vale
+            # spesso secondi e domina su un download da 1 MB, falsando in basso
+            # il throughput (un proxy reale da 1 MB/s veniva misurato a ~200 KB/s).
+            # Misuriamo SOLO il trasferimento del corpo per avere il throughput
+            # sostenuto reale. Il primo chunk avvia il cronometro ma i suoi byte
+            # non vengono conteggiati (sono "arrivati" in tempo ~0): contiamo solo
+            # i byte scaricati nella finestra cronometrata.
+            t0: float | None = None
             bytes_read = 0
-            for chunk in resp.iter_content(chunk_size=8192):
+            for chunk in resp.iter_content(chunk_size=65536):
+                if t0 is None:
+                    t0 = time.monotonic()
+                    continue
                 bytes_read += len(chunk)
                 if bytes_read >= VALIDATOR_SPEED_TEST_BYTES:
                     break
+            if t0 is None or bytes_read == 0:
+                return False
             elapsed = max(time.monotonic() - t0, 0.001)
             throughput_bps = bytes_read / elapsed
             if throughput_bps < self._admission_threshold:

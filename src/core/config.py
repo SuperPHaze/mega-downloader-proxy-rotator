@@ -1,7 +1,7 @@
 # Costanti globali dell'applicazione.
 from pathlib import Path
 
-APP_VERSION = "1.13.0"
+APP_VERSION = "1.13.2"
 APP_LICENSE = "MIT"
 
 # Repository GitHub usato dal controllo aggiornamenti (scheda Info).
@@ -386,3 +386,13 @@ ADAPTIVE_REFILL_MULTIPLIER = 3       # margine per mortalita' naturale dei proxy
 LINE_SPEEDTEST_URL = "http://speedtest.tele2.net/10MB.zip"
 LINE_SPEEDTEST_STREAMS = 4          # connessioni dirette parallele
 LINE_SPEEDTEST_TIMEOUT = 20         # secondi per stream
+
+# Speed test "con proxy": misura la banda aggregata che il pool di proxy LIVE
+# riesce a erogare (uno stream per proxy campionato, in parallelo), per
+# confrontarla con la banda della linea diretta. Disponibile solo durante una
+# sessione (i proxy vengono presi dal pool dell'orchestrator). Resiliente: uno
+# stream lento/fallito contribuisce solo i byte effettivamente scaricati, non
+# fa fallire l'intera misura.
+PROXY_SPEEDTEST_URL = LINE_SPEEDTEST_URL  # stesso file di riferimento della linea
+PROXY_SPEEDTEST_STREAMS = 4         # proxy campionati (i migliori per score)
+PROXY_SPEEDTEST_TIMEOUT = 20        # secondi per stream

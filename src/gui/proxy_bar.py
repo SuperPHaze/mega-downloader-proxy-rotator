@@ -57,8 +57,10 @@ class _MetricCard(QFrame):
 
 
 class ProxyBar(QWidget):
-    # Richiesta di un nuovo speed test della linea (gestita da MainWindow).
+    # Richiesta di un nuovo speed test della linea (diretto, gestita da MainWindow).
     speedtest_requested = pyqtSignal()
+    # Richiesta di uno speed test ATTRAVERSO i proxy del pool live (MainWindow).
+    proxy_speedtest_requested = pyqtSignal()
 
     def __init__(self) -> None:
         super().__init__()
@@ -85,6 +87,7 @@ class ProxyBar(QWidget):
         self._card_refills = _MetricCard("Ricariche")
         self._card_since = _MetricCard("Ultimo refill")
         self._card_band = _MetricCard("Banda")
+        self._card_band_proxy = _MetricCard("Banda proxy")
         self._cards = (
             self._card_alive,
             self._card_validation,
@@ -92,6 +95,7 @@ class ProxyBar(QWidget):
             self._card_refills,
             self._card_since,
             self._card_band,
+            self._card_band_proxy,
         )
         for card in self._cards:
             cards_row.addWidget(card)
@@ -105,6 +109,18 @@ class ProxyBar(QWidget):
         )
         self._speedtest_btn.clicked.connect(self.speedtest_requested.emit)
         cards_row.addWidget(self._speedtest_btn)
+
+        # Pulsante per misurare la banda ATTRAVERSO il pool di proxy. Abilitato
+        # solo quando il pool ha proxy vivi (durante una sessione): a riposo non
+        # ci sono proxy da testare.
+        self._proxy_speedtest_btn = QPushButton("↻ Banda proxy")
+        self._proxy_speedtest_btn.setFixedHeight(22)
+        self._proxy_speedtest_btn.setToolTip(
+            "Misura la banda reale del pool di proxy (solo durante una sessione)."
+        )
+        self._proxy_speedtest_btn.setEnabled(False)
+        self._proxy_speedtest_btn.clicked.connect(self.proxy_speedtest_requested.emit)
+        cards_row.addWidget(self._proxy_speedtest_btn)
 
         cards_row.addStretch(1)
         self._reset_btn = QPushButton("Reset cache")
@@ -131,6 +147,8 @@ class ProxyBar(QWidget):
         else:
             color = p["accent_ok"]
         self._card_alive.set_value(str(n), color)
+        # Il test "Banda proxy" ha senso solo con proxy vivi nel pool.
+        self._proxy_speedtest_btn.setEnabled(n > 0)
 
     def on_validation_progress(self, done: int, total: int, _alive: int) -> None:
         self._validation_text = f"{done}/{total}"
@@ -163,6 +181,18 @@ class ProxyBar(QWidget):
             self._card_band.set_value(f"{mbit:.0f} Mbit", p["accent_ok"])
         else:
             self._card_band.set_value("—", p["text_dim"])
+
+    def on_proxy_speedtest_running(self) -> None:
+        self._card_band_proxy.set_value("…")
+
+    def on_proxy_speedtest_result(self, mbit: float, ok: bool) -> None:
+        # Colore distinto (accent_info, blu) dalla banda di linea (accent_ok,
+        # verde) per differenziare a colpo d'occhio le due misure.
+        p = _style.CURRENT_PALETTE
+        if ok and mbit > 0:
+            self._card_band_proxy.set_value(f"{mbit:.0f} Mbit", p["accent_info"])
+        else:
+            self._card_band_proxy.set_value("—", p["text_dim"])
 
     # ---- reset cache ---------------------------------------------------------
 
@@ -201,6 +231,11 @@ class ProxyBar(QWidget):
         # NB: la card "Banda" NON viene azzerata: e' una proprieta' della linea
         # dell'utente (non della sessione), re-mostrata da MainWindow dal valore
         # in preferences e aggiornata dallo speed test.
+        # La card "Banda proxy" INVECE e' specifica della sessione (dipende dal
+        # pool corrente): la azzeriamo e disabilitiamo il pulsante finche' non
+        # ci sono proxy vivi.
+        self._card_band_proxy.set_value("—", p["text_dim"])
+        self._proxy_speedtest_btn.setEnabled(False)
 
     def refresh_theme(self) -> None:
         self._restyle_micro()
@@ -223,3 +258,4 @@ class ProxyBar(QWidget):
         )
         self._reset_btn.setStyleSheet(btn_qss)
         self._speedtest_btn.setStyleSheet(btn_qss)
+        self._proxy_speedtest_btn.setStyleSheet(btn_qss)

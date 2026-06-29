@@ -106,6 +106,8 @@ Building the pool for the first time takes a while (roughly half a minute to a c
 
 The **Reset cache** button in the proxy zone (at the bottom of the interface) deletes `proxy_cache.json` without closing the application: the next startup or session will start from scratch, useful when testing a different configuration without leftovers from the previous session. The deletion does not interrupt any download in progress.
 
+The proxy zone also shows two side-by-side bandwidth measurements, distinguished by color. **Banda** (green) is your own line bandwidth, measured with a direct download **without proxy**: it is computed automatically at startup and can be re-run with the **↻ Banda** button. **Banda proxy** (blue) is instead the real aggregate bandwidth the **proxy pool** can deliver, obtained by downloading in parallel through the best proxies available at the moment; it is triggered with the **↻ Banda proxy** button, enabled only during a session (at rest there are no proxies to test). The measurement is robust: a slow or dead proxy contributes only the bytes actually downloaded, without failing the whole test. Comparing the two figures shows how close the proxy pool gets to your line capacity.
+
 ---
 
 ## 9. Session controls and resume

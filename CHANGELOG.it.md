@@ -4,6 +4,30 @@
 
 Tutte le modifiche rilevanti del progetto. Formato basato su [Keep a Changelog](https://keepachangelog.com/it/1.1.0/); versioni secondo [SemVer](https://semver.org/lang/it/).
 
+## [1.13.2] — 2026-06-29
+
+### Aggiunto
+- **Speed test "con proxy" nella zona proxy**, distinto dallo speed test della linea diretta. Ora ci
+  sono due misure affiancate e differenziate a colpo d'occhio (colori diversi):
+  - **Banda** (verde): banda della linea, download diretto **senza proxy** (la misura già esistente).
+  - **Banda proxy** (blu): banda aggregata reale che il **pool di proxy live** riesce a erogare,
+    misurata campionando i proxy migliori e scaricando attraverso di loro in parallelo.
+  Il pulsante **↻ Banda proxy** è attivo solo durante una sessione (a riposo non ci sono proxy da
+  testare). La misura è resiliente: un proxy lento o caduto contribuisce solo i byte effettivamente
+  scaricati, senza far fallire l'intero test. Confrontare le due bande aiuta a capire quanto il pool
+  di proxy si avvicina alla capacità della propria linea.
+
+## [1.13.1] — 2026-06-29
+
+### Corretto
+- **Speed test (Selezione per velocità) che misurava valori non realistici**: il cronometro partiva
+  prima della richiesta, quindi il tempo includeva la fase di connessione (connect + TLS +
+  time-to-first-byte) attraverso il proxy. Con i proxy gratuiti questa latenza vale spesso secondi e su
+  un download da appena 1 MB *domina* il calcolo: un proxy realmente da ~1 MB/s veniva misurato a
+  ~260 KB/s (−75%). Ora si cronometra **solo il trasferimento del corpo** (il cronometro parte al primo
+  byte ricevuto, escludendo la connessione), restituendo il throughput sostenuto reale (errore residuo
+  ≈ 1%). I proxy veloci ma con alta latenza non vengono più scartati o ordinati male.
+
 ## [1.13.0] — 2026-06-28
 
 ### Modificato

@@ -20,7 +20,7 @@ from PyQt6.QtWidgets import (
 
 from src.core import diagnostics
 from src.core.branding import resolve as resolve_branding
-from src.core.config import APP_VERSION, HEARTBEAT_INTERVAL_S
+from src.core.config import APP_VERSION, HEARTBEAT_INTERVAL_S, PROXY_SPEEDTEST_STREAMS
 from src.core.icon_loader import build_app_icon
 from src.core.state import SessionState
 from src.downloader.orchestrator import DownloadOrchestrator
@@ -43,7 +43,7 @@ from src.gui.preferences import (
     save_link_speed_mbps,
 )
 from src.gui.proxy_bar import ProxyBar
-from src.gui.speedtest_worker import SpeedTestWorker
+from src.gui.speedtest_worker import ProxySpeedTestWorker, SpeedTestWorker
 from src.gui.stats_bar import StatsBar
 from src.gui.stats_panel import StatsPanel
 from src.gui import style as _style
@@ -71,6 +71,7 @@ class MainWindow(QMainWindow):
         self._dark_theme = False
         self._startup_update_worker: UpdateCheckWorker | None = None
         self._speedtest_worker: SpeedTestWorker | None = None
+        self._proxy_speedtest_worker: ProxySpeedTestWorker | None = None
 
         # LinkPanel: nascosto dall'UI ma funzionale come gestore della lista link.
         self.link_panel = LinkPanel()
@@ -107,6 +108,7 @@ class MainWindow(QMainWindow):
         if cached > 0:
             self.proxy_bar.on_speedtest_result(cached, True)
         self.proxy_bar.speedtest_requested.connect(self._run_speedtest)
+        self.proxy_bar.proxy_speedtest_requested.connect(self._run_proxy_speedtest)
 
         # Cruscotto su un'unica riga: zona download (StatsBar) | separatore
         # verticale | zona proxy (ProxyBar). Il colore del separatore segue
@@ -221,6 +223,36 @@ class MainWindow(QMainWindow):
         self.proxy_bar.on_speedtest_result(mbit, ok)
         if ok and mbit > 0:
             save_link_speed_mbps(mbit)
+
+    # ---- speed test banda proxy (pool live) -------------------------------
+
+    def _run_proxy_speedtest(self) -> None:
+        if self._proxy_speedtest_worker is not None and self._proxy_speedtest_worker.isRunning():
+            return
+        # Il test "con proxy" usa i proxy vivi del pool dell'orchestrator: ha
+        # senso solo durante una sessione attiva. Campioniamo i migliori per
+        # score (export_for_cache include host/port/protocol, gia' filtrati sui
+        # vivi) e ne prendiamo i top PROXY_SPEEDTEST_STREAMS.
+        if self.orchestrator is None:
+            self._set_status("Banda proxy: nessuna sessione attiva.")
+            self.proxy_bar.on_proxy_speedtest_result(0.0, False)
+            return
+        snapshot = self.orchestrator.pool.export_for_cache()
+        if not snapshot:
+            self._set_status("Banda proxy: nessun proxy disponibile nel pool.")
+            self.proxy_bar.on_proxy_speedtest_result(0.0, False)
+            return
+        snapshot.sort(key=lambda p: p.get("score", 0), reverse=True)
+        sample = snapshot[:PROXY_SPEEDTEST_STREAMS]
+        self.proxy_bar.on_proxy_speedtest_running()
+        self._proxy_speedtest_worker = ProxySpeedTestWorker(sample)
+        self._proxy_speedtest_worker.finished_test.connect(
+            self._on_proxy_speedtest_done, Qt.ConnectionType.QueuedConnection
+        )
+        self._proxy_speedtest_worker.start()
+
+    def _on_proxy_speedtest_done(self, mbit: float, ok: bool) -> None:
+        self.proxy_bar.on_proxy_speedtest_result(mbit, ok)
 
     # ---- stato status bar ------------------------------------------------
 
@@ -539,6 +571,8 @@ class MainWindow(QMainWindow):
             self._startup_update_worker.wait(2000)
         if self._speedtest_worker is not None and self._speedtest_worker.isRunning():
             self._speedtest_worker.wait(3000)
+        if self._proxy_speedtest_worker is not None and self._proxy_speedtest_worker.isRunning():
+            self._proxy_speedtest_worker.wait(3000)
         # Marcatore di chiusura volontaria: se nel log compare un SESSION
         # START senza questo prima del successivo START, e' stato un crash o
         # un kill esterno (non una chiusura dall'utente).

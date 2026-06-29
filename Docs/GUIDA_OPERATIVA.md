@@ -106,6 +106,8 @@ La prima costruzione del pool richiede tempo (indicativamente da mezzo minuto a 
 
 Il tasto **Reset cache** nella zona proxy (in basso nell'interfaccia) cancella il file `proxy_cache.json` senza uscire dall'applicazione: il prossimo avvio o la prossima sessione ripartirà da zero, utile quando si vuole testare una configurazione diversa senza residui della sessione precedente. La cancellazione non interrompe alcun download in corso.
 
+La zona proxy mostra anche due misure di banda affiancate, distinte per colore. **Banda** (verde) è la banda della propria linea, misurata con un download diretto **senza proxy**: viene calcolata automaticamente all'avvio e si può rifare con il pulsante **↻ Banda**. **Banda proxy** (blu) è invece la banda aggregata reale che il **pool di proxy** riesce a erogare, ottenuta scaricando in parallelo attraverso i proxy migliori del momento; si avvia con il pulsante **↻ Banda proxy**, attivo solo durante una sessione (a riposo non ci sono proxy da testare). La misura è robusta: un proxy lento o caduto contribuisce solo i byte effettivamente scaricati, senza far fallire l'intero test. Confrontare le due bande aiuta a capire quanto il pool di proxy si avvicina alla capacità della linea.
+
 ---
 
 ## 9. Controlli di sessione e resume
