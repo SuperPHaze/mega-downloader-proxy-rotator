@@ -18,7 +18,7 @@ from src.core.config import (
     PROXY_SPEEDTEST_URL,
     USER_AGENT,
 )
-from src.core.proxy_url import build_proxies_dict
+from src.core.proxy_url import build_proxies_dict, cache_bust_url
 
 log = logging.getLogger(__name__)
 
@@ -30,7 +30,8 @@ class SpeedTestWorker(QThread):
     def _one_stream(self, _i: int) -> int:
         total = 0
         with requests.get(
-            LINE_SPEEDTEST_URL, stream=True, timeout=LINE_SPEEDTEST_TIMEOUT,
+            cache_bust_url(LINE_SPEEDTEST_URL), stream=True,
+            timeout=LINE_SPEEDTEST_TIMEOUT,
             headers={"User-Agent": USER_AGENT},
             proxies={"http": None, "https": None},   # diretto, niente proxy
         ) as r:
@@ -76,7 +77,8 @@ class ProxySpeedTestWorker(QThread):
         total = 0
         try:
             with requests.get(
-                PROXY_SPEEDTEST_URL, stream=True, timeout=PROXY_SPEEDTEST_TIMEOUT,
+                cache_bust_url(PROXY_SPEEDTEST_URL), stream=True,
+                timeout=PROXY_SPEEDTEST_TIMEOUT,
                 headers={"User-Agent": USER_AGENT},
                 proxies=build_proxies_dict(proxy),
             ) as r:

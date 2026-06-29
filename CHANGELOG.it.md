@@ -14,6 +14,18 @@ Tutte le modifiche rilevanti del progetto. Formato basato su [Keep a Changelog](
   ogni cambio di stato dei download, così si vede a colpo d'occhio la composizione
   della sessione senza dover passare da un filtro all'altro.
 
+### Corretto
+- **Speed test che riportava valori di banda impossibili.** La misura del
+  throughput poteva "esplodere" fino a migliaia di Mbit/s in due casi: quando un
+  proxy scaricava l'intero file durante il TTFB e poi lo riversava in burst dal
+  client (la finestra cronometrata collassava verso zero, contro un floor di
+  appena 0,001 s), e quando il file di test veniva servito dalla cache di
+  ISP/router/proxy a velocità di rete locale. Ora il throughput è calcolato con
+  una finestra robusta (esclude connect+TTFB ma ricade sulla finestra completa se
+  il corpo arriva in burst, con un minimo che evita la divisione per ~zero) e
+  tutti gli speed test (linea, proxy e validazione) usano un URL con parametro
+  anti-cache, così la banda mostrata resta realistica.
+
 ## [1.13.2] — 2026-06-29
 
 ### Aggiunto

@@ -31,7 +31,11 @@ from src.core.config import (
     VALIDATOR_STAGE2_WORKERS,
     VALIDATOR_TARGET_ALIVE,
 )
-from src.core.proxy_url import build_proxies_dict
+from src.core.proxy_url import (
+    build_proxies_dict,
+    cache_bust_url,
+    sustained_throughput_bps,
+)
 
 log = logging.getLogger(__name__)
 
@@ -262,8 +266,11 @@ class ProxyValidator:
     # --- Stage 3: speed test reale (solo con selezione_velocita attiva) ---
     def _check_speed(self, proxy: dict) -> bool:
         try:
+            # cache_bust_url: evita che un file gia' in cache torni a velocita'
+            # locale falsando la misura verso l'alto.
+            t_request = time.monotonic()
             resp = _session().get(
-                VALIDATOR_SPEED_TEST_URL,
+                cache_bust_url(VALIDATOR_SPEED_TEST_URL),
                 headers=self._headers,
                 proxies=build_proxies_dict(proxy),
                 timeout=VALIDATOR_SPEED_TEST_TIMEOUT,
@@ -271,27 +278,24 @@ class ProxyValidator:
             )
             if resp.status_code != 200:
                 return False
-            # Cronometro avviato al PRIMO byte del corpo, non prima della GET:
-            # con i proxy gratuiti il connect + TLS + time-to-first-byte vale
-            # spesso secondi e domina su un download da 1 MB, falsando in basso
-            # il throughput (un proxy reale da 1 MB/s veniva misurato a ~200 KB/s).
-            # Misuriamo SOLO il trasferimento del corpo per avere il throughput
-            # sostenuto reale. Il primo chunk avvia il cronometro ma i suoi byte
-            # non vengono conteggiati (sono "arrivati" in tempo ~0): contiamo solo
-            # i byte scaricati nella finestra cronometrata.
-            t0: float | None = None
+            # Cronometriamo la finestra del solo corpo (escludendo connect+TLS+
+            # TTFB, che con i proxy gratuiti vale secondi e falserebbe in basso),
+            # ma in modo robusto: sustained_throughput_bps ricade sulla finestra
+            # completa se il corpo arriva in burst da un buffer, evitando i
+            # throughput impossibili che davano il floor a 0.001s.
+            t_first: float | None = None
             bytes_read = 0
             for chunk in resp.iter_content(chunk_size=65536):
-                if t0 is None:
-                    t0 = time.monotonic()
-                    continue
+                if t_first is None:
+                    t_first = time.monotonic()
                 bytes_read += len(chunk)
                 if bytes_read >= VALIDATOR_SPEED_TEST_BYTES:
                     break
-            if t0 is None or bytes_read == 0:
+            if t_first is None or bytes_read == 0:
                 return False
-            elapsed = max(time.monotonic() - t0, 0.001)
-            throughput_bps = bytes_read / elapsed
+            throughput_bps = sustained_throughput_bps(
+                bytes_read, t_request, t_first, time.monotonic()
+            )
             if throughput_bps < self._admission_threshold:
                 return False
             # Annotato sul dict: ProxyPool.add_many lo legge per pre-popolare

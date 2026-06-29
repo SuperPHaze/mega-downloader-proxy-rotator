@@ -14,6 +14,17 @@ All notable changes to this project. Format based on [Keep a Changelog](https://
   real time on every download status change, so the makeup of the session is
   visible at a glance without switching between filters.
 
+### Fixed
+- **Speed test reporting impossible bandwidth values.** Throughput could "explode"
+  to thousands of Mbit/s in two cases: when a proxy downloaded the whole file
+  during the TTFB and then burst it from the local buffer (the timed window
+  collapsed toward zero, against a floor of just 0.001 s), and when the test file
+  was served from an ISP/router/proxy cache at local-network speed. Throughput is
+  now computed over a robust window (it excludes connect+TTFB but falls back to
+  the full window when the body arrives in a burst, with a minimum that avoids
+  dividing by ~zero), and all speed tests (line, proxy and validation) use a URL
+  with a cache-busting parameter, so the reported bandwidth stays realistic.
+
 ## [1.13.2] — 2026-06-29
 
 ### Added

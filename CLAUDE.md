@@ -22,11 +22,11 @@ src/
 │   ├── branding.py        # Branding (nome/acronimo/autore/nick/link/logo): default -> cache -> remoto
 │   ├── icon_loader.py     # build_app_icon(): QIcon robusta .ico->fallback .png, mai null senza log
 │   ├── file_naming.py     # sanitize_folder_name() + final_output_dir(): path finale del download basato sul nome file risolto (rinomina la cartella hash-based al primo resolve riuscito)
-│   └── proxy_url.py       # build_proxy_url/build_proxies_dict: schema URL in base al campo protocol (http/socks4/socks5 -> socks5h), solo stdlib, usato da proxy/ e downloader/
+│   └── proxy_url.py       # build_proxy_url/build_proxies_dict: schema URL in base al campo protocol (http/socks4/socks5 -> socks5h), solo stdlib, usato da proxy/ e downloader/; include anche cache_bust_url() (parametro query anti-cache per gli speed test) e sustained_throughput_bps() (misura pura del throughput: finestra del corpo con fallback alla finestra completa sul burst-da-buffer, evita le "bande impossibili")
 ├── proxy/
 │   ├── sources.py         # 74 fonti pubbliche (4 html, 64 plain, 6 json/jsonl); per protocollo: 51 http, 16 socks5, 6 socks4 (campo opzionale "protocol" per fonte)
 │   ├── scraper.py         # ProxyScraper.fetch_all() multi-source; _fetch_source etichetta ogni proxy col "protocol" della fonte (sovrascrive l'"http" scritto dai parser)
-│   ├── validator.py       # 2-stage (o 3 con selezione per velocità attiva): stage1 alive + stage2 Mega + stage3 opzionale speed test
+│   ├── validator.py       # 2-stage (o 3 con selezione per velocità attiva): stage1 alive + stage2 Mega + stage3 opzionale speed test (throughput via sustained_throughput_bps + URL cache-busted, niente più valori impossibili dal burst-da-buffer)
 │   ├── pool.py            # ProxyPool score-based round-robin; cooldown() mette un proxy a riposo N secondi (rate-limit 403/509) senza toccare lo score, ma MENTRE è in cooldown NON conta come vivo in size()/_count_alive_unlocked() (solo non selezionabile finché non scade — altrimenti size()>0 mentre get_next() non ha nulla, e il refill viene saltato all'infinito); contatori di sessione per la GUI (discarded_count/refill_count/seconds_since_last_refill, alimentati da note_refill())
 │   ├── refresher.py       # BackgroundPoolRefresher (thread daemon)
 │   └── proxy_cache.py     # cache proxy persistente JSON (hot-start)
