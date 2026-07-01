@@ -4,7 +4,7 @@
 
 Tutte le modifiche rilevanti del progetto. Formato basato su [Keep a Changelog](https://keepachangelog.com/it/1.1.0/); versioni secondo [SemVer](https://semver.org/lang/it/).
 
-## [1.13.3] — 2026-06-29
+## [1.14.0] — 2026-07-01
 
 ### Modificato
 - **I pulsanti filtro della lista download mostrano il conteggio dei file per stato.**

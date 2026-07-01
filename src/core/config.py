@@ -1,7 +1,7 @@
 # Costanti globali dell'applicazione.
 from pathlib import Path
 
-APP_VERSION = "1.13.3"
+APP_VERSION = "1.14.0"
 APP_LICENSE = "MIT"
 
 # Repository GitHub usato dal controllo aggiornamenti (scheda Info).

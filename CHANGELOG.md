@@ -4,7 +4,7 @@
 
 All notable changes to this project. Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [SemVer](https://semver.org/).
 
-## [1.13.3] — 2026-06-29
+## [1.14.0] — 2026-07-01
 
 ### Changed
 - **The download-list filter buttons now show the file count per state.**

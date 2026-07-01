@@ -13,6 +13,7 @@ src/
 │   ├── config.py          # costanti globali (timeout, soglie, paths, UA); include SPEED_SELECTION_* e VALIDATOR_SPEED_TEST_* per la selezione per velocità
 │   ├── state.py           # SessionState thread-safe (pausa/annullo)
 │   ├── telemetry.py       # telemetria "scatola nera": recorder asincrono (writer daemon) di tentativi-chunk + campioni 1Hz in logs/telemetry/<id>/; no-op se TELEMETRY_ENABLED=False
+│   ├── diagnostics.py     # heartbeat periodico (INFO), RSS via psutil se disponibile / fallback GetProcessMemoryInfo (psapi) su Windows, marcatori di sessione, riga CONFIG a inizio sessione
 │   ├── events.py          # EventBus opzionale (non usato dal flusso)
 │   ├── logging_setup.py   # setup root logger + sys.excepthook
 │   ├── failed_log.py      # logger JSONL dei link abbandonati
@@ -84,7 +85,7 @@ package.ps1                # packaging: crea dist/MegaProxyRotator-X.Y.Z.zip
 ## Flusso dati
 1. Utente incolla link Mega in `LinkPanel` → clic "Avvia".
 2. `MainWindow._on_start` istanzia `DownloadOrchestrator(SessionState)` e gli passa la lista link.
-3. `Orchestrator.start()`: hot-start da `proxy_cache.load()` se disponibile, altrimenti `ProxyScraper.fetch_all()` → `ProxyValidator.validate_against_mega()` → `ProxyPool.add_many()`. Se la selezione per velocità è attiva (preferenze), la validazione include uno stage 3 di speed test e i candidati salgono a 5000.
+3. `Orchestrator.start()`: hot-start da `proxy_cache.load()` se disponibile, altrimenti `ProxyScraper.fetch_all()` → `ProxyValidator.validate_against_mega()` → `ProxyPool.add_many()`. Se la selezione per velocità è attiva (preferenze GUI *oppure* flag CLI `--speed-admission` di `tools/cli_download.py`, disaccoppiati), la validazione include uno stage 3 di speed test e il tetto candidati si riduce a 5000. In modalità CLI, `--speed-admission KB/s` ammette solo i proxy oltre la soglia mantenendo la selezione a punteggio normale (nessun cambio del numero di connessioni).
 4. Per ogni link viene avviato un `DownloadWorker(QThread)` che esegue `DOWNLOAD_CYCLES` cicli.
 5. A ogni ciclo: `ProxyPool.get_next()` → `MegaClient(proxy).get_egress_ip()` → se `PARALLEL_CONNECTIONS_PER_FILE > 1` (default 10) usa `ParallelMegaDownloader.download()`, altrimenti `MegaClient.download()`.
 6. Worker emette `progress / ip_logged / cycle_completed / failed / fatal_error / completed_info / all_done / cancelled / abandoned / throughput` → `JobsPanel` (via `JobsModel`). Su `completed_info` l'orchestrator persiste lo storico in `download_history.log` e lo riemette alla GUI per aggiornare nome file e path nelle card.
