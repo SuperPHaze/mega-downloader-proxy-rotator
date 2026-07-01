@@ -11,7 +11,7 @@
 
 
 
-<img width="1917" height="1034" alt="Screenshot 2026-06-25 180048" src="https://github.com/user-attachments/assets/30bb5d84-ad0d-4069-84f1-c13edf065713" />
+[<img width="1917" height="1034" alt="Screenshot 2026-06-25 180048" src="https://github.com/user-attachments/assets/30bb5d84-ad0d-4069-84f1-c13edf065713" />](https://github.com/user-attachments/assets/bb04b245-43e9-430d-8cf6-6c240761c588)
 
 
 
