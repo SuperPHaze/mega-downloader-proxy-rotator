@@ -108,7 +108,6 @@ class ProxyBar(QWidget):
             "Misura la banda della linea (download diretto, senza proxy)."
         )
         self._speedtest_btn.clicked.connect(self.speedtest_requested.emit)
-        cards_row.addWidget(self._speedtest_btn)
 
         # Pulsante per misurare la banda ATTRAVERSO il pool di proxy. Abilitato
         # solo quando il pool ha proxy vivi (durante una sessione): a riposo non
@@ -120,16 +119,25 @@ class ProxyBar(QWidget):
         )
         self._proxy_speedtest_btn.setEnabled(False)
         self._proxy_speedtest_btn.clicked.connect(self.proxy_speedtest_requested.emit)
-        cards_row.addWidget(self._proxy_speedtest_btn)
 
-        cards_row.addStretch(1)
         self._reset_btn = QPushButton("Reset cache")
         self._reset_btn.setFixedHeight(22)
         self._reset_btn.setToolTip(
             "Cancella proxy_cache.json. Il prossimo avvio rifarà lo scrape da zero."
         )
         self._reset_btn.clicked.connect(self._on_reset_cache)
-        cards_row.addWidget(self._reset_btn)
+
+        # I tre pulsanti (Banda / Banda proxy / Reset cache) impilati in
+        # verticale a destra delle card: risparmia spazio in larghezza rispetto
+        # alla fila orizzontale.
+        cards_row.addStretch(1)
+        buttons_col = QVBoxLayout()
+        buttons_col.setContentsMargins(0, 0, 0, 0)
+        buttons_col.setSpacing(2)
+        buttons_col.addWidget(self._speedtest_btn)
+        buttons_col.addWidget(self._proxy_speedtest_btn)
+        buttons_col.addWidget(self._reset_btn)
+        cards_row.addLayout(buttons_col)
         layout.addLayout(cards_row)
 
         self._restyle_micro()
