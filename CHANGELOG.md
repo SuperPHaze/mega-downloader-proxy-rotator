@@ -4,6 +4,12 @@
 
 All notable changes to this project. Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [SemVer](https://semver.org/).
 
+## [1.20.1] — 2026-07-02
+
+### Changed
+- **More compact proxy area.** The "↻ Banda", "↻ Banda proxy" and "Reset cache" buttons are now
+  stacked vertically to the right of the pool stats, taking up less horizontal space.
+
 ## [1.20.0] — 2026-07-02
 
 ### Added
@@ -37,8 +43,6 @@ All notable changes to this project. Format based on [Keep a Changelog](https://
 - **More responsive cancel during link resolution.** A "Cancel" that arrives while the program is
   resolving a Mega link (with its retries) is now honored immediately, instead of hanging for up to
   tens of seconds.
-- **More compact proxy area.** The "↻ Banda", "↻ Banda proxy" and "Reset cache" buttons are now
-  stacked vertically to the right of the pool stats, taking up less horizontal space.
 
 ### Fixed
 - **Zero-byte files are no longer abandoned.** An empty file on Mega was requested with an invalid

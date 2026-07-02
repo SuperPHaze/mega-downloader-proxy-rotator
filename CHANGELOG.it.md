@@ -4,6 +4,12 @@
 
 Tutte le modifiche rilevanti del progetto. Formato basato su [Keep a Changelog](https://keepachangelog.com/it/1.1.0/); versioni secondo [SemVer](https://semver.org/lang/it/).
 
+## [1.20.1] — 2026-07-02
+
+### Modificato
+- **Zona proxy più compatta.** I pulsanti «↻ Banda», «↻ Banda proxy» e «Reset cache» sono ora
+  impilati in verticale a destra delle statistiche del pool, per occupare meno spazio in larghezza.
+
 ## [1.20.0] — 2026-07-02
 
 ### Aggiunto
@@ -37,8 +43,6 @@ Tutte le modifiche rilevanti del progetto. Formato basato su [Keep a Changelog](
 - **Annullo più reattivo durante la risoluzione del link.** Un «Annulla» che arriva mentre il
   programma sta risolvendo un link Mega (con i suoi ritentativi) ora viene onorato subito, senza
   restare appeso fino a decine di secondi.
-- **Zona proxy più compatta.** I pulsanti «↻ Banda», «↻ Banda proxy» e «Reset cache» sono ora
-  impilati in verticale a destra delle statistiche del pool, per occupare meno spazio in larghezza.
 
 ### Corretto
 - **File da 0 byte non più abbandonati.** Un file vuoto su Mega veniva richiesto con un intervallo
