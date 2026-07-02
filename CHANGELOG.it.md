@@ -9,9 +9,10 @@ Tutte le modifiche rilevanti del progetto. Formato basato su [Keep a Changelog](
 ### Modificato
 - **Zona proxy più compatta.** I pulsanti «↻ Banda», «↻ Banda proxy» e «Reset cache» sono ora
   impilati in verticale a destra delle statistiche del pool, per occupare meno spazio in larghezza.
-- **Etichette della zona proxy adattabili al ridimensionamento.** Quando la finestra si restringe,
-  le etichette delle statistiche (Validazione, Scartati, Ultimo refill, …) si accorciano con «…»
-  invece di essere tagliate a metà; il testo completo resta disponibile nel tooltip.
+- **Statistiche della zona proxy su due righe.** I sette riquadri (Vivi, Validazione, Scartati,
+  Ricariche, Ultimo refill, Banda, Banda proxy) sono ora disposti su due righe (griglia 4+3)
+  invece di un'unica fila: ogni riquadro ha spazio per la propria etichetta senza tagli, anche
+  quando la finestra viene ridimensionata.
 
 ## [1.20.0] — 2026-07-02
 

@@ -3,9 +3,18 @@
 # dell'orchestrator (pool_size_changed, setup_progress, proxy_stats).
 from __future__ import annotations
 
-from PyQt6.QtCore import QSize, Qt, pyqtSignal
-from PyQt6.QtGui import QFont, QFontMetrics
-from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QMessageBox, QPushButton, QVBoxLayout, QWidget
+from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtGui import QFont
+from PyQt6.QtWidgets import (
+    QFrame,
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
+    QMessageBox,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
 
 from src.gui import style as _style
 from src.proxy.proxy_cache import delete_proxy_cache
@@ -20,58 +29,24 @@ def _fmt_ago(seconds: float | None) -> str:
     return f"{secs // 60}m"
 
 
-class _ElidingLabel(QLabel):
-    """QLabel che, quando lo spazio non basta, tronca il testo con '…' invece di
-    farlo tagliare di netto dal bordo della card. Dichiara un `minimumSizeHint`
-    piccolo, così il layout può stringere le card quando la finestra si
-    restringe; il testo completo resta sempre disponibile nel tooltip."""
-
-    def __init__(self, text: str = "") -> None:
-        super().__init__()
-        self._full = text
-        super().setText(text)
-        self.setToolTip(text)
-
-    def setText(self, text: str) -> None:  # noqa: N802 (override Qt)
-        self._full = text
-        self.setToolTip(text)
-        self._apply_elision()
-
-    def minimumSizeHint(self) -> QSize:  # noqa: N802 (override Qt)
-        fm = QFontMetrics(self.font())
-        return QSize(fm.horizontalAdvance("…") + 2, fm.height())
-
-    def resizeEvent(self, event) -> None:  # noqa: N802 (override Qt)
-        super().resizeEvent(event)
-        self._apply_elision()
-
-    def _apply_elision(self) -> None:
-        w = self.width()
-        if w <= 0:
-            # Larghezza non ancora nota (prima del primo layout): mostra intero.
-            super().setText(self._full)
-            return
-        fm = QFontMetrics(self.font())
-        super().setText(fm.elidedText(self._full, Qt.TextElideMode.ElideRight, w))
-
-
 class _MetricCard(QFrame):
     """Card compatta: etichetta piccola sopra, valore sotto."""
 
     def __init__(self, label: str) -> None:
         super().__init__()
-        # Min width ridotto: le etichette elidono con '…' invece di essere
-        # tagliate, quindi le card possono stringersi su finestre strette.
-        self.setMinimumWidth(44)
+        # Min width sufficiente a mostrare su UNA riga l'etichetta più lunga
+        # ("VALIDAZIONE" ~99px @7pt) più i margini: così, disposte su due righe
+        # (griglia 2×4), le etichette non vengono MAI tagliate.
+        self.setMinimumWidth(112)
         v = QVBoxLayout(self)
         v.setContentsMargins(5, 3, 5, 3)
         v.setSpacing(1)
 
-        self._label = _ElidingLabel(label.upper())
+        self._label = QLabel(label.upper())
         self._label.setFont(QFont("Segoe UI", 7))
         v.addWidget(self._label)
 
-        self._value = _ElidingLabel("—")
+        self._value = QLabel("—")
         fv = QFont("Consolas", 11)
         fv.setWeight(QFont.Weight.Medium)
         self._value.setFont(fv)
@@ -114,9 +89,10 @@ class ProxyBar(QWidget):
         self._micro.setFont(QFont("Segoe UI", 8))
         layout.addWidget(self._micro)
 
-        cards_row = QHBoxLayout()
-        cards_row.setContentsMargins(0, 0, 0, 0)
-        cards_row.setSpacing(4)
+        cards_grid = QGridLayout()
+        cards_grid.setContentsMargins(0, 0, 0, 0)
+        cards_grid.setHorizontalSpacing(4)
+        cards_grid.setVerticalSpacing(4)
 
         self._card_alive = _MetricCard("Vivi")
         self._card_validation = _MetricCard("Validazione")
@@ -134,8 +110,11 @@ class ProxyBar(QWidget):
             self._card_band,
             self._card_band_proxy,
         )
-        for card in self._cards:
-            cards_row.addWidget(card)
+        # I 7 riquadri distribuiti su DUE righe (griglia 2×4): con 4 card per
+        # riga ciascuna ha spazio per la propria etichetta su una sola riga,
+        # invece di essere schiacciate in un'unica fila da 7.
+        for idx, card in enumerate(self._cards):
+            cards_grid.addWidget(card, idx // 4, idx % 4)
 
         # Pulsante per rifare la misura della banda della linea (diretto, fuori
         # dai proxy). La misura iniziale parte da MainWindow all'avvio.
@@ -165,17 +144,21 @@ class ProxyBar(QWidget):
         self._reset_btn.clicked.connect(self._on_reset_cache)
 
         # I tre pulsanti (Banda / Banda proxy / Reset cache) impilati in
-        # verticale a destra delle card: risparmia spazio in larghezza rispetto
-        # alla fila orizzontale.
-        cards_row.addStretch(1)
+        # verticale a destra della griglia delle card.
         buttons_col = QVBoxLayout()
         buttons_col.setContentsMargins(0, 0, 0, 0)
         buttons_col.setSpacing(2)
         buttons_col.addWidget(self._speedtest_btn)
         buttons_col.addWidget(self._proxy_speedtest_btn)
         buttons_col.addWidget(self._reset_btn)
-        cards_row.addLayout(buttons_col)
-        layout.addLayout(cards_row)
+
+        main_row = QHBoxLayout()
+        main_row.setContentsMargins(0, 0, 0, 0)
+        main_row.setSpacing(8)
+        main_row.addLayout(cards_grid)
+        main_row.addStretch(1)
+        main_row.addLayout(buttons_col)
+        layout.addLayout(main_row)
 
         self._restyle_micro()
         self._restyle_cards()

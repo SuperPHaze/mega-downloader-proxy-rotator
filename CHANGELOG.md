@@ -9,9 +9,10 @@ All notable changes to this project. Format based on [Keep a Changelog](https://
 ### Changed
 - **More compact proxy area.** The "↻ Banda", "↻ Banda proxy" and "Reset cache" buttons are now
   stacked vertically to the right of the pool stats, taking up less horizontal space.
-- **Proxy-area labels adapt to window resizing.** When the window narrows, the stat labels
-  (Validazione, Scartati, Ultimo refill, …) shorten with "…" instead of being clipped mid-word;
-  the full text stays available in the tooltip.
+- **Proxy-area stats laid out on two rows.** The seven cards (Vivi, Validazione, Scartati,
+  Ricariche, Ultimo refill, Banda, Banda proxy) are now arranged on two rows (a 4+3 grid) instead
+  of a single row: each card has room for its own label without clipping, even when the window is
+  resized.
 
 ## [1.20.0] — 2026-07-02
 
