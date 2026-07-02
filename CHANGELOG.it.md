@@ -37,6 +37,8 @@ Tutte le modifiche rilevanti del progetto. Formato basato su [Keep a Changelog](
 - **Annullo più reattivo durante la risoluzione del link.** Un «Annulla» che arriva mentre il
   programma sta risolvendo un link Mega (con i suoi ritentativi) ora viene onorato subito, senza
   restare appeso fino a decine di secondi.
+- **Zona proxy più compatta.** I pulsanti «↻ Banda», «↻ Banda proxy» e «Reset cache» sono ora
+  impilati in verticale a destra delle statistiche del pool, per occupare meno spazio in larghezza.
 
 ### Corretto
 - **File da 0 byte non più abbandonati.** Un file vuoto su Mega veniva richiesto con un intervallo
