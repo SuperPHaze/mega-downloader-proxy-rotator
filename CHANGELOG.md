@@ -9,6 +9,9 @@ All notable changes to this project. Format based on [Keep a Changelog](https://
 ### Changed
 - **More compact proxy area.** The "↻ Banda", "↻ Banda proxy" and "Reset cache" buttons are now
   stacked vertically to the right of the pool stats, taking up less horizontal space.
+- **Proxy-area labels adapt to window resizing.** When the window narrows, the stat labels
+  (Validazione, Scartati, Ultimo refill, …) shorten with "…" instead of being clipped mid-word;
+  the full text stays available in the tooltip.
 
 ## [1.20.0] — 2026-07-02
 
