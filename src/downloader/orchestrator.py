@@ -7,6 +7,7 @@ from __future__ import annotations
 import logging
 import threading
 from datetime import datetime
+from pathlib import Path
 
 from PyQt6.QtCore import QObject, QThread, QTimer, pyqtSignal
 from PyQt6.QtWidgets import QApplication
@@ -283,6 +284,9 @@ class DownloadOrchestrator(QObject):
         # Selezione per velocita' (Leva B): cambia profilo sessione se True.
         self.speed_selection_enabled: bool = False
         self.speed_selection_min_bps: int = SPEED_SELECTION_MIN_BPS
+        # Cartella radice dei download scelta dall'utente (None = default config).
+        # Propagata a ogni worker.
+        self.output_root: Path | None = None
         # Timer che pubblica periodicamente la size del pool. Non attivato in
         # __init__/start(): viene avviato in _on_setup_ok dopo il primo
         # add_many, altrimenti emetterebbe 0 a ripetizione durante il setup.
@@ -323,11 +327,13 @@ class DownloadOrchestrator(QObject):
         speed_selection_min_bps: int = SPEED_SELECTION_MIN_BPS,
         speed_admission_bps: int | None = None,
         link_capacity_mbit: float | None = None,
+        output_root: Path | None = None,
     ) -> None:
         if concurrency is not None:
             self.max_concurrent = max(1, int(concurrency))
         self.file_time_limit_s = file_time_limit_s
         self.chunk_size_bytes = chunk_size_bytes
+        self.output_root = output_root
         self.segment_max_duration_s = segment_max_duration_s
         self.speed_selection_enabled = speed_selection_enabled
         self.speed_selection_min_bps = speed_selection_min_bps
@@ -637,6 +643,7 @@ class DownloadOrchestrator(QObject):
             chunk_size_bytes=self.chunk_size_bytes,
             connections_per_file=self.connections_per_file,
             segment_max_duration_s=self.segment_max_duration_s,
+            output_root=self.output_root,
         )
         worker.setObjectName(f"Worker-{file_id}")
         worker.progress.connect(self.progress)

@@ -12,10 +12,11 @@ import random
 import re
 import threading
 import time
-from pathlib import Path
+from typing import Callable
 
 import requests
 
+from src.core.file_naming import sanitize_file_name
 from src.core.proxy_url import build_proxies_dict
 from src.downloader.mega_crypto import (
     base64_to_a32,
@@ -59,18 +60,42 @@ def _normalize_proxy(proxy: dict | None) -> dict[str, str] | None:
 
 
 class MegaPublicClient:
-    def __init__(self, proxy: dict | None = None, timeout: float = 30.0) -> None:
+    def __init__(
+        self,
+        proxy: dict | None = None,
+        timeout: float = 30.0,
+        should_abort: Callable[[], bool] | None = None,
+    ) -> None:
         self._session = requests.Session()
         self.timeout = timeout
+        # Callback opzionale per la cancellazione cooperativa: se ritorna True
+        # durante un backoff, il resolve si interrompe subito invece di dormire
+        # fino a decine di secondi (un Annulla arrivato durante il retry non
+        # deve restare appeso). None = nessuna cancellazione (comportamento
+        # storico), usato dai path che non hanno un SessionState a portata.
+        self._should_abort = should_abort
         proxies = _normalize_proxy(proxy)
         if proxies:
             self._session.proxies.update(proxies)
+
+    def _sleep_interruptible(self, seconds: float) -> bool:
+        """Dorme `seconds` a passi da 0.5s, ma esce subito (ritornando True) se
+        `should_abort()` diventa vero. Ritorna False se ha dormito tutto."""
+        step = 0.5
+        elapsed = 0.0
+        while elapsed < seconds:
+            if self._should_abort is not None and self._should_abort():
+                return True
+            time.sleep(step)
+            elapsed += step
+        return False
 
     def _api_request(self, payload: dict) -> dict:
         body = json.dumps([payload])
         last_err: Exception | None = None
         # Retry esplicito su -3 (EAGAIN) e su errori di rete, bounded a 5 tentativi.
-        # Sostituisce il clamp tenacity sul vecchio mega.py.
+        # Sostituisce il clamp tenacity sul vecchio mega.py. Backoff cappato a 30s
+        # (era 60) e INTERROMPIBILE via should_abort per non ignorare un Annulla.
         for attempt in range(1, 6):
             params = {"id": _next_seq()}
             try:
@@ -82,7 +107,8 @@ class MegaPublicClient:
             except (requests.RequestException, json.JSONDecodeError) as exc:
                 last_err = exc
                 log.warning("[mega_api] tentativo %d errore rete/parse: %s", attempt, exc)
-                time.sleep(min(60, 2 ** attempt))
+                if self._sleep_interruptible(min(30, 2 ** attempt)):
+                    raise MegaApiError("resolve annullato durante il backoff") from exc
                 continue
             item = data[0] if isinstance(data, list) and data else data
             if isinstance(item, int):
@@ -90,7 +116,8 @@ class MegaPublicClient:
                     return {}
                 if item == -3:
                     log.info("[mega_api] -3 (EAGAIN), retry %d/5", attempt)
-                    time.sleep(min(60, 2 ** attempt))
+                    if self._sleep_interruptible(min(30, 2 ** attempt)):
+                        raise MegaApiError("resolve annullato durante il backoff")
                     continue
                 raise MegaApiError(f"API Mega ha risposto codice {item}", code=item)
             if not isinstance(item, dict):
@@ -121,9 +148,13 @@ class MegaPublicClient:
             raise MegaApiError(f"size mancante o invalida: {exc}") from exc
         attribs = decrypt_attr(base64_url_decode(resp.get("at", "")), k)
         raw_name = attribs.get("n") if attribs else None
-        file_name = Path(raw_name).name if raw_name else f"mega_{handle}"
-        if not file_name:
-            file_name = f"mega_{handle}"
+        # Sanitizza alla SORGENTE: il nome così risolto è quello usato da tutti
+        # i client (seriale/parallelo), dallo storico e dalla GUI. Blocca path
+        # traversal, caratteri riservati Windows e device name (CON/NUL/…).
+        file_name = (
+            sanitize_file_name(raw_name, fallback=f"mega_{handle}")
+            if raw_name else f"mega_{handle}"
+        )
         return {
             "handle": handle,
             "k": k,

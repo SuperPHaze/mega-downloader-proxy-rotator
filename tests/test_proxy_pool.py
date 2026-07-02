@@ -94,6 +94,47 @@ def test_get_next_returns_none_on_empty_pool():
     assert pool.get_next() is None
 
 
+# ---- Ripristino score dalla cache (hot-start), decaduto ------------------
+
+def _cached(host, score):
+    return {"host": host, "port": "8080", "protocol": "http", "score": score}
+
+
+def test_cache_good_score_restored_decayed():
+    # cached 50 -> INITIAL + (50-INITIAL)*0.5 = 25 (fiducia dimezzata).
+    pool = ProxyPool()
+    pool.add_many([_cached("1.1.1.1", 50)])
+    assert pool._score[("1.1.1.1", "8080")] == 25
+
+
+def test_cache_neutral_score_fresh_start():
+    # score <= INITIAL non si eredita: riparte da INITIAL.
+    pool = ProxyPool()
+    pool.add_many([_cached("2.2.2.2", 0), _cached("3.3.3.3", -10)])
+    assert pool._score[("2.2.2.2", "8080")] == POOL_SCORE_INITIAL
+    assert pool._score[("3.3.3.3", "8080")] == POOL_SCORE_INITIAL
+
+
+def test_cache_dead_score_not_resurrected_inflated():
+    # Un morto in cache non rientra sopra la soglia col suo vecchio score:
+    # riparte da INITIAL, non da un valore gonfiato.
+    pool = ProxyPool()
+    pool.add_many([_cached("4.4.4.4", POOL_SCORE_DEAD_THRESHOLD - 5)])
+    assert pool._score[("4.4.4.4", "8080")] == POOL_SCORE_INITIAL
+
+
+def test_fresh_proxy_without_score_uses_initial():
+    pool = ProxyPool()
+    pool.add_many([_proxy("5.5.5.5")])  # niente chiave "score"
+    assert pool._score[("5.5.5.5", "8080")] == POOL_SCORE_INITIAL
+
+
+def test_cache_restored_score_capped_at_max():
+    pool = ProxyPool()
+    pool.add_many([_cached("6.6.6.6", 10_000)])  # decaduto = 5000 -> clamp a MAX
+    assert pool._score[("6.6.6.6", "8080")] == POOL_SCORE_MAX
+
+
 # ---- Funzioni Sperimentali: Leva A/B (additive, default off) -------------
 
 def test_default_selection_mode_is_score():

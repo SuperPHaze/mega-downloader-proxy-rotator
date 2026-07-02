@@ -18,6 +18,7 @@ from src.core.config import (
     PARALLEL_CONNECTIONS_PER_FILE,
 )
 from src.core import telemetry
+from src.core.disk import InsufficientDiskSpaceError
 from src.core.file_naming import final_output_dir
 from src.core.state import SessionState
 from src.downloader.mega_client import MegaClient, MegaCryptoDependencyError
@@ -27,12 +28,15 @@ from src.proxy.pool import ProxyPool
 log = logging.getLogger(__name__)
 
 
-def job_output_dir(mega_url: str, file_id: int) -> Path:
+def job_output_dir(
+    mega_url: str, file_id: int, output_root: Path | None = None
+) -> Path:
     # Path temporaneo (pre-resolve): basato sull'hash dell'URL, usato prima
     # che il nome file sia noto. Dopo il primo resolve viene rinominato in
     # final_output_dir(). Mantenuto come fallback per GUI/orchestrator.
+    # `output_root` = cartella di download scelta dall'utente (None = default).
     file_hash = hashlib.sha1(mega_url.encode("utf-8")).hexdigest()[:12]
-    return OUTPUT_DIR / f"{file_hash}_{file_id}"
+    return (output_root or OUTPUT_DIR) / f"{file_hash}_{file_id}"
 
 
 class _EffectiveSessionState:
@@ -91,12 +95,15 @@ class DownloadWorker(QThread):
         chunk_size_bytes: int | None = None,
         connections_per_file: int | None = None,
         segment_max_duration_s: int | None = None,
+        output_root: Path | None = None,
     ) -> None:
         super().__init__()
         self.file_id = file_id
         self.mega_url = mega_url
         self.proxy_pool = proxy_pool
         self.session_state = session_state
+        # Cartella radice dei download scelta dall'utente (None = default config).
+        self._output_root: Path = output_root or OUTPUT_DIR
         self._local_cancelled = False
         self._effective_state = _EffectiveSessionState(session_state, self)
         # Ultimo errore osservato fra i tentativi: serve a dare un motivo
@@ -152,7 +159,9 @@ class DownloadWorker(QThread):
         # secondo skippa tutto.
         # _current_base_dir parte hash-based e viene rinominato in
         # final_output_dir() al primo resolve riuscito.
-        self._current_base_dir = job_output_dir(self.mega_url, self.file_id)
+        self._current_base_dir = job_output_dir(
+            self.mega_url, self.file_id, self._output_root
+        )
         # Calcola deadline wall-clock per-file (se limite configurato).
         if self._file_time_limit_s is not None:
             self._file_deadline = time.monotonic() + self._file_time_limit_s
@@ -202,7 +211,7 @@ class DownloadWorker(QThread):
             if not _name_emitted[0]:
                 _name_emitted[0] = True
                 # Tenta rinomina cartella base da hash-based a nome-file.
-                new_base = final_output_dir(fn, self.file_id)
+                new_base = final_output_dir(fn, self.file_id, self._output_root)
                 if new_base != self._current_base_dir:
                     if new_base.exists():
                         log.warning(
@@ -406,6 +415,23 @@ class DownloadWorker(QThread):
                 msg = f"Errore di configurazione: {exc}"
                 self.failed.emit(self.file_id, cycle, msg)
                 self.fatal_error.emit(self.file_id, msg)
+                return False
+            except InsufficientDiskSpaceError as exc:
+                # Errore d'AMBIENTE (disco pieno): ritentare non libera spazio.
+                # Abbandona subito con un motivo chiaro invece di bruciare i
+                # tentativi; il proxy è innocente, niente penalità.
+                log.error("[file %d] ciclo %d tentativo %d: %s",
+                          self.file_id, cycle, attempt, exc)
+                msg = f"spazio su disco insufficiente ({exc})"
+                self._last_error_msg = msg
+                telemetry.event(
+                    "file_abandoned", file_id=self.file_id,
+                    attempts=self._total_attempts, last_error=msg,
+                )
+                self.failed.emit(self.file_id, cycle, f"Tentativo {attempt}: {msg}")
+                self.abandoned.emit(
+                    self.file_id, self.mega_url, self._total_attempts, msg,
+                )
                 return False
             except Exception as exc:
                 log.warning("[file %d] ciclo %d tentativo %d: download fallito: %s",

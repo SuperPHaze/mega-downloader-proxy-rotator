@@ -101,3 +101,14 @@ def load_stats_panel_expanded() -> bool:
 
 def save_stats_panel_expanded(expanded: bool) -> None:
     _save_pref("stats_panel_expanded", bool(expanded))
+
+
+def load_download_dir() -> str:
+    """Cartella di download scelta dall'utente. "" (vuoto) = usa il default
+    (la sottocartella `downloads/` del programma, OUTPUT_DIR)."""
+    val = _load_prefs().get("download_dir", "")
+    return str(val) if val else ""
+
+
+def save_download_dir(path: str) -> None:
+    _save_pref("download_dir", str(path or ""))

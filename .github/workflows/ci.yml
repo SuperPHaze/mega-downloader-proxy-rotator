@@ -1,0 +1,40 @@
+name: CI
+
+# Esegue la suite pytest a ogni push/PR su main. Protegge i refactor futuri:
+# oggi i test girano solo a mano (vedi relazione tecnica §2.10 / §2.11).
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+
+jobs:
+  test:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Estremi della finestra supportata (Windows + Python 3.11–3.14).
+        python-version: ["3.11", "3.13"]
+    env:
+      # Qt headless: nessun display sui runner CI.
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Upgrade pip (obbligatorio prima di requirements — vedi CLAUDE.md)
+        run: python -m pip install --upgrade pip setuptools wheel
+
+      - name: Install dependencies
+        run: |
+          python -m pip install -r requirements.txt
+          python -m pip install -r requirements-dev.txt
+
+      - name: Run tests
+        run: python -m pytest -q

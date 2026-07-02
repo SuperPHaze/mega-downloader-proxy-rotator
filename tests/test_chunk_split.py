@@ -76,3 +76,9 @@ def test_chunk_size_not_multiple_of_16_gets_aligned_down():
     chunks = _split_chunks(file_size, chunk_size)
     _assert_no_gaps_no_overlaps(chunks, file_size)
     assert chunks[0][1] - chunks[0][0] + 1 == 992
+
+
+def test_zero_byte_file_returns_no_chunks():
+    # File vuoto: nessun range (niente "bytes=0--1" degenere). Il download vero
+    # e' gestito a monte in ParallelMegaDownloader.download().
+    assert _split_chunks(0, 1 * MB) == []

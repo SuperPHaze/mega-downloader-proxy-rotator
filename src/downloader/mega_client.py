@@ -14,7 +14,13 @@ from typing import Callable
 
 import requests
 
-from src.core.config import IP_CHECK_URL, PROXY_TIMEOUT, USER_AGENT
+from src.core.config import (
+    IP_CHECK_URL,
+    MIN_FREE_DISK_MARGIN_BYTES,
+    PROXY_TIMEOUT,
+    USER_AGENT,
+)
+from src.core.disk import ensure_free_space
 from src.core.proxy_url import build_proxies_dict, build_proxy_url
 from src.downloader.mega_api import MegaApiError, MegaPublicClient
 from src.downloader.mega_crypto import a32_to_str
@@ -79,6 +85,10 @@ class MegaClient:
         cdn_url = info["cdn_url"]
         k = info["k"]
         iv = info["iv"]
+        # Check spazio disco PRIMA di scaricare: a disco pieno un OSError grezzo
+        # a metà stream verrebbe scambiato per fallimento del proxy e brucerebbe
+        # i tentativi. InsufficientDiskSpaceError è gestita a monte dal worker.
+        ensure_free_space(output_dir, file_size, MIN_FREE_DISK_MARGIN_BYTES)
         final_path = output_dir / file_name
         # Pattern .part + rename atomico: il client seriale non ha resume,
         # ma un download interrotto non deve mai lasciare un file con il nome

@@ -22,7 +22,7 @@ https://github.com/user-attachments/assets/bb04b245-43e9-430d-8cf6-6c240761c588
 
 
 
-![version](https://img.shields.io/badge/version-1.14.0-blue)
+![version](https://img.shields.io/badge/version-1.20.0-blue)
 ![python](https://img.shields.io/badge/python-3.11%E2%80%933.14-blue)
 ![platform](https://img.shields.io/badge/platform-Windows%2010%2F11-lightgrey)
 ![gui](https://img.shields.io/badge/GUI-PyQt6-green)

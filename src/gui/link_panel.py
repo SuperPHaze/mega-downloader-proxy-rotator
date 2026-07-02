@@ -275,6 +275,12 @@ class LinkPanel(QWidget):
     def get_links(self) -> list[str]:
         return list(self._links)
 
+    def set_links(self, links: list[str]) -> None:
+        """Rimpiazza la lista link (usato dal ripristino sessione all'avvio)."""
+        self._links = list(links)
+        self._refresh_counter()
+        self.links_count_changed.emit(len(self._links))
+
     def open_paste_dialog(self) -> None:
         """Alias pubblico di _on_paste per le connessioni dalla ControlsBar."""
         self._on_paste()

@@ -2,11 +2,12 @@
 #
 # Perche' esiste: mega.py 1.0.8 scarica un file in modo monolitico e seriale,
 # il throughput e' limitato dalla velocita' del singolo proxy in uso. Qui
-# usiamo mega.py SOLO per risolvere il link pubblico (parse URL + chiave AES
-# + API request `g=1` -> URL CDN + size + filename cifrato), poi eseguiamo N
-# download paralleli di chunk a dimensione FISSA (default 8 MB ciascuno),
-# ognuno instradato su un proxy diverso. Un cambio proxy fa perdere al
-# massimo un chunk, non N/4 di file come con i segmenti grandi.
+# usiamo il resolver Mega vendorizzato SOLO per risolvere il link pubblico
+# (parse URL + chiave AES + API request `g=1` -> URL CDN + size + filename
+# cifrato), poi eseguiamo N download paralleli di chunk a dimensione FISSA
+# (default PARALLEL_CHUNK_SIZE_MB = 32 MB ciascuno), ognuno instradato su un
+# proxy diverso. Un cambio proxy fa perdere al massimo un chunk, non N/4 di
+# file come con i segmenti grandi.
 #
 # Limiti noti:
 # - I chunk vanno allineati a 16 byte (block size AES). Forzato in _split_chunks.
@@ -24,6 +25,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Callable
 
@@ -31,12 +33,14 @@ import requests
 
 from src.core import telemetry
 from src.core.config import (
+    MIN_FREE_DISK_MARGIN_BYTES,
     PARALLEL_CHUNK_SIZE_MB,
     PARALLEL_HTTP_429_BACKOFF_MAX_S,
     PARALLEL_HTTP_429_BACKOFF_S,
     PARALLEL_MAX_FAILED_CHUNKS,
     PARALLEL_MIN_SEGMENT_BYTES,
     PARALLEL_MIN_THROUGHPUT_BPS,
+    PARALLEL_RETRY_AFTER_CAP_S,
     PARALLEL_SEGMENT_ATTEMPT_MAX_DURATION_S,
     PARALLEL_SEGMENT_BACKOFF_MAX,
     PARALLEL_SEGMENT_RETRIES,
@@ -49,6 +53,7 @@ from src.core.config import (
     TELEMETRY_SAMPLE_INTERVAL_S,
     USER_AGENT,
 )
+from src.core.disk import ensure_free_space
 from src.core.proxy_url import build_proxies_dict as _proxies_dict
 from src.core.state import SessionState
 from src.downloader.mega_api import MegaPublicClient
@@ -132,6 +137,10 @@ def _split_chunks(file_size: int, chunk_size: int) -> list[tuple[int, int]]:
     perdere al massimo un chunk, non un quarto di file.
     """
     chunk_size = max(16, _align_down(chunk_size, 16))
+    if file_size <= 0:
+        # File vuoto: nessun range. Difesa in profondità — download() lo gestisce
+        # già a monte, ma qui evitiamo il range degenere (0, -1) -> "bytes=0--1".
+        return []
     if file_size <= PARALLEL_MIN_SEGMENT_BYTES:
         return [(0, file_size - 1)]
     chunks: list[tuple[int, int]] = []
@@ -248,6 +257,23 @@ class ParallelMegaDownloader:
             except Exception:
                 pass
 
+        # File da 0 byte: nessun chunk da scaricare. Con _split_chunks(0) si
+        # otterrebbe un range 0--1 e un header "Range: bytes=0--1" invalido, che
+        # fallirebbe a ripetizione fino all'abbandono. Crea il file finale vuoto
+        # e termina, mantenendo l'invariante "esiste il nome finale = completo".
+        if file_size == 0:
+            _progress_path(part_path).unlink(missing_ok=True)
+            part_path.unlink(missing_ok=True)
+            final_path.write_bytes(b"")
+            if progress_callback:
+                progress_callback(100)
+            log.info("[parallel] file da 0 byte: creato vuoto %s", final_path)
+            telemetry.event(
+                "file_completed", file_id=file_id,
+                url_hash=self._url_hash, file_size=0,
+            )
+            return final_path
+
         # === Fase 2: calcola chunk a dimensione fissa. ===
         eff_conn = self.n_connections
         if file_size < PARALLEL_MIN_SEGMENT_BYTES * 2:
@@ -302,6 +328,15 @@ class ParallelMegaDownloader:
         self._file_handle_str = file_handle
         self._file_size = file_size
         self._chunk_size = self.chunk_size  # snapshot per _download_chunk
+
+        # Check spazio disco prima di (ri)allocare il .part. Su NTFS il .part è
+        # pre-allocato a dimensione piena: meglio un errore chiaro pre-volo che
+        # un OSError grezzo a metà setup. Su resume lo spazio del .part esistente
+        # è già riservato: si richiede solo il delta mancante.
+        _existing_part = part_path.stat().st_size if part_path.exists() else 0
+        ensure_free_space(
+            output_dir, file_size - _existing_part, MIN_FREE_DISK_MARGIN_BYTES
+        )
 
         # Pre-alloca il .part (sparse) SOLO se non esiste gia' (resume).
         if not part_path.exists():
@@ -482,6 +517,9 @@ class ParallelMegaDownloader:
             if self.session_state is not None and self.session_state.is_cancelled():
                 raise RuntimeError(f"chunk {chunk_idx}: cancellato dall'utente")
             if self.session_state is not None:
+                # La pausa è onorata QUI, al confine del tentativo/pezzo: un chunk
+                # già in trasferimento prosegue fino alla fine (sospenderlo a metà
+                # farebbe scadere i read-timeout). Documentato nella guida (§9).
                 self.session_state.wait_if_paused()
             attempt += 1
             if sticky_proxy is not None:
@@ -571,7 +609,13 @@ class ParallelMegaDownloader:
                         )
                         self.pool.cooldown(proxy)
                         cdn_error = True
-                        backoff = min(PARALLEL_SEGMENT_BACKOFF_MAX, 2 ** min(attempt, 6))
+                        retry_after = self._retry_after_seconds(
+                            resp, PARALLEL_RETRY_AFTER_CAP_S
+                        )
+                        backoff = (
+                            retry_after if retry_after is not None
+                            else min(PARALLEL_SEGMENT_BACKOFF_MAX, 2 ** min(attempt, 6))
+                        )
                         self._emit_attempt(
                             rec, "http_%d" % resp.status_code, "cooldown",
                             _attempt_t0, error=last_exc, backoff=backoff,
@@ -612,9 +656,15 @@ class ParallelMegaDownloader:
                         )
                         sticky_proxy = proxy
                         cdn_error = True
-                        backoff = min(
-                            PARALLEL_HTTP_429_BACKOFF_MAX_S,
-                            PARALLEL_HTTP_429_BACKOFF_S * attempt,
+                        retry_after = self._retry_after_seconds(
+                            resp, PARALLEL_RETRY_AFTER_CAP_S
+                        )
+                        backoff = (
+                            retry_after if retry_after is not None
+                            else min(
+                                PARALLEL_HTTP_429_BACKOFF_MAX_S,
+                                PARALLEL_HTTP_429_BACKOFF_S * attempt,
+                            )
                         )
                         self._emit_attempt(
                             rec, "http_429", "sticky_retry",
@@ -788,6 +838,15 @@ class ParallelMegaDownloader:
             f"chunk {chunk_idx}: esauriti {PARALLEL_SEGMENT_RETRIES} tentativi ({last_exc})"
         )
 
+    def _should_abort_resolve(self) -> bool:
+        """Cancellazione cooperativa per il resolver Mega: True se è scattato
+        l'abort locale della coda o la cancellazione di sessione. Passato a
+        MegaPublicClient perché non resti appeso nei backoff durante un Annulla."""
+        if self._abort.is_set():
+            return True
+        return (self.session_state is not None
+                and self.session_state.is_cancelled())
+
     def _sleep_interruptible(self, seconds: float) -> bool:
         """Sleep che ritorna True se nel mezzo arriva abort o cancellazione."""
         step = 0.5
@@ -809,7 +868,11 @@ class ParallelMegaDownloader:
         Usa il `resolver_proxy` passato per la chiamata API; se fallisce, il
         chiamante deve scegliere un proxy diverso e ritentare.
         """
-        client = MegaPublicClient(resolver_proxy, timeout=max(PROXY_TIMEOUT * 4, 30))
+        client = MegaPublicClient(
+            resolver_proxy,
+            timeout=max(PROXY_TIMEOUT * 4, 30),
+            should_abort=self._should_abort_resolve,
+        )
         info = client.resolve_public_url(mega_url)
         return (
             info["handle"], info["k"], info["iv"],
@@ -889,6 +952,26 @@ class ParallelMegaDownloader:
             return int(resp.headers.get("Content-Length", "0"))
         except (TypeError, ValueError):
             return 0
+
+    @staticmethod
+    def _retry_after_seconds(resp, cap: float) -> float | None:
+        """Secondi indicati dall'header `Retry-After` (forma "N" o data HTTP),
+        cappati a `cap`. None se l'header è assente o non parsabile. Un valore
+        già passato è normalizzato a 0."""
+        raw = (resp.headers.get("Retry-After") or "").strip()
+        if not raw:
+            return None
+        try:
+            secs = float(raw)
+        except ValueError:
+            try:
+                dt = parsedate_to_datetime(raw)
+            except (TypeError, ValueError):
+                return None
+            if dt is None:
+                return None
+            secs = (dt - datetime.now(dt.tzinfo)).total_seconds()
+        return min(cap, max(0.0, secs))
 
     def _progress_poller(
         self,

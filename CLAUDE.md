@@ -22,25 +22,27 @@ src/
 │   ├── version_compare.py # parse_semver/is_newer, puro stdlib (no I/O)
 │   ├── branding.py        # Branding (nome/acronimo/autore/nick/link/logo): default -> cache -> remoto
 │   ├── icon_loader.py     # build_app_icon(): QIcon robusta .ico->fallback .png, mai null senza log
-│   ├── file_naming.py     # sanitize_folder_name() + final_output_dir(): path finale del download basato sul nome file risolto (rinomina la cartella hash-based al primo resolve riuscito)
-│   └── proxy_url.py       # build_proxy_url/build_proxies_dict: schema URL in base al campo protocol (http/socks4/socks5 -> socks5h), solo stdlib, usato da proxy/ e downloader/; include anche cache_bust_url() (parametro query anti-cache per gli speed test) e sustained_throughput_bps() (misura pura del throughput: finestra del corpo con fallback alla finestra completa sul burst-da-buffer, evita le "bande impossibili")
+│   ├── file_naming.py     # sanitize_folder_name() + sanitize_file_name() (nome file sicuro per Windows: caratteri riservati + device name CON/NUL/…, estensione preservata; applicata alla SORGENTE in mega_api.resolve_public_url) + final_output_dir(file_name, file_id, output_root): path finale del download (output_root = cartella scelta dall'utente, None=default); rinomina la cartella hash-based al primo resolve riuscito
+│   ├── disk.py            # ensure_free_space()/free_space_bytes() + InsufficientDiskSpaceError (OSError): check spazio disco PRIMA del download (errore d'ambiente: il worker abbandona subito senza bruciare i tentativi). Solo stdlib
+│   ├── session_store.py   # persistenza JSON dei link NON completati della sessione (save/load/clear, mai solleva) per il prompt "Riprendi sessione precedente?" all'avvio; i .part fanno il resume a livello byte
+│   └── proxy_url.py       # build_proxy_url/build_proxies_dict: schema URL in base al campo protocol (http/socks4/socks5 -> socks5h) + prefisso user:pass@ opzionale se il proxy porta credenziali, solo stdlib, usato da proxy/ e downloader/; include anche cache_bust_url() (parametro query anti-cache per gli speed test) e sustained_throughput_bps() (misura pura del throughput: finestra del corpo con fallback alla finestra completa sul burst-da-buffer, evita le "bande impossibili")
 ├── proxy/
 │   ├── sources.py         # 74 fonti pubbliche (4 html, 64 plain, 6 json/jsonl); per protocollo: 51 http, 16 socks5, 6 socks4 (campo opzionale "protocol" per fonte)
 │   ├── scraper.py         # ProxyScraper.fetch_all() multi-source; _fetch_source etichetta ogni proxy col "protocol" della fonte (sovrascrive l'"http" scritto dai parser)
 │   ├── validator.py       # 2-stage (o 3 con selezione per velocità attiva): stage1 alive + stage2 Mega + stage3 opzionale speed test (throughput via sustained_throughput_bps + URL cache-busted, niente più valori impossibili dal burst-da-buffer)
-│   ├── pool.py            # ProxyPool score-based round-robin; cooldown() mette un proxy a riposo N secondi (rate-limit 403/509) senza toccare lo score, ma MENTRE è in cooldown NON conta come vivo in size()/_count_alive_unlocked() (solo non selezionabile finché non scade — altrimenti size()>0 mentre get_next() non ha nulla, e il refill viene saltato all'infinito); contatori di sessione per la GUI (discarded_count/refill_count/seconds_since_last_refill, alimentati da note_refill())
+│   ├── pool.py            # ProxyPool score-based round-robin; cooldown() mette un proxy a riposo N secondi (rate-limit 403/509) senza toccare lo score, ma MENTRE è in cooldown NON conta come vivo in size()/_count_alive_unlocked() (solo non selezionabile finché non scade — altrimenti size()>0 mentre get_next() non ha nulla, e il refill viene saltato all'infinito); contatori di sessione per la GUI (discarded_count/refill_count/seconds_since_last_refill, alimentati da note_refill()); ammissione centralizzata in _admit_unlocked() (usata da add_many/refill_blocking) che semina lo score via _seed_score(): dalla cache si ripristina solo la reputazione BUONA e DECADUTA (POOL_SCORE_CACHE_DECAY, metà surplus), mai penalità né morti gonfiati
 │   ├── refresher.py       # BackgroundPoolRefresher (thread daemon)
 │   └── proxy_cache.py     # cache proxy persistente JSON (hot-start)
 ├── downloader/
 │   ├── mega_crypto.py     # primitive AES-CBC/CTR vendorizzate
-│   ├── mega_api.py        # MegaPublicClient (resolve URL pubblica Mega)
-│   ├── mega_client.py     # MegaClient seriale (single-stream via proxy)
-│   ├── parallel_client.py # ParallelMegaDownloader (coda chunk a dimensione fissa, HTTP Range N parallele)
-│   ├── worker.py          # DownloadWorker(QThread) — 1 link, N cicli; cartella base rinominata da hash a nome file al primo resolve (_current_base_dir aggiornato da _resolved_cb)
-│   └── orchestrator.py    # DownloadOrchestrator(QObject) — coordina tutto; segnale proxy_stats(discarded, refill_count, seconds_since_last_refill) emesso insieme a pool_size_changed nel poll periodico
+│   ├── mega_api.py        # MegaPublicClient (resolve URL pubblica Mega); backoff dei retry (-3/errore rete) cappato a 30s e INTERROMPIBILE via should_abort (cancellazione cooperativa durante il resolve); nome file sanitizzato alla sorgente
+│   ├── mega_client.py     # MegaClient seriale (single-stream via proxy); check spazio disco (ensure_free_space) prima del transfer
+│   ├── parallel_client.py # ParallelMegaDownloader (coda chunk a dimensione fissa, HTTP Range N parallele); check disco pre-allocazione; file da 0 byte gestito a parte; Retry-After onorato su 403/509/429; should_abort passato al re-resolve
+│   ├── worker.py          # DownloadWorker(QThread) — 1 link, N cicli; cartella base rinominata da hash a nome file al primo resolve (_current_base_dir aggiornato da _resolved_cb); riceve output_root (cartella download scelta dall'utente); InsufficientDiskSpaceError = abbandono immediato (non retry)
+│   └── orchestrator.py    # DownloadOrchestrator(QObject) — coordina tutto; segnale proxy_stats(discarded, refill_count, seconds_since_last_refill) emesso insieme a pool_size_changed nel poll periodico; propaga output_root ai worker (start(output_root=...))
 └── gui/
-    ├── main_window.py     # MainWindow (QMainWindow)
-    ├── link_panel.py      # gestore lista link (nascosto nell'UI, API get_links/open_paste_dialog)
+    ├── main_window.py     # MainWindow (QMainWindow); ripristino sessione all'avvio (prompt "Riprendi sessione precedente?" da session_store, differito con QTimer.singleShot); propaga la cartella download scelta a orchestrator.start(output_root=...) e la usa per il delete cartella
+    ├── link_panel.py      # gestore lista link (nascosto nell'UI, API get_links/set_links/open_paste_dialog)
     ├── paste_links_dialog.py # dialog modale incolla/edita lista link
     ├── jobs_model.py      # JobsModel (QAbstractTableModel) + Job (throughput/file_name/output_path)
     ├── jobs_panel.py      # lista job a righe-card (QScrollArea + _JobCard widget per riga); filtri a pulsanti esclusivi (QButtonGroup), senza etichetta; ogni pulsante mostra il conteggio file per categoria ("In corso (N)"/"Completati (N)"/"Non completati (N)"), aggiornato da _update_filter_counts su aggregates_changed
@@ -54,9 +56,9 @@ src/
     ├── stats_panel.py     # StatsPanel: cruscotto Statistiche collassabile (header riassuntivo sempre visibile + corpo espandibile); metriche: volume, throughput effettivo, media per-download, picco/min, durata con auto-freeze, dettaglio per-job, pulsante copia riepilogo
     ├── proxy_bar.py       # ProxyBar: zona proxy in stile "conservativo" — riga di card compatte (vivi/validazione/scartati/ricariche/ultimo refill/banda/banda proxy) + pulsanti "↻ Banda" (speed test linea diretta), "↻ Banda proxy" (speed test attraverso il pool live, abilitato solo con proxy vivi) e "Reset cache"; popolata da pool_size_changed/setup_progress/proxy_stats dell'orchestrator. Card "Banda" verde (accent_ok) vs "Banda proxy" blu (accent_info) per differenziare le due misure
     ├── speedtest_worker.py # SpeedTestWorker (banda linea diretta, senza proxy) + ProxySpeedTestWorker (banda aggregata del pool live, uno stream per proxy campionato, resiliente ai proxy lenti/caduti); entrambi QThread, emettono finished_test(mbit, ok)
-    ├── controls.py        # barra comandi: Avvia/Pausa/Annulla/Paralleli/Incolla/Tema/Info (in menu Impostazioni)
+    ├── controls.py        # barra comandi: Avvia/Pausa/Annulla/Paralleli/Incolla/Tema/Info; menu Impostazioni con Paralleli/Limite/Pezzo/"Cartella download:" (QFileDialog, getter get_download_dir, segnale download_dir_changed)
     ├── experimental_dialog.py # ExperimentalFeaturesDialog: 3 controlli con descrizione breve inline e icona "i" (QToolButton) → QMessageBox estesa: "Connessioni per file" (spinbox), "Budget per pezzo (s)" (spinbox), "Selezione per velocità" (checkbox + spinbox soglia KB/s); tutti persistono in preferences.json
-    ├── preferences.py     # carica/salva preferenze utente (tema, check aggiornamenti all'avvio, selezione per velocità abilitata + soglia KB/s, stats_panel_expanded) in preferences.json
+    ├── preferences.py     # carica/salva preferenze utente (tema, check aggiornamenti all'avvio, selezione per velocità abilitata + soglia KB/s, stats_panel_expanded, download_dir) in preferences.json
     ├── about_dialog.py    # AboutDialog: nome/acronimo/autore/nick/link/logo (da branding) + licenza + controllo aggiornamenti manuale
     ├── update_check.py    # UpdateCheckWorker(QThread): GET releases/latest GitHub, fuori dal thread GUI
     ├── update_banner.py   # UpdateBanner: barra sottile richiudibile ("nuova versione disponibile")

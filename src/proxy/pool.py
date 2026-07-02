@@ -14,6 +14,7 @@ from typing import Callable
 from src.core.config import (
     PARALLEL_CONNECTIONS_PER_FILE,
     POOL_LATENCY_TIEBREAKER,
+    POOL_SCORE_CACHE_DECAY,
     POOL_SCORE_DEAD_THRESHOLD,
     POOL_SCORE_INITIAL,
     POOL_SCORE_MAX,
@@ -71,26 +72,50 @@ class ProxyPool:
         self._refill_count = 0
         self._last_refill_monotonic: float | None = None
 
+    def _seed_score(self, p: dict) -> int:
+        """Score iniziale per un proxy appena ammesso.
+
+        - Senza `score` (proxy fresco dalle fonti) -> POOL_SCORE_INITIAL.
+        - Con `score` dalla cache (sessione precedente): si RIPRISTINA solo la
+          reputazione BUONA e DECADUTA verso il neutro (metà del surplus sopra
+          INITIAL): i free-proxy cambiano qualità di ora in ora, ci si fida a
+          metà. Uno score <= INITIAL (neutro/penalizzato/morto) NON si eredita:
+          riparte da INITIAL (fresh start), così nessun morto rientra gonfiato.
+        """
+        raw = p.get("score")
+        if not isinstance(raw, (int, float)):
+            return POOL_SCORE_INITIAL
+        cached = int(raw)
+        if cached <= POOL_SCORE_INITIAL:
+            return POOL_SCORE_INITIAL
+        decayed = POOL_SCORE_INITIAL + (cached - POOL_SCORE_INITIAL) * POOL_SCORE_CACHE_DECAY
+        return max(POOL_SCORE_INITIAL, min(POOL_SCORE_MAX, int(round(decayed))))
+
+    def _admit_unlocked(self, p: dict) -> None:
+        """Inserisce/aggiorna un proxy nel pool. Il caller DEVE tenere `_lock`.
+
+        Estratto per non duplicare la logica di ammissione tra add_many e
+        refill_blocking (ed evitare che il seed dello score diverga fra i due).
+        Un proxy ricomparso viene reinizializzato a score base (o al valore
+        decaduto dalla cache); la chiave già presente con storia "buona"
+        (score sopra la soglia dead) conserva il suo score.
+        """
+        key = (p["host"], p["port"])
+        cur = self._score.get(key)
+        if cur is None or cur < POOL_SCORE_DEAD_THRESHOLD:
+            self._score[key] = self._seed_score(p)
+        lat = p.get("latency_ms")
+        if isinstance(lat, (int, float)) and lat > 0:
+            self._latency[key] = int(lat)
+        bps = p.get("throughput_bps")
+        if isinstance(bps, (int, float)) and bps > 0:
+            self._throughput[key] = float(bps)
+        self._proxies.append(p)
+
     def add_many(self, proxies: list[dict]) -> None:
         with self._lock:
             for p in proxies:
-                key = (p["host"], p["port"])
-                self._proxies.append(p)
-                # Un proxy ricomparso dalle fonti viene reinizializzato a score
-                # base: assumiamo che la sua disponibilità sia genuinamente
-                # cambiata se è stato ripubblicato. Se è nuovo, idem.
-                # Caso unico in cui conserviamo lo score: la chiave esiste già
-                # E lo score corrente è sopra la soglia dead (storia "buona"
-                # preservata, niente reset penalizzante).
-                cur = self._score.get(key)
-                if cur is None or cur < POOL_SCORE_DEAD_THRESHOLD:
-                    self._score[key] = POOL_SCORE_INITIAL
-                lat = p.get("latency_ms")
-                if isinstance(lat, (int, float)) and lat > 0:
-                    self._latency[key] = int(lat)
-                bps = p.get("throughput_bps")
-                if isinstance(bps, (int, float)) and bps > 0:
-                    self._throughput[key] = float(bps)
+                self._admit_unlocked(p)
             total = self._count_alive_unlocked()
         log.info("Pool: aggiunti %d proxy (vivi totali: %d)", len(proxies), total)
 
@@ -370,18 +395,9 @@ class ProxyPool:
             added = 0
             with self._lock:
                 for p in fresh:
-                    key = (p["host"], p["port"])
-                    # Riabilita: se era sotto soglia dead, resetta a base.
-                    cur = self._score.get(key)
-                    if cur is None or cur < POOL_SCORE_DEAD_THRESHOLD:
-                        self._score[key] = POOL_SCORE_INITIAL
-                    lat = p.get("latency_ms")
-                    if isinstance(lat, (int, float)) and lat > 0:
-                        self._latency[key] = int(lat)
-                    bps = p.get("throughput_bps")
-                    if isinstance(bps, (int, float)) and bps > 0:
-                        self._throughput[key] = float(bps)
-                    self._proxies.append(p)
+                    # _admit_unlocked riabilita i morti (reset a base o valore
+                    # decaduto dalla cache) e conserva le storie "buone".
+                    self._admit_unlocked(p)
                     added += 1
                 alive_now = self._count_alive_unlocked()
             log.info("Pool: refill completato, %d nuovi (vivi totali: %d)", added, alive_now)

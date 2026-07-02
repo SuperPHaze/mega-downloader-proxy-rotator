@@ -4,6 +4,45 @@
 
 Tutte le modifiche rilevanti del progetto. Formato basato su [Keep a Changelog](https://keepachangelog.com/it/1.1.0/); versioni secondo [SemVer](https://semver.org/lang/it/).
 
+## [1.20.0] — 2026-07-02
+
+### Aggiunto
+- **Cartella di download scegliibile dalla GUI.** Dal menu **Impostazioni → «Cartella
+  download:»** si può scegliere dove salvare i file; la scelta è ricordata tra le sessioni.
+  Se non si sceglie nulla resta la cartella predefinita (`downloads/` del programma). Se la
+  cartella scelta non è scrivibile, il programma avvisa e torna alla predefinita.
+- **Ripristino della sessione all'avvio.** Se il programma si chiude (o va in crash) con dei
+  download non completati, alla riapertura propone di **ricaricare i link rimasti**. I pezzi già
+  scaricati vengono ripresi automaticamente: basta premere Avvia.
+- **Controllo dello spazio su disco prima di iniziare.** Se non c'è spazio sufficiente per il
+  file (più un margine di sicurezza) il download viene abbandonato subito con un messaggio chiaro,
+  invece di fallire in modo criptico a metà con il disco pieno.
+- **Rispetto dell'header `Retry-After` del CDN Mega.** Sui rate-limit (403/509) e sul limite di IP
+  concorrenti (429), se il server indica quanto attendere, l'attesa segue quel valore (entro un
+  tetto) invece di un'attesa "alla cieca".
+- **Integrazione continua (CI).** Un workflow GitHub Actions esegue automaticamente la suite di
+  test su Windows (Python 3.11 e 3.13) a ogni push e pull request.
+- **Supporto ai proxy con autenticazione** (`utente:password`) nella costruzione dell'URL del
+  proxy. Le liste gratuite non ne hanno bisogno: è predisposizione per eventuali liste autenticate.
+
+### Modificato
+- **Ripristino prudente della reputazione dei proxy dalla cache.** All'avvio a caldo, i proxy che
+  in una sessione precedente avevano una buona reputazione ripartono avvantaggiati ma con il
+  punteggio **dimezzato verso il neutro** (i proxy gratuiti cambiano qualità di continuo); i proxy
+  neutri o penalizzati ripartono da zero, senza ereditare penalità né "resuscitare" gonfiati.
+- **Nomi file più robusti su Windows.** Il nome del file scaricato viene ripulito dai caratteri
+  vietati (`: ? * " < > |`) e dai nomi di dispositivo riservati (`CON`, `NUL`, …), preservando
+  l'estensione. Prima un nome del genere faceva fallire il salvataggio e sprecava tutti i
+  tentativi, con un errore fuorviante che sembrava colpa dei proxy.
+- **Annullo più reattivo durante la risoluzione del link.** Un «Annulla» che arriva mentre il
+  programma sta risolvendo un link Mega (con i suoi ritentativi) ora viene onorato subito, senza
+  restare appeso fino a decine di secondi.
+
+### Corretto
+- **File da 0 byte non più abbandonati.** Un file vuoto su Mega veniva richiesto con un intervallo
+  di byte non valido e falliva a ripetizione fino all'abbandono; ora viene creato correttamente
+  come file vuoto.
+
 ## [1.14.0] — 2026-07-01
 
 ### Modificato

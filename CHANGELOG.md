@@ -4,6 +4,44 @@
 
 All notable changes to this project. Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [SemVer](https://semver.org/).
 
+## [1.20.0] — 2026-07-02
+
+### Added
+- **Choosable download folder from the GUI.** Under **Settings → "Cartella download:"** you can
+  pick where files are saved; the choice is remembered across sessions. If you pick nothing, the
+  default folder is used (the program's `downloads/`). If the chosen folder isn't writable, the
+  program warns you and reverts to the default.
+- **Session restore on startup.** If the program closes (or crashes) with unfinished downloads, on
+  the next launch it offers to **reload the remaining links**. Already-downloaded pieces resume
+  automatically: just press Start.
+- **Disk-space check before starting.** If there isn't enough room for the file (plus a safety
+  margin), the download is abandoned right away with a clear message, instead of failing cryptically
+  halfway through on a full disk.
+- **Honoring the Mega CDN `Retry-After` header.** On rate-limits (403/509) and the concurrent-IP
+  limit (429), if the server states how long to wait, the wait follows that value (up to a cap)
+  instead of a blind backoff.
+- **Continuous Integration (CI).** A GitHub Actions workflow runs the test suite automatically on
+  Windows (Python 3.11 and 3.13) on every push and pull request.
+- **Authenticated proxy support** (`user:password`) in the proxy URL builder. Free lists don't need
+  it: it's groundwork for any authenticated lists.
+
+### Changed
+- **Prudent restore of proxy reputation from cache.** On a warm start, proxies that had a good
+  reputation in a previous session start with an advantage but with their score **halved toward
+  neutral** (free proxies change quality constantly); neutral or penalized proxies start from
+  scratch, inheriting neither penalties nor an inflated "resurrection".
+- **More robust filenames on Windows.** The downloaded file's name is cleaned of forbidden
+  characters (`: ? * " < > |`) and reserved device names (`CON`, `NUL`, …), preserving the
+  extension. Previously such a name made saving fail and wasted every attempt, with a misleading
+  error that looked like a proxy problem.
+- **More responsive cancel during link resolution.** A "Cancel" that arrives while the program is
+  resolving a Mega link (with its retries) is now honored immediately, instead of hanging for up to
+  tens of seconds.
+
+### Fixed
+- **Zero-byte files are no longer abandoned.** An empty file on Mega was requested with an invalid
+  byte range and failed repeatedly until abandoned; it is now correctly created as an empty file.
+
 ## [1.14.0] — 2026-07-01
 
 ### Changed

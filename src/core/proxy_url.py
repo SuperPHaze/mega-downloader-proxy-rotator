@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import uuid
+from urllib.parse import quote
 
 
 def cache_bust_url(url: str) -> str:
@@ -49,17 +50,31 @@ def sustained_throughput_bps(
     return total_bytes / max(full_window, min_window_s)
 
 
+def _auth_prefix(proxy: dict) -> str:
+    """`user:pass@` (URL-encoded) se il proxy porta credenziali, altrimenti "".
+    Le liste gratuite non hanno auth (chiavi assenti -> prefisso vuoto ->
+    comportamento invariato); serve solo se un domani si aggiunge una lista
+    autenticata."""
+    user = proxy.get("username")
+    if not user:
+        return ""
+    pwd = proxy.get("password") or ""
+    return f"{quote(str(user), safe='')}:{quote(str(pwd), safe='')}@"
+
+
 def build_proxy_url(proxy: dict) -> str:
     """Costruisce l'URL del proxy con lo schema giusto in base al protocollo.
     socks5 -> socks5h:// (DNS risolto dal proxy, utile per gli host CDN);
-    socks4 -> socks4://; tutto il resto (default) -> http://."""
+    socks4 -> socks4://; tutto il resto (default) -> http://.
+    Include `user:pass@` se il proxy porta credenziali (opzionale)."""
     proto = (proxy.get("protocol") or "http").lower()
     host, port = proxy["host"], proxy["port"]
+    auth = _auth_prefix(proxy)
     if proto in ("socks5", "socks5h"):
-        return f"socks5h://{host}:{port}"
+        return f"socks5h://{auth}{host}:{port}"
     if proto == "socks4":
-        return f"socks4://{host}:{port}"
-    return f"http://{host}:{port}"
+        return f"socks4://{auth}{host}:{port}"
+    return f"http://{auth}{host}:{port}"
 
 
 def build_proxies_dict(proxy: dict) -> dict:

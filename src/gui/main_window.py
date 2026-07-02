@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import shutil
 from pathlib import Path
 
@@ -18,9 +19,14 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from src.core import diagnostics
+from src.core import diagnostics, session_store
 from src.core.branding import resolve as resolve_branding
-from src.core.config import APP_VERSION, HEARTBEAT_INTERVAL_S, PROXY_SPEEDTEST_STREAMS
+from src.core.config import (
+    APP_VERSION,
+    HEARTBEAT_INTERVAL_S,
+    OUTPUT_DIR,
+    PROXY_SPEEDTEST_STREAMS,
+)
 from src.core.icon_loader import build_app_icon
 from src.core.state import SessionState
 from src.downloader.orchestrator import DownloadOrchestrator
@@ -35,11 +41,13 @@ from src.gui.preferences import (
     load_check_updates_on_startup,
     load_connections_per_file,
     load_dark_theme,
+    load_download_dir,
     load_link_speed_mbps,
     load_segment_max_duration_s,
     load_speed_selection_enabled,
     load_speed_selection_min_kbps,
     save_dark_theme,
+    save_download_dir,
     save_link_speed_mbps,
 )
 from src.gui.proxy_bar import ProxyBar
@@ -68,6 +76,12 @@ class MainWindow(QMainWindow):
         self._open_dialogs: dict[int, JobDetailDialog] = {}
         self._links_by_id: dict[int, str] = {}
         self._pending_delete: set[int] = set()
+        # Cartella radice dei download della sessione corrente (None = default).
+        # Serve anche a ritrovare la cartella di lavoro per l'eliminazione.
+        self._active_output_root: Path | None = None
+        # Link non ancora completati della sessione corrente (file_id -> url):
+        # persistiti su disco per il ripristino all'avvio (2.7).
+        self._session_incomplete: dict[int, str] = {}
         self._dark_theme = False
         self._startup_update_worker: UpdateCheckWorker | None = None
         self._speedtest_worker: SpeedTestWorker | None = None
@@ -93,6 +107,7 @@ class MainWindow(QMainWindow):
 
         self.controls = ControlsBar()
         self.controls.set_dark(self._dark_theme)
+        self.controls.set_download_dir(load_download_dir())
 
         self.update_banner = UpdateBanner()
         self.update_banner.download_requested.connect(self._on_update_download_requested)
@@ -153,6 +168,7 @@ class MainWindow(QMainWindow):
         self.controls.theme_toggled.connect(self._on_theme_toggle)
         self.controls.info_requested.connect(self._open_about_dialog)
         self.controls.experimental_requested.connect(self._open_experimental_dialog)
+        self.controls.download_dir_changed.connect(self._on_download_dir_changed)
         self.jobs_panel.job_double_clicked.connect(self._open_detail)
         self.jobs_panel.cancel_job_requested.connect(self._on_cancel_job_requested)
         self.jobs_panel.delete_folder_requested.connect(self._on_delete_folder_requested)
@@ -164,6 +180,9 @@ class MainWindow(QMainWindow):
         # Misura automatica della banda della linea all'avvio (diretta, fuori
         # dai proxy, in QThread: non blocca la GUI).
         self._run_speedtest()
+        # Ripristino sessione: differito all'avvio del loop eventi (dopo che la
+        # finestra è visibile), così il prompt ha un parent valido.
+        QTimer.singleShot(0, self._maybe_restore_session)
 
         # Heartbeat diagnostico: una riga INFO periodica su app.log con
         # memoria/thread/job attivi/pool vivi. Passivo, non influenza il
@@ -261,6 +280,25 @@ class MainWindow(QMainWindow):
 
     # ---- avvio sessione --------------------------------------------------
 
+    def _on_download_dir_changed(self, path: str) -> None:
+        # Persisti la scelta; se la cartella non è scrivibile, avvisa e torna
+        # al default (evita di scoprirlo solo a download avviato).
+        if path and not os.access(path, os.W_OK):
+            QMessageBox.warning(
+                self, "Cartella non scrivibile",
+                f"Non è possibile scrivere in:\n{path}\n\n"
+                "Torno alla cartella predefinita.",
+            )
+            self.controls.set_download_dir("")
+            save_download_dir("")
+            self._set_status("Cartella di download: predefinita.")
+            return
+        save_download_dir(path)
+        self._set_status(
+            f"Cartella di download: {path}" if path
+            else "Cartella di download: predefinita (downloads/)."
+        )
+
     def _on_start(self) -> None:
         links = self.link_panel.get_links()
         if not links:
@@ -286,6 +324,10 @@ class MainWindow(QMainWindow):
 
         self.jobs_panel.reset(links)
         self._links_by_id = {i: u for i, u in enumerate(links)}
+        # Ripristino sessione (2.7): tutti i link partono "non completati";
+        # ognuno viene rimosso quando termina (completato/abbandonato/annullato).
+        self._session_incomplete = dict(enumerate(links))
+        self._session_persist()
         self._pending_delete.clear()
         self.stats_bar.start_clock()
         self._stats_panel.start_clock()
@@ -306,6 +348,8 @@ class MainWindow(QMainWindow):
         # Banda della linea (Mbit/s): la GUI la legge dalle preferenze e la passa
         # all'orchestrator come config di sessione (il downloader non importa la GUI).
         link_mbit = load_link_speed_mbps()
+        download_dir = self.controls.get_download_dir()
+        self._active_output_root = Path(download_dir) if download_dir else None
         self.orchestrator = DownloadOrchestrator(self.session_state)
         qc = Qt.ConnectionType.QueuedConnection
         self.orchestrator.progress.connect(self.jobs_panel.on_progress, qc)
@@ -349,6 +393,7 @@ class MainWindow(QMainWindow):
             speed_selection_enabled=speed_enabled,
             speed_selection_min_bps=speed_min_bps,
             link_capacity_mbit=link_mbit if link_mbit > 0 else None,
+            output_root=self._active_output_root,
         )
 
     # ---- pausa / annullo globale -----------------------------------------
@@ -368,7 +413,47 @@ class MainWindow(QMainWindow):
         self.jobs_panel.on_cancel_all()
         self.controls.reset()
         self._restore_session_ui()
+        # Annullo esplicito dell'utente: niente prompt di ripristino la prossima
+        # volta (i .part restano comunque su disco per un eventuale riavvio).
+        self._session_incomplete.clear()
+        session_store.clear()
         self._set_status("Annullato.")
+
+    # ---- ripristino sessione (2.7) ---------------------------------------
+
+    def _session_persist(self) -> None:
+        urls = list(self._session_incomplete.values())
+        if urls:
+            session_store.save(urls)
+        else:
+            session_store.clear()
+
+    def _session_mark_finished(self, file_id: int) -> None:
+        # Un job è terminato (completato/abbandonato/annullato/errore): togli il
+        # suo link dai "non completati" e aggiorna il file di stato.
+        if self._session_incomplete.pop(file_id, None) is not None:
+            self._session_persist()
+
+    def _maybe_restore_session(self) -> None:
+        urls = session_store.load()
+        if not urls:
+            return
+        reply = QMessageBox.question(
+            self,
+            "Ripristina sessione",
+            f"La sessione precedente si è chiusa con {len(urls)} link non "
+            "completati.\nVuoi ricaricarli nella lista?\n\n"
+            "I pezzi già scaricati verranno ripresi automaticamente.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            self.link_panel.set_links(urls)
+            self._set_status(
+                f"Ripristinati {len(urls)} link dalla sessione precedente. "
+                "Premi Avvia per riprendere."
+            )
+        else:
+            session_store.clear()
 
     def _restore_session_ui(self) -> None:
         self.link_panel.set_running(False)
@@ -377,6 +462,7 @@ class MainWindow(QMainWindow):
 
     def _on_file_done(self, file_id: int) -> None:
         self.jobs_panel.on_all_done(file_id)
+        self._session_mark_finished(file_id)
         self._completed_files += 1
         self._set_status(
             f"File {file_id + 1} completato "
@@ -395,6 +481,7 @@ class MainWindow(QMainWindow):
             f"File {file_id + 1}: {msg}\n\nIl worker è terminato.",
         )
         self._set_status(f"Errore bloccante file {file_id + 1}: {msg}")
+        self._session_mark_finished(file_id)
         self._completed_files += 1
         if self._completed_files >= self._expected_files:
             self.controls.reset()
@@ -402,6 +489,7 @@ class MainWindow(QMainWindow):
 
     def _on_abandoned(self, file_id: int, url: str, attempts: int, last_error: str) -> None:
         self.jobs_panel.on_abandoned(file_id, url, attempts, last_error)
+        self._session_mark_finished(file_id)
         self._completed_files += 1
         self._set_status(
             f"File {file_id + 1} abbandonato dopo {attempts} tentativi: {last_error}"
@@ -431,6 +519,7 @@ class MainWindow(QMainWindow):
 
     def _on_job_cancelled(self, file_id: int) -> None:
         self.jobs_panel.model.mark_cancelled(file_id)
+        self._session_mark_finished(file_id)
         if file_id in self._pending_delete:
             self._pending_delete.discard(file_id)
             self._delete_folder_for(file_id)
@@ -472,7 +561,7 @@ class MainWindow(QMainWindow):
             if url is None:
                 log.warning("Delete folder: file_id=%d non trovato", file_id)
                 return
-            path = job_output_dir(url, file_id)
+            path = job_output_dir(url, file_id, self._active_output_root)
         if not path.exists():
             self._set_status(f"File {file_id + 1}: cartella non presente su disco.")
             return

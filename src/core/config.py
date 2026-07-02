@@ -1,7 +1,7 @@
 # Costanti globali dell'applicazione.
 from pathlib import Path
 
-APP_VERSION = "1.14.0"
+APP_VERSION = "1.20.0"
 APP_LICENSE = "MIT"
 
 # Repository GitHub usato dal controllo aggiornamenti (scheda Info).
@@ -47,7 +47,16 @@ IP_CHECK_URL = "https://api.ipify.org"
 # processo: cosi' i file finiscono sempre nella stessa cartella anche se l'app
 # viene lanciata da una directory diversa.
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
+# Cartella di default per i download. È anche il fallback quando l'utente non ha
+# scelto una cartella personalizzata dalla GUI (preferenza `download_dir`, che
+# l'orchestrator propaga ai worker): vedi gui/preferences.py e downloader/worker.py.
 OUTPUT_DIR = _PROJECT_ROOT / "downloads"
+
+# Margine di sicurezza (byte) da lasciare libero sul disco: prima di iniziare un
+# download verifichiamo che ci sia spazio per l'intero file PIÙ questo margine,
+# per non riempire il volume al 100% (Windows e molte app degradano a disco
+# pieno). Vedi core/disk.ensure_free_space().
+MIN_FREE_DISK_MARGIN_BYTES = 100 * 1024 * 1024  # 100 MB
 
 # Icona dell'applicazione (finestra + barra applicazioni). Preferito il .ico
 # multi-dimensione (Windows, contiene 16/24/32/48/64/128/256); fallback al
@@ -209,6 +218,11 @@ PARALLEL_THROUGHPUT_GRACE = 15            # (baseline)
 PARALLEL_HTTP_429_BACKOFF_S = 6
 PARALLEL_HTTP_429_BACKOFF_MAX_S = 20
 
+# Se il CDN Mega invia un header `Retry-After` (secondi o data HTTP) su 403/509
+# o 429, lo rispettiamo invece del backoff esponenziale cieco — ma cappato a
+# questo tetto per non congelare una corsia troppo a lungo su un header ostile.
+PARALLEL_RETRY_AFTER_CAP_S = 60
+
 # Budget temporale ASSOLUTO per singolo tentativo di segmento. A prescindere
 # dal throughput istantaneo, se un tentativo dura piu' di N secondi viene
 # abortito e il proxy marcato dead. Difesa contro proxy che si mantengono
@@ -306,6 +320,14 @@ POOL_SCORE_ON_FAILURE = -10
 POOL_SCORE_DEAD_THRESHOLD = -20
 POOL_SCORE_MAX = 100
 
+# Ripristino DECADUTO dello score dalla cache proxy (hot-start). La reputazione
+# costruita in una sessione è preziosa, ma i free-proxy cambiano qualità di ora
+# in ora: si ripristina solo META' del surplus sopra il valore base
+# (score_seed = INITIAL + (cached - INITIAL) * DECAY). Le penalità NON si
+# ereditano (un proxy sotto/uguale a INITIAL riparte da INITIAL): fresh start,
+# nessun morto resuscitato con vantaggio. Vedi ProxyPool._seed_score.
+POOL_SCORE_CACHE_DECAY = 0.5
+
 # Cooldown (secondi) per un proxy che ha ricevuto un rate-limit dal CDN Mega
 # (403/509): viene escluso dalla rotazione per questo tempo e poi torna
 # disponibile, invece di essere scartato definitivamente. Evita di svuotare il
@@ -338,6 +360,11 @@ HEARTBEAT_INTERVAL_S = 120
 # alla root del progetto (stesso schema di app.log / failed_links.log /
 # proxy_sources_stats.log: viene risolto come absolute path nel modulo
 # `proxy/proxy_cache.py`).
+# Ripristino sessione: elenco dei link NON completati dell'ultima sessione,
+# riproposti all'avvio. I .part su disco fanno il resume a livello di byte;
+# questo file serve solo a non far re-incollare i link all'utente.
+SESSION_STATE_PATH = "session_state.json"
+
 PROXY_CACHE_PATH = "proxy_cache.json"
 PROXY_CACHE_TTL_S = 6 * 3600               # entry oltre TTL = scartate al load
 PROXY_CACHE_SAVE_INTERVAL_S = 300          # salvataggio periodico

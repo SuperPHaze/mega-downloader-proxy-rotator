@@ -8,9 +8,12 @@
 # una superficie isolata per le leve in prova: non ne ospita i widget qui.
 from __future__ import annotations
 
+from pathlib import Path
+
 from PyQt6.QtCore import pyqtSignal
 from PyQt6.QtWidgets import (
     QComboBox,
+    QFileDialog,
     QHBoxLayout,
     QLabel,
     QMenu,
@@ -21,7 +24,12 @@ from PyQt6.QtWidgets import (
     QWidgetAction,
 )
 
-from src.core.config import MAX_CONCURRENT_DOWNLOADS, MAX_FILE_DURATION_MINUTES, PARALLEL_CHUNK_SIZE_MB
+from src.core.config import (
+    MAX_CONCURRENT_DOWNLOADS,
+    MAX_FILE_DURATION_MINUTES,
+    OUTPUT_DIR,
+    PARALLEL_CHUNK_SIZE_MB,
+)
 
 
 class ControlsBar(QWidget):
@@ -33,6 +41,7 @@ class ControlsBar(QWidget):
     theme_toggled = pyqtSignal(bool)    # True = tema scuro
     info_requested = pyqtSignal()
     experimental_requested = pyqtSignal()
+    download_dir_changed = pyqtSignal(str)  # "" = torna al default
 
     def __init__(self) -> None:
         super().__init__()
@@ -114,6 +123,17 @@ class ControlsBar(QWidget):
             self.chunk_size_combo.setCurrentIndex(idx)
         self.chunk_size_combo.setFixedWidth(84)
 
+        # Cartella di download: "" = default (downloads/ del programma). Il
+        # bottone mostra il nome della cartella scelta e apre un selettore.
+        self._download_dir: str = ""
+        self.download_dir_btn = QPushButton("Predefinita")
+        self.download_dir_btn.setToolTip(
+            "Cartella dove salvare i file scaricati.\n"
+            "Predefinita: sottocartella 'downloads' del programma."
+        )
+        self.download_dir_btn.clicked.connect(self._choose_download_dir)
+        self.download_dir_btn.setMinimumWidth(150)
+
         # Pulsante Impostazioni: apre il popup con i tre controlli.
         self._settings_btn = QPushButton("⚙  Impostazioni")
         self._settings_btn.setToolTip(
@@ -133,6 +153,7 @@ class ControlsBar(QWidget):
             ("Paralleli:", self.concurrency_combo),
             ("Limite min/file:", self.time_limit_spin),
             ("Pezzo:", self.chunk_size_combo),
+            ("Cartella download:", self.download_dir_btn),
         ):
             _container = QWidget()
             _hl = QHBoxLayout(_container)
@@ -186,6 +207,39 @@ class ControlsBar(QWidget):
             self._settings_btn.rect().bottomLeft()
         )
         self._settings_menu.exec(pos)
+
+    def _choose_download_dir(self) -> None:
+        # Chiudo il popup prima di aprire il dialog modale (evita event loop
+        # annidati sul menu). Un percorso vuoto = l'utente ha annullato.
+        self._settings_menu.close()
+        start_dir = self._download_dir or str(OUTPUT_DIR)
+        chosen = QFileDialog.getExistingDirectory(
+            self, "Scegli la cartella di download", start_dir
+        )
+        if chosen:
+            self.set_download_dir(chosen)
+            self.download_dir_changed.emit(chosen)
+
+    def set_download_dir(self, path: str) -> None:
+        """Imposta la cartella di download mostrata (senza emettere il segnale).
+        `path` vuoto = default. Solo il nome finale è mostrato sul bottone."""
+        self._download_dir = path or ""
+        if self._download_dir:
+            name = Path(self._download_dir).name or self._download_dir
+            self.download_dir_btn.setText(name)
+            self.download_dir_btn.setToolTip(
+                f"Cartella di download:\n{self._download_dir}"
+            )
+        else:
+            self.download_dir_btn.setText("Predefinita")
+            self.download_dir_btn.setToolTip(
+                "Cartella dove salvare i file scaricati.\n"
+                "Predefinita: sottocartella 'downloads' del programma."
+            )
+
+    def get_download_dir(self) -> str:
+        """Cartella di download scelta ("" = usa il default)."""
+        return self._download_dir
 
     def _on_pause(self) -> None:
         self._paused = not self._paused

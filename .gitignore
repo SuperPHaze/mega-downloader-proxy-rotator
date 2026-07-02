@@ -21,6 +21,9 @@ logs/*
 preferences.json
 .claude/settings.local.json
 
+# Stato sessione per il ripristino all'avvio (link non completati)
+session_state.json
+
 # Cache branding remoto (manifest + logo scaricati)
 branding_cache.json
 branding_logo.*
