@@ -68,7 +68,7 @@ Writing follows the **`.part` + atomic rename** pattern: the transfer always hap
 
 The "Experimental Features" panel exposes three controls, each with a short description and an "i" icon that opens the extended explanation: the number of **connections per file** (how many parts of the same file to download in parallel, each over a different proxy; default 10), the **per-chunk budget** (maximum time given to a proxy to finish a chunk before switching; default 180 s, section 6), and **speed-based selection** (checkbox + threshold spinbox in KB/s).
 
-**Speed-based selection** is an alternative download profile: when active it adds a stage 3 validation (real 1 MB speed test), raises candidates to 5 000, reduces connections per file to 5, and selects proxies by measured throughput. Fast proxies (above the configurable threshold, default 500 KB/s) are preferred; slow ones but above the fixed admission threshold (100 KB/s) remain as fallback. Off by default.
+**Speed-based selection** is an alternative download profile: when active it adds a stage 3 validation (real 1 MB speed test), lowers candidates from 12 000 to 5 000 (the speed test is costly), reduces connections per file to 5, and selects proxies by measured throughput. Fast proxies (above the configurable threshold, default 500 KB/s) are preferred; slow ones but above the fixed admission threshold (100 KB/s) remain as fallback. Off by default.
 
 > **A note on default values.** The program is tested on long sessions with the factory defaults. Changing the parameters (parallel downloads, connections per file, chunk size, per-chunk budget) may help in some scenarios and hurt in others, because the behaviour of free proxies is highly variable. Work is ongoing to improve throughput, proxy quality, and resilience on long sessions. For now it is recommended to keep **1 download at a time** and a **32 MB chunk size**.
 
@@ -179,7 +179,7 @@ The values below are factory defaults; the configurable ones are noted according
 | Preference threshold (speed-based selection) | 500 KB/s | configurable from Experimental Features; proxies above threshold served first |
 | Admission threshold (speed-based selection) | 100 KB/s | fixed; proxies below discarded at Stage 3 |
 | Connections per file (speed-based selection) | 5 | reduced from 10 when speed-based selection is active |
-| Maximum candidates (speed-based selection) | 5 000 | raised from 3 000 when speed-based selection is active |
+| Maximum candidates (speed-based selection) | 5 000 | reduced from 12 000 when speed-based selection is active |
 | Speed test URL (Stage 3) | http://speedtest.tele2.net/1MB.zip | external server, not Mega |
 | Bytes downloaded per speed test | 1 MB | measures real proxy throughput |
 | Speed test timeout | 15 s | connect+read per proxy during Stage 3 |

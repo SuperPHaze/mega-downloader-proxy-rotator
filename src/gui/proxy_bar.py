@@ -1,6 +1,7 @@
-# Zona proxy "conservativa": riga di card compatte (Vivi, Validazione,
-# Scartati, Ricariche, Ultimo refill), niente sparkline. Popolata da segnali
-# dell'orchestrator (pool_size_changed, setup_progress, proxy_stats).
+# Zona proxy "conservativa": griglia 2x4 di card compatte su due righe (Vivi,
+# Validazione, Scartati, Ricariche, Ultimo refill, Banda, Banda proxy), niente
+# sparkline. Popolata da segnali dell'orchestrator (pool_size_changed,
+# setup_progress, proxy_stats).
 from __future__ import annotations
 
 from PyQt6.QtCore import pyqtSignal

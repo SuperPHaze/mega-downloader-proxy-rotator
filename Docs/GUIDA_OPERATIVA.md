@@ -68,7 +68,7 @@ La scrittura segue il pattern **`.part` + rename atomico**: il trasferimento avv
 
 Il pannello "Funzioni Sperimentali" espone tre controlli, ciascuno con una breve descrizione e un'icona "i" che apre la spiegazione estesa: il numero di **connessioni per file** (quante parti dello stesso file scaricare in parallelo, ognuna su un proxy diverso; default 10), il **budget per pezzo** (tempo massimo concesso a un proxy per completare un pezzo prima di cambiarlo; default 180 s, sezione 6) e la **selezione per velocità** (checkbox + spinbox soglia in KB/s).
 
-La **selezione per velocità** è un profilo di download alternativo: quando attiva aggiunge uno stadio 3 di validazione (speed test reale da 1 MB), alza i candidati a 5000, riduce le connessioni per file a 5 e seleziona i proxy in base al throughput misurato. I proxy veloci (sopra la soglia configurabile, default 500 KB/s) vengono preferiti; quelli lenti ma sopra la soglia di ammissione fissa (100 KB/s) restano come riserva. Di default è disattivata.
+La **selezione per velocità** è un profilo di download alternativo: quando attiva aggiunge uno stadio 3 di validazione (speed test reale da 1 MB), abbassa i candidati da 12000 a 5000 (lo speed test è costoso), riduce le connessioni per file a 5 e seleziona i proxy in base al throughput misurato. I proxy veloci (sopra la soglia configurabile, default 500 KB/s) vengono preferiti; quelli lenti ma sopra la soglia di ammissione fissa (100 KB/s) restano come riserva. Di default è disattivata.
 
 > **Nota sui valori predefiniti.** Il programma è collaudato su sessioni lunghe con i valori predefiniti impostati di serie. Modificare i parametri (download in parallelo, connessioni per file, dimensione del chunk, budget per pezzo) può portare benefici in alcuni scenari e penalizzare in altri, perché il comportamento dei proxy gratuiti è molto variabile. È in corso un lavoro per migliorare banda, qualità dei proxy e tenuta sulle sessioni lunghe. Per ora si consiglia di mantenere **1 download alla volta** e un **chunk da 32 MB**.
 
@@ -179,7 +179,7 @@ I valori sotto sono i default di fabbrica; quelli regolabili sono indicati nelle
 | Soglia preferenza (selezione per velocità) | 500 KB/s | configurabile da Funzioni Sperimentali; proxy sopra soglia serviti per primi |
 | Soglia ammissione (selezione per velocità) | 100 KB/s | fissa; proxy sotto soglia scartati dallo Stage 3 |
 | Connessioni per file (selezione per velocità) | 5 | ridotto da 10 quando la selezione per velocità è attiva |
-| Candidati massimi (selezione per velocità) | 5000 | elevato da 3000 quando la selezione per velocità è attiva |
+| Candidati massimi (selezione per velocità) | 5000 | ridotto da 12000 quando la selezione per velocità è attiva |
 | URL speed test Stage 3 | http://speedtest.tele2.net/1MB.zip | server esterno, non Mega |
 | Bytes scaricati per speed test | 1 MB | misura il throughput reale del proxy |
 | Timeout speed test | 15 s | connect+read per proxy durante lo Stage 3 |

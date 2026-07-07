@@ -38,7 +38,7 @@ _SPEED_SEL_DESC_SHORT = (
 _SPEED_SEL_DESC_LONG = (
     "Attiva un profilo di download alternativo ottimizzato per la qualità dei proxy. "
     "Cambia diversi parametri della sessione:\n\n"
-    "• Candidati alla validazione: 5000 (anziché 3000)\n"
+    "• Candidati alla validazione: 5000 (anziché 12000)\n"
     "• Terzo stadio di validazione: ogni proxy scarica un file di prova da 1 MB e viene "
     "misurato in velocità reale\n"
     "• Soglia preferenza (configurabile): i proxy sopra questa soglia vengono serviti per "

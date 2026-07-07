@@ -15,7 +15,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Estremi della finestra supportata (Windows + Python 3.11–3.14).
+        # Windows + Python: 3.11 (minimo supportato) e 3.13 (recente stabile su
+        # GitHub Actions). Il range dichiarato dal progetto è 3.11–3.14.
         python-version: ["3.11", "3.13"]
     env:
       # Qt headless: nessun display sui runner CI.
