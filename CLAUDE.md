@@ -64,7 +64,7 @@ src/
     │                      #   _delete_folder_job_file elimina il SINGOLO file di un job-cartella
     │                      #   (+ .part + sidecar) e pota le cartelle vuote, mai l'albero condiviso; ripristino sessione all'avvio (prompt "Riprendi sessione precedente?" da session_store, differito con QTimer.singleShot); propaga la cartella download scelta a orchestrator.start(output_root=...) e la usa per il delete cartella
     ├── link_panel.py      # gestore lista link (nascosto nell'UI, API get_links/set_links/open_paste_dialog)
-    ├── paste_links_dialog.py # dialog modale incolla/edita lista link
+    ├── paste_links_dialog.py # dialog modale incolla/edita lista link; contatori Validi/Non validi/Duplicati/Cartelle
     ├── jobs_model.py      # JobsModel (QAbstractTableModel) + Job (throughput/file_name/output_path)
     ├── jobs_panel.py      # lista job a righe-card (QScrollArea + _JobCard widget per riga); filtri a pulsanti esclusivi (QButtonGroup), senza etichetta; ogni pulsante mostra il conteggio file per categoria ("In corso (N)"/"Completati (N)"/"Non completati (N)"), aggiornato da _update_filter_counts su aggregates_changed
     ├── job_detail_dialog.py # dialog non-modale dettaglio job (doppio clic)

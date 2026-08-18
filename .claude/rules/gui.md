@@ -26,8 +26,40 @@ paths: ["src/gui/**/*.py"]
 - Mai chiamare metodi di un worker direttamente dalla GUI (`worker.do_something()` è vietato): la cancellazione per-job passa SEMPRE dall'orchestrator.
 
 ## Layout
-- `MainWindow` assembla in colonna: `LinkPanel`, `ControlsBar`, `StatsBar`, `JobsPanel`, `LogView`.
-- `JobsPanel` è una `QTableView` su `JobsModel`. Le colonne sono definite in `jobs_model.py` come costanti `COL_*`; **non usare indici letterali**, aggiornare le costanti se si aggiungono/spostano colonne.
-  - `COL_ACTION = 0` ospita la X rossa di cancellazione (delegate `DeleteButtonDelegate`). Click → `JobsPanel.cancel_job_requested(file_id, True)` se job attivo, `delete_folder_requested(file_id)` se job terminato.
+- `MainWindow` assembla in colonna: `UpdateBanner`, `ControlsBar`, la riga cruscotto
+  (`StatsBar` | separatore verticale | `ProxyBar`), `StatsPanel`, `JobsPanel`. `LinkPanel` NON è nel
+  layout: è un gestore senza superficie propria (API `get_links`/`set_links`/`open_paste_dialog`),
+  pilotato dal pulsante Incolla della `ControlsBar`.
+- `JobsPanel` è una **lista a righe-card**: `QScrollArea` con un widget `_JobCard` per job (ha
+  sostituito la vecchia `QTableView`). `JobsModel` resta la fonte dati e le sue colonne sono
+  definite in `jobs_model.py` come costanti `COL_*`; **non usare indici letterali**.
+- Ogni card porta i propri comandi (annulla, apri cartella, riavvia, copia URL): non ci sono piu'
+  delegate di cella. Click sull'annullo → `JobsPanel.cancel_job_requested(file_id, True)` se il job
+  è attivo, `delete_folder_requested(file_id)` se è terminato.
 - Status bar (`QStatusBar`) per messaggi brevi (stato del pool, pausa, annullo, errori non bloccanti).
 - `QMessageBox` per errori bloccanti che richiedono attenzione (es. nessun link inserito) e per conferme distruttive (eliminazione cartella di job terminati).
+- **Eliminare un job nato da un link cartella cancella SOLO quel file** (+ `.part` + sidecar) e pota
+  le cartelle rimaste vuote: l'albero è condiviso con gli altri file della stessa cartella Mega, un
+  `rmtree` cancellerebbe roba altrui. Vedi `_delete_folder_job_file` in `main_window.py` e la regola
+  d'area `downloader.md`.
+
+## Thread di GUI e chiusura della finestra
+Oltre ai worker dell'orchestrator, la `MainWindow` possiede dei `QThread` propri per il lavoro di
+rete che non appartiene a una sessione di download: `UpdateCheckWorker`, `SpeedTestWorker`,
+`ProxySpeedTestWorker`, `FolderExpandWorker`.
+
+- Ogni thread di GUI va **atteso in `closeEvent`** con un `wait(<timeout>)`: distruggere un `QThread`
+  ancora vivo fa crashare l'applicazione.
+- Se lo slot collegato può aprire un dialogo, chiama **`blockSignals(True)` PRIMA di attendere**: a
+  finestra che si sta chiudendo, un `QMessageBox` che compare è un bug, non un avviso.
+- Un thread annullabile espone `request_cancel()` + `is_cancelled()`; l'annullamento richiesto
+  dall'utente non è un errore e non deve produrre popup.
+
+## Fasi di rete prima della sessione
+Alcune azioni fanno rete **prima** che l'orchestrator esista (es. l'espansione di un link cartella
+in `_on_start`, prima di `_start_with_links`). In quella finestra temporale:
+- disabilita **solo Avvia** con `ControlsBar.set_start_enabled(False)`, **non** `set_running(True)`:
+  Pausa e Annulla agiscono su `SessionState`, che qui non c'è ancora, e mostrarli attivi mente
+  all'utente;
+- dai comunque una via d'uscita (es. `QProgressDialog` con Annulla cablato su `request_cancel()`):
+  senza sessione, i comandi globali non possono fermare nulla.
