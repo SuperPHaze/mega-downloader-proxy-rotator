@@ -4,6 +4,28 @@
 
 All notable changes to this project. Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [SemVer](https://semver.org/).
 
+## [1.21.0] — 2026-08-18
+
+### Added
+- **Support for Mega folder links (`/folder/`).** You can now paste the link of a shared folder
+  directly: on Start the program reads its listing and **expands it into the individual files**,
+  which are then downloaded by the usual engine (proxy rotation, parallel chunks, resume of
+  interrupted downloads, history). Every format is recognised: the whole folder
+  (`/folder/<id>#<key>`), the legacy format (`#F!<id>!<key>`), and links pointing to a single file
+  or to a subfolder inside the shared folder. Folder links and single-file links can be mixed
+  freely in the same paste.
+- **Files from a folder are saved as a tree**, under a single folder named after the Mega folder
+  and with the original subfolders preserved
+  (`<download folder>/<Mega folder name>/<subfolder>/<file>`). Names that are invalid on Windows
+  are fixed and duplicates get a numeric suffix, never overwriting anything. If you paste **two
+  different folders with the same name**, the second one goes to "Name (2)": the two trees stay
+  separate instead of mixing.
+- **Targeted deletion of a folder's files.** Cancelling or deleting a file that came from a folder
+  removes **only that file** (along with its temporary files); the other files of the same folder
+  stay where they are.
+- In the "Incolla link Mega" (Paste Mega links) window a **"Cartelle"** (Folders) counter tells
+  folder links apart from single-file links.
+
 ## [1.20.1] — 2026-07-02
 
 ### Changed

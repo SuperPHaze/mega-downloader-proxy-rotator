@@ -74,6 +74,37 @@ The "Experimental Features" panel exposes three controls, each with a short desc
 
 ---
 
+## 5-bis. Mega folder links
+
+Besides single-file links you can paste the link of a **shared folder**. The whole folder
+(`https://mega.nz/folder/<id>#<key>`), the legacy format (`https://mega.nz/#F!<id>!<key>`) and
+links selecting a single file or a subfolder inside the shared folder are all recognised. Folder
+links and single-file links can be mixed freely in the same paste.
+
+When you press **Start**, before any download begins, the program reads the folder listing
+**once** and **expands it into the individual files**: from that moment each file is an
+independent download and goes through the usual engine (proxy rotation, parallel chunks, resume of
+interrupted downloads, history, per-file cancellation). The operation runs in the background, with
+progress shown in the status bar; when it ends, a window summarises what was found. Reading the
+listing is the **only** operation that does not go through the proxies: it happens before the pool
+is ready, and it is not subject to the per-IP limits that affect the actual downloads.
+
+Files are saved as a **tree** (see section 11): all under a single folder named after the Mega
+folder, with the original subfolders preserved. Names that are invalid on Windows are fixed
+segment by segment, and two files that would end up with the same name after the fix get a numeric
+suffix, never overwriting each other. The same holds in edge cases: if you paste **two different
+folders with the same name**, the second one goes to "Name (2)" (the two trees do not mix); if
+inside a folder a file and a subfolder share a name, the folder keeps the name and the file takes
+the suffix. Cancelling or deleting a file from a folder removes **only that file**: the others stay
+where they are, and folders left empty are cleaned up.
+
+Special cases handled: an empty or no longer accessible folder (explicit message, no download
+started); a file whose name cannot be decrypted with the link's key (skipped and reported, so that
+corrupt data is not downloaded); very large folders, where beyond the file limit the program
+**asks for confirmation** stating how many files would be left out, never truncating silently.
+
+---
+
 ## 6. Watchdog and failure handling
 
 Free proxies fail often and in different ways; the program is built to absorb them without stopping. Every chunk transfer attempt is watched by two limits.
@@ -145,7 +176,7 @@ Each job card in a terminal state also shows a summary line with the final avera
 
 ## 11. Output, history, and logs
 
-Downloaded files are saved in dedicated subfolders inside the **download folder**. By default this is the project's `downloads` folder, but it can be changed from the **Settings → "Cartella download:"** (Download folder) menu: the choice is remembered across sessions and, if the chosen folder isn't writable, the program warns you and reverts to the default. Before starting, the program checks that the destination disk has enough space for the file (plus a safety margin): if not, the download is abandoned right away with a clear message instead of failing halfway on a full disk. Each download occupies a folder named after the downloaded file with a numeric suffix (`<file_name>_<id>/`); inside it, the `ciclo_1/`, `ciclo_2/`, … subfolders hold the files produced by each cycle. The folder name is assigned on the first successful link resolve; until then a temporary name based on a URL hash is used. All diagnostic/operational logs are collected in the project's `logs/` folder: the history of completed downloads (deduplicated by Mega handle, used to warn when a link already downloaded is re-entered), the log of abandoned links, per-source proxy metrics, a general technical activity log, a universal structured log (`logs/events.jsonl`), and a raw capture of the entire terminal output of the current session (`logs/terminal-log.txt`, reset on every startup). They are not needed for normal use, but are available for diagnostics.
+Downloaded files are saved in dedicated subfolders inside the **download folder**. By default this is the project's `downloads` folder, but it can be changed from the **Settings → "Cartella download:"** (Download folder) menu: the choice is remembered across sessions and, if the chosen folder isn't writable, the program warns you and reverts to the default. Before starting, the program checks that the destination disk has enough space for the file (plus a safety margin): if not, the download is abandoned right away with a clear message instead of failing halfway on a full disk. Each download from a **single-file link** occupies a folder named after the downloaded file with a numeric suffix (`<file_name>_<id>/`); inside it, the `ciclo_1/`, `ciclo_2/`, … subfolders hold the files produced by each cycle. The folder name is assigned on the first successful link resolve; until then a temporary name based on a URL hash is used. Files coming from a **folder link** follow a **tree** layout instead: they all end up under a single folder named after the Mega folder, with the original subfolders preserved (`<Mega folder name>/<subfolder>/<file>`), with no numeric suffix and no `ciclo_N` level. All diagnostic/operational logs are collected in the project's `logs/` folder: the history of completed downloads (deduplicated by Mega handle, used to warn when a link already downloaded is re-entered), the log of abandoned links, per-source proxy metrics, a general technical activity log, a universal structured log (`logs/events.jsonl`), and a raw capture of the entire terminal output of the current session (`logs/terminal-log.txt`, reset on every startup). They are not needed for normal use, but are available for diagnostics.
 
 A **passive diagnostics suite**, always on, complements these logs: native crash tracebacks, multi-thread exception capture, a periodic heartbeat with memory usage, and session start/clean-exit markers. In case of a crash, the command-line tool `tools/report.py` reads `logs/events.jsonl` and `logs/crash.log` and produces a readable HTML report in `logs/reports/`, useful for reconstructing what the program was doing shortly before the problem.
 
@@ -173,6 +204,8 @@ The values below are factory defaults; the configurable ones are noted according
 | Validation workers | 200 (stage 1) / 120 (stage 2) | concurrency of the two validation stages |
 | **Pre-filter for metadata sources** (ProxyScrape JSON) | uptime ≥ 50%, latency ≤ 3000 ms | applied by the scraper before validation; discards candidates the source flags as unreliable |
 | Rate-limit proxy cooldown | 90 s | excluded from rotation and from the "alive" count on 403/509 from the CDN; returns available when it expires |
+| Maximum files per Mega folder | 500 | beyond the limit the program asks for confirmation and states how many files would be left out |
+| Folder listing read timeout | 60 s | for the single node-listing call |
 | Proxy cache validity | 6 hours | older entries discarded at startup |
 | Proxy score | 0 / +5 / −10 / dead below −20 | initial / success / failure / threshold |
 | **Speed-based selection** (Stage 3) | off | enabled from Experimental Features; adds speed test and throughput-based selection |
@@ -205,4 +238,5 @@ Some behaviors may look like anomalies but are part of normal operation:
 - Speed is determined by the proxies, not the program.
 - Mega can rate-limit the same file even from different IPs (403/509 from the CDN): this is the behavior the tool was originally built to measure. The affected proxy is not discarded but put to rest for 90 seconds, then returns to rotation.
 - Mega also enforces a **per-file concurrent-IP limit** (response `429 "Too Many Concurrent IP Addresses"`): too many different proxies downloading the same file at the same moment get rejected. The program handles it by **retrying the same proxy** (same IP) after a short wait, instead of switching to a new one — changing IP would make the limit worse. Practical consequence: beyond a certain point, adding connections or proxies to the same file does not increase bandwidth. The peak speed on a single file is therefore bounded by both proxy quality and this Mega ceiling.
+- Two **different Mega folders that share the same name** downloaded in **different sessions** end up in the same folder on disk (within the same session they are separated automatically into "Name" and "Name (2)"). Files are never swapped — before considering a file already downloaded the program also checks its size — but the contents of the two folders get mixed. If that happens, it is best to pick a different download folder for the second one.
 - Integrity verification via the downloaded file's MAC is not yet implemented: it is a planned feature.

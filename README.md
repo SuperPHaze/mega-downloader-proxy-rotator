@@ -22,7 +22,7 @@ https://github.com/user-attachments/assets/bb04b245-43e9-430d-8cf6-6c240761c588
 
 
 
-![version](https://img.shields.io/badge/version-1.20.1-blue)
+![version](https://img.shields.io/badge/version-1.21.0-blue)
 ![python](https://img.shields.io/badge/python-3.11%E2%80%933.14-blue)
 ![platform](https://img.shields.io/badge/platform-Windows%2010%2F11-lightgrey)
 ![gui](https://img.shields.io/badge/GUI-PyQt6-green)
@@ -52,6 +52,7 @@ A **Windows desktop app** (Python + PyQt6) that downloads files from Mega.nz by 
 - **Resume** of interrupted downloads and **restart** of failed/abandoned/cancelled ones (only the missing fragments are re-fetched).
 - **Configurable per-file time limit**; past the threshold the file is abandoned.
 - **Download history** with a warning for links already downloaded (deduplicated by Mega handle).
+- **Mega folder links** (`/folder/`): the folder is expanded into its individual files, saved as a tree under a single folder carrying the original name (see the guide).
 - **Per-fragment watchdog**: drops proxies that are too slow or fail to finish in time.
 - **"Experimental Features" panel** with connections per file, fragment budget, and speed-based selection with configurable threshold (real speed test + throughput-based proxy selection).
 - **Passive crash diagnostics**, always on (memory heartbeat, multi-thread tracebacks), universal structured logging (`logs/events.jsonl`), and an HTML report generator (`tools/report.py`).
@@ -78,7 +79,7 @@ install.bat
 
 ## 🔧 Quick usage
 
-1. Paste one or more `https://mega.nz/...` links (or import them from a `.txt` file).
+1. Paste one or more `https://mega.nz/...` links — to a **single file** or to a **folder** — (or import them from a `.txt` file).
 2. Adjust the options in the **Settings** menu and press **Start**.
 3. Follow progress, speed, and attempts for each file; pause, restart, or cancel whenever you want.
 
