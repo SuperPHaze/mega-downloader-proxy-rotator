@@ -48,6 +48,7 @@ App **desktop per Windows** (Python + PyQt6) che scarica file da Mega.nz instrad
 - **Resume** dei download interrotti e **riavvio** di falliti/abbandonati/annullati (riprende solo i chunk mancanti).
 - **Limite di tempo per file** configurabile; oltre la soglia il file viene abbandonato.
 - **Storico download** con avviso sui link già scaricati (dedup per handle Mega).
+- **Link a cartella Mega** (`/folder/`): la cartella viene espansa nei singoli file, salvati ad albero sotto un'unica cartella col nome originale (vedi la guida).
 - **Watchdog per chunk**: scarta i proxy troppo lenti o che non finiscono in tempo.
 - **Pannello "Funzioni sperimentali"** con connessioni per file, budget per pezzo e selezione per velocità con soglia configurabile (test di velocità reale + selezione proxy per throughput).
 - **Diagnostica crash passiva** sempre attiva (heartbeat di memoria, traceback multi-thread), log strutturato universale (`logs/events.jsonl`) e un generatore di report HTML (`tools/report.py`).
@@ -74,7 +75,7 @@ install.bat
 
 ## 🔧 Uso in breve
 
-1. Incolla uno o più link `https://mega.nz/...` (o importali da un file `.txt`).
+1. Incolla uno o più link `https://mega.nz/...` — a **file singolo** o a **cartella** — (o importali da un file `.txt`).
 2. Regola le opzioni dal menù **Impostazioni** e premi **Avvia**.
 3. Segui avanzamento, velocità e tentativi per ogni file; metti in pausa, riavvia o annulla quando vuoi.
 

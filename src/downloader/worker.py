@@ -19,7 +19,12 @@ from src.core.config import (
 )
 from src.core import telemetry
 from src.core.disk import InsufficientDiskSpaceError
-from src.core.file_naming import final_output_dir
+from src.core.file_naming import (
+    final_output_dir,
+    folder_job_output_dir,
+    sanitize_file_name,
+)
+from src.core.mega_links import parse_folder_job_url
 from src.core.state import SessionState
 from src.downloader.mega_client import MegaClient, MegaCryptoDependencyError
 from src.downloader.parallel_client import ParallelMegaDownloader
@@ -100,6 +105,17 @@ class DownloadWorker(QThread):
         super().__init__()
         self.file_id = file_id
         self.mega_url = mega_url
+        # Job generato espandendo una cartella Mega: porta con se' il path
+        # relativo, quindi la destinazione su disco e' nota gia' ora (niente
+        # cartella hash-based, niente rinomina dopo il resolve).
+        self._folder_job = parse_folder_job_url(mega_url)
+        self._folder_file_name: str | None = (
+            sanitize_file_name(
+                self._folder_job.file_name,
+                fallback=f"mega_{self._folder_job.node_handle}",
+            )
+            if self._folder_job is not None else None
+        )
         self.proxy_pool = proxy_pool
         self.session_state = session_state
         # Cartella radice dei download scelta dall'utente (None = default config).
@@ -131,6 +147,42 @@ class DownloadWorker(QThread):
         # None = usa il default di config (comportamento storico).
         self._segment_max_duration_s: int | None = segment_max_duration_s
 
+    def _folder_target_is_complete(self, target: Path) -> bool:
+        """True se `target` e' davvero il NOSTRO file gia' completo."""
+        if not target.is_file():
+            return False
+        if target.with_name(target.name + ".progress.json").exists():
+            return False   # residuo del vecchio schema: incompleto
+        expected = self._folder_job.size if self._folder_job else None
+        try:
+            actual = target.stat().st_size
+        except OSError:
+            return False
+        if expected is None:
+            # Job senza dimensione (forma vecchia): comportamento storico.
+            return actual > 0
+        if actual != expected:
+            log.warning(
+                "[file %d] '%s' esiste ma pesa %d byte invece di %d: non e' il "
+                "nostro file (o e' troncato), lo riscarico",
+                self.file_id, target.name, actual, expected,
+            )
+            return False
+        return True
+
+    def _cycle_dir(self, cycle: int) -> Path:
+        """Cartella in cui scrivere il file di questo ciclo.
+
+        Job normale: `<base>/ciclo_<n>` (cicli multipli dello stesso link in
+        cartelle separate). Job-cartella: la destinazione e' l'albero ricostruito
+        dal path relativo, senza livello `ciclo_N` — l'utente deve ritrovare la
+        cartella Mega cosi' com'era. Con DOWNLOAD_CYCLES > 1 i cicli successivi
+        trovano il file gia' completo e vengono saltati dal check di resume.
+        """
+        if self._folder_job is not None:
+            return self._current_base_dir
+        return self._current_base_dir / f"ciclo_{cycle}"
+
     def _is_deadline_expired(self) -> bool:
         """True solo se il deadline per-file è scaduto E non c'è una cancellazione
         locale/globale: permette di distinguere timeout da cancel esplicito."""
@@ -159,9 +211,14 @@ class DownloadWorker(QThread):
         # secondo skippa tutto.
         # _current_base_dir parte hash-based e viene rinominato in
         # final_output_dir() al primo resolve riuscito.
-        self._current_base_dir = job_output_dir(
-            self.mega_url, self.file_id, self._output_root
-        )
+        if self._folder_job is not None:
+            self._current_base_dir = folder_job_output_dir(
+                self._folder_job.rel_path, self._output_root
+            )
+        else:
+            self._current_base_dir = job_output_dir(
+                self.mega_url, self.file_id, self._output_root
+            )
         # Calcola deadline wall-clock per-file (se limite configurato).
         if self._file_time_limit_s is not None:
             self._file_deadline = time.monotonic() + self._file_time_limit_s
@@ -210,6 +267,11 @@ class DownloadWorker(QThread):
         def _resolved_cb(fn: str, fs: object, fp) -> None:
             if not _name_emitted[0]:
                 _name_emitted[0] = True
+                if self._folder_job is not None:
+                    # Job-cartella: il path e' gia' quello definitivo (deciso
+                    # in fase di espansione), niente rinomina da fare.
+                    self.file_resolved.emit(self.file_id, fn, fs, str(fp))
+                    return
                 # Tenta rinomina cartella base da hash-based a nome-file.
                 new_base = final_output_dir(fn, self.file_id, self._output_root)
                 if new_base != self._current_base_dir:
@@ -240,7 +302,7 @@ class DownloadWorker(QThread):
         # client), non un sidecar `.progress.json*`. Un file con un sidecar
         # accanto e' un residuo del vecchio schema pre-.part: incompleto
         # (la migrazione la fa ParallelMegaDownloader al prossimo download).
-        cycle_dir = self._current_base_dir / f"ciclo_{cycle}"
+        cycle_dir = self._cycle_dir(cycle)
         if cycle_dir.is_dir():
             def _is_final(p: Path) -> bool:
                 if not p.is_file():
@@ -253,7 +315,19 @@ class DownloadWorker(QThread):
                     return False
                 return p.stat().st_size > 0
 
-            done = [p for p in cycle_dir.iterdir() if _is_final(p)]
+            if self._folder_job is not None:
+                # Cartella CONDIVISA con gli altri file dello stesso albero:
+                # "esiste un file finale qualsiasi qui dentro" non significa
+                # che il MIO file sia completo. Si controlla il nome esatto E
+                # la dimensione attesa: nell'albero il path e' stabile fra le
+                # sessioni, quindi un file omonimo lasciato da un'ALTRA
+                # cartella Mega (stesso nome di radice, stesso nome file)
+                # verrebbe altrimenti scambiato per il nostro, e il download
+                # risulterebbe "completato" senza aver scaricato nulla.
+                target = cycle_dir / (self._folder_file_name or "")
+                done = [target] if self._folder_target_is_complete(target) else []
+            else:
+                done = [p for p in cycle_dir.iterdir() if _is_final(p)]
             if done:
                 log.info("[file %d] ciclo %d gia' completato (resume): %s",
                          self.file_id, cycle, done[0].name)
@@ -265,7 +339,9 @@ class DownloadWorker(QThread):
             # `megapy_*` per evitare che il poller scambi vecchi byte per
             # progresso nuovo. I `.part` e i sidecar NON si toccano: servono
             # al resume del parallel client.
-            for p in cycle_dir.iterdir():
+            # Saltata per i job-cartella: la cartella e' condivisa con gli
+            # altri file dell'albero, non e' "nostra" da ripulire.
+            for p in (() if self._folder_job is not None else cycle_dir.iterdir()):
                 if p.is_file() and p.name.startswith("megapy_"):
                     try:
                         p.unlink()
@@ -311,7 +387,7 @@ class DownloadWorker(QThread):
                 return False
             # Ricalcola cycle_dir: _current_base_dir potrebbe essere stato
             # rinominato da _resolved_cb nell'iterazione precedente.
-            cycle_dir = self._current_base_dir / f"ciclo_{cycle}"
+            cycle_dir = self._cycle_dir(cycle)
             log.info("[file %d] ciclo %d tentativo %d: preleva proxy", self.file_id, cycle, attempt)
 
             proxy = self._get_proxy_blocking()

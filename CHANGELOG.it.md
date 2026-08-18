@@ -4,6 +4,28 @@
 
 Tutte le modifiche rilevanti del progetto. Formato basato su [Keep a Changelog](https://keepachangelog.com/it/1.1.0/); versioni secondo [SemVer](https://semver.org/lang/it/).
 
+## [1.21.0] — 2026-08-18
+
+### Aggiunto
+- **Supporto ai link cartella Mega (`/folder/`).** Si può incollare direttamente il link di una
+  cartella condivisa: premendo Avvia il programma ne legge l'elenco e la **espande nei singoli
+  file**, che vengono poi scaricati dal motore di sempre (rotazione proxy, pezzi paralleli,
+  ripresa dei download interrotti, storico). Sono riconosciuti tutti i formati: cartella intera
+  (`/folder/<id>#<chiave>`), formato legacy (`#F!<id>!<chiave>`) e link che puntano a un singolo
+  file o a una sottocartella dentro la cartella condivisa. Nello stesso incolla si possono
+  mescolare link a cartelle e link a file singoli.
+- **I file di una cartella vengono salvati ad albero**, sotto un'unica cartella che porta il nome
+  della cartella Mega e con le sottocartelle originali preservate
+  (`<cartella download>/<Nome cartella Mega>/<sottocartella>/<file>`). I nomi non validi per
+  Windows vengono corretti e i doppioni ricevono un suffisso numerico, senza mai sovrascrivere.
+  Se si incollano **due cartelle diverse con lo stesso nome**, la seconda finisce in
+  «Nome (2)»: i due alberi restano separati invece di mescolarsi.
+- **Eliminazione mirata dei file di una cartella.** Annullando o eliminando un file proveniente
+  da una cartella viene rimosso **solo quel file** (con i suoi file temporanei); gli altri file
+  della stessa cartella restano al loro posto.
+- Nella finestra «Incolla link Mega» un contatore **«Cartelle»** distingue i link a cartella dai
+  link a file singolo.
+
 ## [1.20.1] — 2026-07-02
 
 ### Modificato

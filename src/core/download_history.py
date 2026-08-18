@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
@@ -18,32 +17,25 @@ from src.core.config import (
     DOWNLOAD_HISTORY_LOG_MAX_BYTES,
     LOGS_DIR,
 )
+from src.core.mega_links import extract_handle as _extract_handle
 
 _LOGGER_NAME = "download_history"
 _initialized = False
-
-# Stessi pattern di mega_api._parse_url, duplicati qui perche' core/ non puo'
-# importare da src.downloader (vedi rules/core.md). L'estrazione e' puramente
-# testuale: nessuna chiamata di rete, il check e' istantaneo.
-# Formato corrente: https://mega.nz/file/<handle>#<key> (la key puo' mancare).
-_FILE_HANDLE_RE = re.compile(r"/file/([A-Za-z0-9_-]+)")
-# Formato legacy: https://mega.nz/#!<handle>!<key>
-_LEGACY_HANDLE_RE = re.compile(r"#!([A-Za-z0-9_-]+)!")
 
 
 def extract_handle(url: str) -> str | None:
     """Estrae l'handle Mega da un link pubblico SENZA rete.
 
-    Ritorna None se l'URL non e' in un formato file riconosciuto (es. link
-    a cartelle): in quel caso il chiamante salta il check storico.
+    Ritorna None se l'URL non e' in un formato file riconosciuto (es. link a
+    cartella non ancora espanso): in quel caso il chiamante salta il check
+    storico. Per i job generati espandendo una cartella ritorna l'handle del
+    nodo, cosi' il dedup dello storico resta per-file.
+
+    Delega a core.mega_links, unica fonte di verita' per le forme di URL Mega
+    (prima le regex erano duplicate qui: core/ non puo' importare da
+    src.downloader, ma mega_links vive in core/).
     """
-    m = _FILE_HANDLE_RE.search(url)
-    if m:
-        return m.group(1)
-    m = _LEGACY_HANDLE_RE.search(url)
-    if m:
-        return m.group(1)
-    return None
+    return _extract_handle(url)
 
 
 def _path() -> Path:

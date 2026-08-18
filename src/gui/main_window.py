@@ -15,6 +15,7 @@ from PyQt6.QtWidgets import (
     QLabel,
     QMainWindow,
     QMessageBox,
+    QProgressDialog,
     QVBoxLayout,
     QWidget,
 )
@@ -27,10 +28,13 @@ from src.core.config import (
     OUTPUT_DIR,
     PROXY_SPEEDTEST_STREAMS,
 )
+from src.core.file_naming import folder_job_output_dir, sanitize_file_name
 from src.core.icon_loader import build_app_icon
 from src.core.state import SessionState
 from src.downloader.orchestrator import DownloadOrchestrator
+from src.core.mega_links import is_folder_link, parse_folder_job_url
 from src.downloader.worker import job_output_dir
+from src.gui.folder_expand_worker import FolderExpandWorker
 from src.gui.about_dialog import AboutDialog
 from src.gui.controls import ControlsBar
 from src.gui.experimental_dialog import ExperimentalFeaturesDialog
@@ -86,6 +90,8 @@ class MainWindow(QMainWindow):
         self._startup_update_worker: UpdateCheckWorker | None = None
         self._speedtest_worker: SpeedTestWorker | None = None
         self._proxy_speedtest_worker: ProxySpeedTestWorker | None = None
+        self._folder_expander: FolderExpandWorker | None = None
+        self._expand_dialog: QProgressDialog | None = None
 
         # LinkPanel: nascosto dall'UI ma funzionale come gestore della lista link.
         self.link_panel = LinkPanel()
@@ -305,7 +311,107 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Nessun link",
                                 "Aggiungi almeno un link Mega prima di avviare.")
             return
+        # Un link a cartella non e' scaricabile com'e': va prima elencato ed
+        # espanso in un job per file. E' una chiamata di rete, quindi gira in
+        # un QThread e il flusso riprende in _on_expansion_done.
+        if any(is_folder_link(u) for u in links):
+            self._begin_folder_expansion(links)
+            return
+        self._start_with_links(links)
 
+    # ---- espansione dei link cartella ------------------------------------
+
+    def _begin_folder_expansion(self, links: list[str]) -> None:
+        if self._folder_expander is not None and self._folder_expander.isRunning():
+            # Il pulsante Avvia e' gia' disabilitato: qui si copre solo il caso
+            # di un secondo invio del segnale prima che il thread abbia finito.
+            self._set_status("Espansione gia' in corso, attendi…")
+            return
+        n_folders = sum(1 for u in links if is_folder_link(u))
+        self.controls.set_start_enabled(False)
+        self._set_status(
+            f"Espansione di {n_folders} cartella Mega in corso…" if n_folders == 1
+            else f"Espansione di {n_folders} cartelle Mega in corso…"
+        )
+        qc = Qt.ConnectionType.QueuedConnection
+        self._folder_expander = FolderExpandWorker(links)
+        self._folder_expander.finished_ok.connect(self._on_expansion_done, qc)
+        self._folder_expander.failed.connect(self._on_expansion_failed, qc)
+        self._folder_expander.progress.connect(self._on_expansion_progress, qc)
+        # Barra di avanzamento annullabile: l'elenco puo' richiedere minuti se
+        # la rete verso Mega e' filtrata (5 tentativi con backoff), e in quella
+        # fase Pausa/Annulla della sessione non sono ancora attivi: senza questo
+        # l'unico modo di uscire sarebbe chiudere la finestra.
+        dlg = QProgressDialog(
+            "Lettura delle cartelle Mega in corso…", "Annulla", 0, max(1, n_folders),
+            self,
+        )
+        dlg.setWindowTitle("Espansione cartelle")
+        dlg.setWindowModality(Qt.WindowModality.WindowModal)
+        dlg.setMinimumDuration(0)
+        dlg.setAutoClose(False)
+        dlg.setAutoReset(False)
+        dlg.setValue(0)
+        dlg.canceled.connect(self._on_expansion_cancel_requested)
+        self._expand_dialog = dlg
+        self._folder_expander.start()
+
+    def _on_expansion_cancel_requested(self) -> None:
+        if self._folder_expander is not None and self._folder_expander.isRunning():
+            self._set_status("Annullamento dell'espansione…")
+            self._folder_expander.request_cancel()
+
+    def _on_expansion_progress(self, done: int, total: int) -> None:
+        self._set_status(f"Espansione cartelle: {done}/{total}…")
+        if self._expand_dialog is not None:
+            self._expand_dialog.setValue(done)
+
+    def _close_expand_dialog(self) -> None:
+        if self._expand_dialog is not None:
+            self._expand_dialog.close()
+            self._expand_dialog = None
+
+    def _on_expansion_failed(self, msg: str) -> None:
+        self._close_expand_dialog()
+        self.controls.set_start_enabled(True)
+        if self._folder_expander is not None and self._folder_expander.is_cancelled():
+            # Annullata dall'utente: nessun popup d'errore, non e' un guasto.
+            self._set_status("Espansione annullata.")
+            return
+        self._set_status("Espansione cartella non riuscita.")
+        QMessageBox.warning(
+            self,
+            "Cartella Mega non espansa",
+            "Non è stato possibile ricavare i file dalla cartella:\n\n" + msg,
+        )
+
+    def _on_expansion_done(
+        self, links: list[str], report: list[str], truncated: int,
+    ) -> None:
+        self._close_expand_dialog()
+        self.controls.set_start_enabled(True)
+        # I doppioni e le collisioni di path sono gia' stati risolti dal worker
+        # (deduplicate_job_urls), che vede l'insieme completo dei job.
+        unique = list(links)
+        if truncated:
+            proceed = QMessageBox.question(
+                self,
+                "Cartella molto grande",
+                f"La cartella contiene più file del limite dell'app: "
+                f"{truncated} file NON verranno scaricati.\n\n"
+                f"Vuoi procedere con i primi {len(unique)}?",
+            )
+            if proceed != QMessageBox.StandardButton.Yes:
+                self._set_status("Avvio annullato.")
+                return
+        if report:
+            QMessageBox.information(
+                self, "Cartelle Mega espanse", "\n".join(report),
+            )
+        self._set_status(f"{len(unique)} file pronti al download.")
+        self._start_with_links(unique)
+
+    def _start_with_links(self, links: list[str]) -> None:
         links = confirm_already_downloaded(links, self)
         if links is None:
             return
@@ -534,17 +640,32 @@ class MainWindow(QMainWindow):
             self._restore_session_ui()
 
     def _on_delete_folder_requested(self, file_id: int) -> None:
+        url = self._links_by_id.get(file_id)
+        is_folder_job = url is not None and parse_folder_job_url(url) is not None
         confirm = QMessageBox.question(
             self,
-            "Eliminare cartella?",
-            f"Eliminare la cartella su disco del file {file_id + 1}?\n"
-            f"L'operazione è irreversibile.",
+            "Eliminare dal disco?",
+            (
+                f"Eliminare il file {file_id + 1} dalla cartella scaricata?\n"
+                "Gli altri file della stessa cartella Mega restano al loro posto.\n"
+                "L'operazione è irreversibile."
+                if is_folder_job else
+                f"Eliminare la cartella su disco del file {file_id + 1}?\n"
+                "L'operazione è irreversibile."
+            ),
         )
         if confirm != QMessageBox.StandardButton.Yes:
             return
         self._delete_folder_for(file_id)
 
     def _delete_folder_for(self, file_id: int) -> None:
+        # Job nato dall'espansione di una cartella: la cartella su disco e'
+        # CONDIVISA con gli altri file dello stesso albero (alcuni magari
+        # ancora in corso o gia' completati). Si elimina solo questo file.
+        folder_url = self._links_by_id.get(file_id)
+        if folder_url is not None and parse_folder_job_url(folder_url) is not None:
+            self._delete_folder_job_file(file_id, folder_url)
+            return
         # Usa il path corrente dal modello se disponibile (la cartella potrebbe
         # essere stata rinominata col nome file dopo il resolve).
         path: Path | None = None
@@ -576,6 +697,55 @@ class MainWindow(QMainWindow):
                 "Eliminazione cartella fallita",
                 f"Impossibile eliminare {path}:\n{exc}",
             )
+
+    def _delete_folder_job_file(self, file_id: int, url: str) -> None:
+        """Elimina il singolo file di un job-cartella (mai l'albero condiviso).
+
+        Rimuove il file finale, il `.part` e i sidecar di resume, poi pota le
+        cartelle rimaste vuote risalendo fino alla radice dei download
+        (esclusa): se altri file dell'albero esistono ancora, la potatura si
+        ferma da sola alla prima cartella non vuota.
+        """
+        job = parse_folder_job_url(url)
+        if job is None:
+            return
+        root = self._active_output_root or OUTPUT_DIR
+        directory = folder_job_output_dir(job.rel_path, self._active_output_root)
+        name = sanitize_file_name(job.file_name, fallback=f"mega_{job.node_handle}")
+        targets = [
+            directory / name,
+            directory / f"{name}.part",
+            directory / f"{name}.part.progress.json",
+            directory / f"{name}.progress.json",   # sidecar del vecchio schema
+        ]
+        removed = 0
+        for target in targets:
+            try:
+                if target.is_file():
+                    target.unlink()
+                    removed += 1
+            except OSError as exc:
+                log.warning("Impossibile eliminare %s: %s", target, exc)
+        if removed == 0:
+            self._set_status(
+                f"File {file_id + 1}: nessun file da eliminare su disco."
+            )
+            return
+        # Potatura delle cartelle rimaste vuote (mai la radice dei download).
+        current = directory
+        try:
+            root_resolved = root.resolve()
+            while current.resolve() != root_resolved and current.is_dir():
+                if any(current.iterdir()):
+                    break
+                parent = current.parent
+                current.rmdir()
+                log.info("Cartella vuota rimossa: %s", current)
+                current = parent
+        except OSError as exc:
+            log.debug("Potatura cartelle interrotta su %s: %s", current, exc)
+        log.info("File del job-cartella eliminato: %s", directory / name)
+        self._set_status(f"File {file_id + 1}: file eliminato ({name}).")
 
     # ---- tema chiaro/scuro ----------------------------------------------
 
@@ -662,6 +832,13 @@ class MainWindow(QMainWindow):
             self._speedtest_worker.wait(3000)
         if self._proxy_speedtest_worker is not None and self._proxy_speedtest_worker.isRunning():
             self._proxy_speedtest_worker.wait(3000)
+        if self._folder_expander is not None and self._folder_expander.isRunning():
+            # Zittisci i segnali PRIMA di attendere: la finestra sta sparendo e
+            # uno slot che apre un QMessageBox durante la chiusura non ha senso.
+            self._folder_expander.blockSignals(True)
+            self._folder_expander.request_cancel()
+            self._folder_expander.wait(3000)
+        self._close_expand_dialog()
         # Marcatore di chiusura volontaria: se nel log compare un SESSION
         # START senza questo prima del successivo START, e' stato un crash o
         # un kill esterno (non una chiusura dall'utente).

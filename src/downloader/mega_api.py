@@ -9,7 +9,6 @@ from __future__ import annotations
 import json
 import logging
 import random
-import re
 import threading
 import time
 from typing import Callable
@@ -17,6 +16,12 @@ from typing import Callable
 import requests
 
 from src.core.file_naming import sanitize_file_name
+from src.core.mega_links import (
+    MegaFolderJobLink,
+    parse_file_link,
+    parse_folder_job_url,
+    parse_folder_link,
+)
 from src.core.proxy_url import build_proxies_dict
 from src.downloader.mega_crypto import (
     base64_to_a32,
@@ -30,8 +35,6 @@ log = logging.getLogger(__name__)
 API_URL = "https://g.api.mega.co.nz/cs"
 _SEQ_LOCK = threading.Lock()
 _SEQUENCE_NUMBER = random.randint(0, 0xFFFFFFFF)
-_FILE_HANDLE_RE = re.compile(r"/file/([A-Za-z0-9_-]+)#([A-Za-z0-9_,-]+)")
-_LEGACY_HANDLE_RE = re.compile(r"#!([A-Za-z0-9_-]+)!([A-Za-z0-9_,-]+)")
 
 
 class MegaApiError(Exception):
@@ -90,14 +93,23 @@ class MegaPublicClient:
             elapsed += step
         return False
 
-    def _api_request(self, payload: dict) -> dict:
+    def _api_request(
+        self, payload: dict, extra_params: dict[str, str] | None = None
+    ) -> dict:
+        """`extra_params` finisce nella QUERY della POST (oltre a `id`).
+
+        Serve alle cartelle condivise, che richiedono `n=<folder_id>` come
+        parametro di query per dare contesto alla chiamata.
+        """
         body = json.dumps([payload])
         last_err: Exception | None = None
         # Retry esplicito su -3 (EAGAIN) e su errori di rete, bounded a 5 tentativi.
         # Sostituisce il clamp tenacity sul vecchio mega.py. Backoff cappato a 30s
         # (era 60) e INTERROMPIBILE via should_abort per non ignorare un Annulla.
         for attempt in range(1, 6):
-            params = {"id": _next_seq()}
+            params: dict[str, object] = {"id": _next_seq()}
+            if extra_params:
+                params.update(extra_params)
             try:
                 resp = self._session.post(
                     API_URL, params=params, data=body, timeout=self.timeout,
@@ -126,15 +138,25 @@ class MegaPublicClient:
         raise MegaApiError(f"API Mega: 5 tentativi esauriti ({last_err})")
 
     def _parse_url(self, url: str) -> tuple[str, str]:
-        m = _FILE_HANDLE_RE.search(url)
-        if m:
-            return m.group(1), m.group(2)
-        m = _LEGACY_HANDLE_RE.search(url)
-        if m:
-            return m.group(1), m.group(2)
+        """(handle, chiave b64) di un link a FILE singolo.
+
+        I link a cartella non sono risolvibili qui: vanno prima espansi in job
+        per-file (vedi downloader/mega_folder.py).
+        """
+        link = parse_file_link(url)
+        if link is not None:
+            return link.handle, link.key_b64
+        if parse_folder_link(url) is not None:
+            raise MegaApiError(
+                "link a cartella Mega: va espanso in singoli file prima del "
+                f"download ({url})"
+            )
         raise MegaApiError(f"URL Mega non parsabile: {url}")
 
     def resolve_public_url(self, mega_url: str) -> dict:
+        job = parse_folder_job_url(mega_url)
+        if job is not None:
+            return self._resolve_folder_node(job)
         handle, key_b64 = self._parse_url(mega_url)
         raw_key = base64_to_a32(key_b64)
         k, iv = derive_file_key(raw_key)
@@ -163,6 +185,69 @@ class MegaPublicClient:
             "file_size": file_size,
             "file_name": file_name,
         }
+
+    def _resolve_folder_node(self, job: MegaFolderJobLink) -> dict:
+        """Risolve un NODO dentro una cartella condivisa (job auto-contenuto).
+
+        Differenze rispetto al file pubblico singolo:
+          - la chiave a 8 word e' gia' decifrata e viaggia dentro il job, non
+            va ricavata dal fragment di un link pubblico;
+          - la richiesta `g` usa `n` DUE VOLTE con due significati diversi:
+            nel PAYLOAD `n` e' l'handle del nodo, nella QUERY `n` e' l'id della
+            cartella condivisa che da' contesto alla chiamata. Non e' un refuso.
+          - il nome file NON si prende dagli attributi della risposta: e' gia'
+            stato deciso (sanificato e de-collisionato) in fase di espansione e
+            viaggia nel job, cosi' il path su disco resta stabile fra i retry.
+        """
+        raw_key = base64_to_a32(job.node_key_b64)
+        if len(raw_key) < 8:
+            raise MegaApiError(
+                f"chiave del nodo troppo corta ({len(raw_key)} word): "
+                f"{job.node_handle}"
+            )
+        k, iv = derive_file_key(raw_key)
+        resp = self._api_request(
+            {"a": "g", "g": 1, "n": job.node_handle},
+            extra_params={"n": job.folder_id},
+        )
+        if "g" not in resp:
+            raise MegaApiError(
+                f"File non accessibile nella cartella (API senza 'g'): {resp!r}"
+            )
+        cdn_url = resp["g"]
+        try:
+            file_size = int(resp["s"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise MegaApiError(f"size mancante o invalida: {exc}") from exc
+        file_name = sanitize_file_name(
+            job.file_name, fallback=f"mega_{job.node_handle}"
+        )
+        return {
+            "handle": job.node_handle,
+            "k": k,
+            "iv": iv,
+            "cdn_url": cdn_url,
+            "file_size": file_size,
+            "file_name": file_name,
+        }
+
+    def list_folder(self, folder_id: str) -> list[dict]:
+        """Elenca RICORSIVAMENTE i nodi di una cartella pubblica Mega.
+
+        Una sola chiamata per cartella: `r:1` restituisce l'intero albero, che
+        viene poi decifrato in locale con la master key del link. Ritorna la
+        lista grezza dei nodi (`f` della risposta): la decifratura e la
+        ricostruzione dell'albero stanno in downloader/mega_folder.py.
+        """
+        resp = self._api_request(
+            {"a": "f", "c": 1, "r": 1, "ca": 1}, extra_params={"n": folder_id},
+        )
+        nodes = resp.get("f")
+        if not isinstance(nodes, list):
+            raise MegaApiError(
+                f"elenco della cartella non disponibile (risposta: {resp!r})"
+            )
+        return [n for n in nodes if isinstance(n, dict)]
 
     def get_public_url_info(self, mega_url: str) -> dict | None:
         """Versione lightweight: solo `name` e `size`."""

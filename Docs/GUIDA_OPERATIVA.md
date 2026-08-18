@@ -74,6 +74,41 @@ La **selezione per velocità** è un profilo di download alternativo: quando att
 
 ---
 
+## 5-bis. Link a cartella Mega
+
+Oltre ai link a file singolo si può incollare il link di una **cartella condivisa**. Sono
+riconosciuti la cartella intera (`https://mega.nz/folder/<id>#<chiave>`), il formato legacy
+(`https://mega.nz/#F!<id>!<chiave>`) e i link che selezionano un singolo file o una
+sottocartella all'interno della cartella condivisa. Nello stesso incolla si possono mescolare
+liberamente link a cartelle e link a file singoli.
+
+Alla pressione di **Avvia**, prima di iniziare i download, il programma legge **una sola volta**
+l'elenco della cartella e lo **espande nei singoli file**: da quel momento ogni file è un
+download indipendente e passa per lo stesso motore di sempre (rotazione dei proxy, pezzi
+paralleli, ripresa dei download interrotti, storico, annullamento per singolo file). L'operazione
+avviene in secondo piano, con l'avanzamento indicato nella barra di stato; al termine una
+finestra riepiloga che cosa è stato trovato. La lettura dell'elenco è l'**unica** operazione che
+non passa dai proxy: avviene prima che il pool sia pronto, e non è soggetta ai limiti per-IP che
+riguardano invece i download veri e propri.
+
+I file vengono salvati **ad albero** (vedi §11): tutti sotto un'unica cartella col nome della
+cartella Mega, con le sottocartelle originali preservate. I nomi non validi per Windows vengono
+corretti segmento per segmento e due file che dopo la correzione avrebbero lo stesso nome
+ricevono un suffisso numerico, senza mai sovrascriversi. Lo stesso vale nei casi limite: se si
+incollano **due cartelle diverse che si chiamano allo stesso modo**, la seconda va in
+«Nome (2)» (i due alberi non si mescolano); se dentro una cartella un file e una sottocartella
+hanno lo stesso nome, la cartella tiene il nome e il file prende il suffisso. Annullando o
+eliminando un file di una cartella viene rimosso **solo quel file**: gli altri restano al loro
+posto, e le cartelle che rimangono vuote vengono ripulite.
+
+Casi particolari gestiti: cartella vuota o non più accessibile (messaggio esplicito, nessun
+download avviato); file il cui nome non è decifrabile con la chiave del link (saltato e
+segnalato, per non scaricare dati corrotti); cartelle molto grandi, dove oltre il limite di file
+previsto il programma **chiede conferma** indicando quanti file resterebbero esclusi, senza mai
+troncare in silenzio.
+
+---
+
 ## 6. Watchdog e gestione dei fallimenti
 
 I proxy gratuiti falliscono spesso e in modi diversi; il programma è costruito per assorbirli senza fermarsi. Ogni tentativo di trasferimento di un chunk è sorvegliato da due limiti.
@@ -145,7 +180,7 @@ Ogni card di job in stato terminale mostra inoltre una riga di riepilogo con la 
 
 ## 11. Output, storico e log
 
-I file scaricati vengono salvati in sottocartelle dedicate dentro la **cartella di download**. Per impostazione predefinita è la cartella `downloads` del progetto, ma può essere cambiata dal menu **Impostazioni → «Cartella download:»**: la scelta viene ricordata tra le sessioni e, se la cartella indicata non è scrivibile, il programma avvisa e torna alla predefinita. Prima di iniziare, il programma verifica che sul disco di destinazione ci sia spazio sufficiente per il file (più un margine di sicurezza): in mancanza, il download viene abbandonato subito con un messaggio chiaro invece di fallire a metà con il disco pieno. Ogni download occupa una cartella con il nome del file scaricato e un suffisso numerico (`<nome_file>_<id>/`); al suo interno le sottocartelle `ciclo_1/`, `ciclo_2/`, … contengono i file prodotti da ciascun ciclo. Il nome della cartella viene assegnato al primo resolve riuscito del link: fino a quel momento viene usato un nome temporaneo basato sull'hash dell'URL. Tutti i log diagnostici/operativi sono raccolti nella cartella `logs/` del progetto: lo storico dei download completati (con deduplica per handle Mega, usato per avvisare quando si reinserisce un link già scaricato), il registro dei link abbandonati, le metriche per-fonte dei proxy, un log tecnico generale dell'attività, un log strutturato universale (`logs/events.jsonl`) e una cattura grezza dell'intero output del terminale della sessione corrente (`logs/terminal-log.txt`, riazzerato a ogni avvio). Non servono per l'uso ordinario, ma sono disponibili per la diagnostica.
+I file scaricati vengono salvati in sottocartelle dedicate dentro la **cartella di download**. Per impostazione predefinita è la cartella `downloads` del progetto, ma può essere cambiata dal menu **Impostazioni → «Cartella download:»**: la scelta viene ricordata tra le sessioni e, se la cartella indicata non è scrivibile, il programma avvisa e torna alla predefinita. Prima di iniziare, il programma verifica che sul disco di destinazione ci sia spazio sufficiente per il file (più un margine di sicurezza): in mancanza, il download viene abbandonato subito con un messaggio chiaro invece di fallire a metà con il disco pieno. Ogni download da **link a file singolo** occupa una cartella con il nome del file scaricato e un suffisso numerico (`<nome_file>_<id>/`); al suo interno le sottocartelle `ciclo_1/`, `ciclo_2/`, … contengono i file prodotti da ciascun ciclo. Il nome della cartella viene assegnato al primo resolve riuscito del link: fino a quel momento viene usato un nome temporaneo basato sull'hash dell'URL. I file provenienti da un **link a cartella** seguono invece un layout **ad albero**: finiscono tutti sotto un'unica cartella che porta il nome della cartella Mega, con le sottocartelle originali preservate (`<Nome cartella Mega>/<sottocartella>/<file>`), senza suffisso numerico e senza livello `ciclo_N`. Tutti i log diagnostici/operativi sono raccolti nella cartella `logs/` del progetto: lo storico dei download completati (con deduplica per handle Mega, usato per avvisare quando si reinserisce un link già scaricato), il registro dei link abbandonati, le metriche per-fonte dei proxy, un log tecnico generale dell'attività, un log strutturato universale (`logs/events.jsonl`) e una cattura grezza dell'intero output del terminale della sessione corrente (`logs/terminal-log.txt`, riazzerato a ogni avvio). Non servono per l'uso ordinario, ma sono disponibili per la diagnostica.
 
 Una **suite di diagnostica passiva**, sempre attiva, integra questi log: traceback dei crash nativi, cattura delle eccezioni su tutti i thread, un heartbeat periodico con uso di memoria e marcatori di avvio/chiusura della sessione. In caso di crash, lo strumento da riga di comando `tools/report.py` legge `logs/events.jsonl` e `logs/crash.log` e produce un report HTML leggibile in `logs/reports/`, utile per ricostruire cosa stava succedendo nel programma poco prima del problema.
 
@@ -173,6 +208,8 @@ I valori sotto sono i default di fabbrica; quelli regolabili sono indicati nelle
 | Worker di validazione | 200 (stage 1) / 120 (stage 2) | concorrenza dei due stadi di validazione |
 | **Pre-filtro fonti con metadati** (ProxyScrape JSON) | uptime ≥ 50%, latency ≤ 3000 ms | applicato dallo scraper prima della validazione; scarta i candidati che la fonte segnala come inaffidabili |
 | Cooldown proxy rate-limit | 90 s | escluso dalla rotazione e dal conteggio "vivi" alla ricezione di 403/509 dal CDN; torna disponibile allo scadere |
+| File massimi per cartella Mega | 500 | oltre il limite il programma chiede conferma e indica quanti file resterebbero esclusi |
+| Timeout lettura elenco cartella | 60 s | per la singola chiamata di elenco nodi |
 | Validità cache proxy | 6 ore | voci più vecchie scartate all'avvio |
 | Punteggio proxy | 0 / +5 / −10 / morto sotto −20 | iniziale / successo / fallimento / soglia |
 | **Selezione per velocità** (Stage 3) | off | abilitabile da Funzioni Sperimentali; aggiunge speed test e selezione per throughput |
@@ -205,4 +242,5 @@ Alcuni comportamenti possono sembrare anomalie ma sono parte del normale funzion
 - La velocità è determinata dai proxy, non dal programma.
 - Mega può applicare rate-limit allo stesso file anche da IP diversi (403/509 dal CDN): è il comportamento che il tool è nato per misurare. Il proxy colpito non viene scartato ma messo a riposo per 90 secondi, poi torna in rotazione.
 - Mega impone inoltre un **limite di IP concorrenti per singolo file** (risposta `429 "Too Many Concurrent IP Addresses"`): troppi proxy diversi che scaricano lo stesso file nello stesso momento vengono respinti. Il programma lo gestisce **ri-provando lo stesso proxy** (stesso IP) dopo una breve attesa, invece di passarne a uno nuovo — cambiare IP peggiorerebbe il limite. Conseguenza pratica: oltre una certa soglia, aggiungere connessioni o proxy sullo stesso file non aumenta la banda. La velocità massima su un singolo file è quindi limitata sia dalla qualità dei proxy sia da questo tetto di Mega.
+- Due cartelle Mega **diverse ma con lo stesso nome** scaricate in **sessioni diverse** condividono la stessa cartella su disco (nella stessa sessione vengono invece separate automaticamente in «Nome» e «Nome (2)»). I file non vengono scambiati — prima di considerare un file già scaricato il programma ne verifica anche la dimensione — ma i contenuti delle due cartelle finiscono mescolati. Se capita, conviene scegliere una cartella di download diversa per la seconda.
 - La verifica dell'integrità tramite MAC del file scaricato non è ancora implementata: è una funzionalità pianificata.

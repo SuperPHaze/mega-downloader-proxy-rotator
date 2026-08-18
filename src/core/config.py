@@ -1,7 +1,7 @@
 # Costanti globali dell'applicazione.
 from pathlib import Path
 
-APP_VERSION = "1.20.1"
+APP_VERSION = "1.21.0"
 APP_LICENSE = "MIT"
 
 # Repository GitHub usato dal controllo aggiornamenti (scheda Info).
@@ -401,6 +401,17 @@ VALIDATOR_SPEED_TEST_WORKERS = 30                      # concorrenza stage 3
 # poche connessioni) e aumenta la soglia quando il carico cresce.
 ADAPTIVE_REFILL_FLOOR = 10           # proxy minimi anche con 0 download attivi
 ADAPTIVE_REFILL_MULTIPLIER = 3       # margine per mortalita' naturale dei proxy
+
+# ---------------------------------------------------------------------------
+# Link a CARTELLA Mega (/folder/)
+# ---------------------------------------------------------------------------
+# Un link cartella viene elencato UNA volta e espanso in N job-file
+# auto-contenuti, che poi scorrono nel motore di download normale.
+MEGA_FOLDER_LIST_TIMEOUT = 60        # secondi per la chiamata di elenco nodi
+# Tetto ai file estratti da una singola cartella: protegge coda e GUI (una card
+# per job) da cartelle con migliaia di elementi. Superarlo NON tronca in
+# silenzio: viene loggato a WARNING e la GUI chiede conferma all'utente.
+MEGA_FOLDER_MAX_FILES = 500
 
 # ---------------------------------------------------------------------------
 # Speed test della LINEA dell'utente (diretto, FUORI dai proxy)

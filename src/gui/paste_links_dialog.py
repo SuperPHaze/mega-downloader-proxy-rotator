@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from src.core.mega_links import is_folder_link
 from src.gui.style import PALETTE
 
 
@@ -65,10 +66,17 @@ class PasteLinksDialog(QDialog):
         stats_row = QHBoxLayout()
         stats_row.setSpacing(14)
         self.lbl_valid = QLabel("Validi: 0")
+        self.lbl_folders = QLabel("Cartelle: 0")
         self.lbl_invalid = QLabel("Non validi: 0")
         self.lbl_dups = QLabel("Duplicati: 0")
+        # La cartella conta come UN link qui: quanti file contenga si sa solo
+        # dopo l'espansione (che fa rete e avviene all'Avvia).
+        self.lbl_folders.setToolTip(
+            "Link a cartella Mega: all'avvio vengono espansi nei file contenuti."
+        )
         for lbl, color in (
             (self.lbl_valid, PALETTE["accent_ok"]),
+            (self.lbl_folders, PALETTE["accent_info"]),
             (self.lbl_invalid, PALETTE["accent_fail"]),
             (self.lbl_dups, PALETTE["accent_warn"]),
         ):
@@ -102,6 +110,8 @@ class PasteLinksDialog(QDialog):
 
     def _parse_current(self) -> tuple[list[str], int, int]:
         # Ritorna (validi_nuovi, n_invalidi, n_duplicati).
+        # I link a cartella passano di qui come qualunque altro link Mega:
+        # l'espansione in singoli file avviene all'avvio (richiede rete).
         raw = self.edit.toPlainText().splitlines()
         seen_in_input: set[str] = set()
         valid_new: list[str] = []
@@ -127,6 +137,8 @@ class PasteLinksDialog(QDialog):
 
     def _recompute_stats(self) -> None:
         valid_new, invalid, dups = self._parse_current()
+        n_folders = sum(1 for u in valid_new if is_folder_link(u))
+        self.lbl_folders.setText(f"Cartelle: {n_folders}")
         # "Validi" totale = righe che matchano il prefisso, indipendentemente
         # dai duplicati (per dare all'utente il colpo d'occhio).
         valid_total = len(valid_new) + (dups if not self._allow_duplicates else 0)

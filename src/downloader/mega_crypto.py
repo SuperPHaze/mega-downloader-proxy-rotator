@@ -44,6 +44,25 @@ def decrypt_attr(data: bytes, key: tuple[int, ...]) -> dict | None:
         return None
 
 
+def decrypt_key(enc: tuple[int, ...], master: tuple[int, ...]) -> tuple[int, ...]:
+    """Decifra la chiave di un nodo con la master key della cartella condivisa.
+
+    Semantica Mega: AES a BLOCCHI INDIPENDENTI da 16 byte (4 word), cioe' ECB
+    (equivalente a CBC con IV azzerato *rifatto per ogni blocco*, come in
+    decrypt_attr). Una singola CBC su 32 byte sbaglierebbe il secondo blocco:
+    e' l'errore classico nell'implementare le cartelle Mega.
+
+    Ritorna 4 word (nodo cartella) o 8 word (nodo file, da passare a
+    derive_file_key).
+    """
+    if not enc or len(enc) % 4 != 0:
+        raise ValueError(f"chiave cifrata di lunghezza non valida: {len(enc)} word")
+    if len(master) != 4:
+        raise ValueError(f"master key della cartella non a 4 word: {len(master)}")
+    aes = AES.new(a32_to_str(master), AES.MODE_ECB)
+    return _str_to_a32(aes.decrypt(a32_to_str(enc)))
+
+
 def derive_file_key(raw_key: tuple[int, ...]) -> tuple[tuple[int, ...], tuple[int, ...]]:
     """Da `file_key` a 8 word ricava (k, iv) per AES-CTR del payload file.
 

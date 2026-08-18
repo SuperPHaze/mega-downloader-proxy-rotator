@@ -33,6 +33,7 @@ from PyQt6.QtWidgets import (
 
 from src.core.failed_log import failed_log_path
 from src.gui import style as _style
+from src.core.mega_links import parse_folder_job_url
 from src.gui.format_helpers import fmt_bytes as _fmt_bytes, fmt_speed as _fmt_speed_stat
 from src.gui.jobs_model import (
     Job,
@@ -148,6 +149,11 @@ def _short_url(url: str) -> str:
     # Mostra la parte finale dell'URL Mega come titolo prima che il nome file
     # sia noto.
     try:
+        job = parse_folder_job_url(url)
+        if job is not None:
+            # Job nato da una cartella: il path relativo e' gia' l'etichetta
+            # piu' utile (cartella/sottocartella/file), la URL interna no.
+            return "/".join(job.rel_path)[-60:]
         part = url.split("/")[-1]
         if "#" in part:
             handle = part.split("#")[0]

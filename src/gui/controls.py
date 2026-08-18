@@ -268,6 +268,15 @@ class ControlsBar(QWidget):
         self.pause_btn.setText("  Pausa")
         self.set_running(False)
 
+    def set_start_enabled(self, enabled: bool) -> None:
+        """Abilita/disabilita il solo Avvia, senza toccare gli altri comandi.
+
+        Serve alle fasi pre-sessione che fanno rete (espansione dei link
+        cartella): la sessione non e' ancora partita, quindi set_running(True)
+        darebbe uno stato mentito (Pausa/Annulla attivi su nulla).
+        """
+        self.start_btn.setEnabled(enabled)
+
     def set_running(self, running: bool) -> None:
         self.start_btn.setEnabled(not running)
         # Il pulsante Impostazioni blocca l'accesso al popup durante la sessione:

@@ -12,6 +12,49 @@ paths: ["src/downloader/**/*.py"]
 - L'import di `pycryptodome` resta locale dentro `MegaClient.download()` / `ParallelMegaDownloader.download()` per non rallentare l'avvio della GUI.
 - Se l'import di `Crypto` fallisce, sollevare `MegaCryptoDependencyError` (errore d'ambiente permanente, non transitorio): il worker lo cattura PRIMA di `Exception` e non chiama `mark_dead()` sul proxy innocente.
 
+## Link a cartella Mega (`/folder/`)
+- Un link cartella NON è scaricabile com'è: `mega_api._parse_url` lo rifiuta con un messaggio
+  esplicito. Va prima ESPANSO in job-file auto-contenuti (`mega_folder.expand_folder_link`).
+- L'espansione avviene UNA sola volta per cartella, prima dell'avvio dei worker. Mai ri-elencare
+  la cartella a ogni retry: moltiplicherebbe le chiamate API e imporrebbe una cache condivisa fra
+  thread. Ogni job deve essere self-describing come già lo è un link a file singolo.
+- Forma interna del job (costruita/riconosciuta SOLO da `core/mega_links.py`):
+  `https://mega.nz/folder/<folder_id>/file/<node>?p=<b64url(rel_path)>&s=<byte>#<chiave_8_word>`.
+  Il job resta una STRINGA: `session_store`, `download_history` e `worker` non cambiano contratto.
+  `&s=` e' la dimensione attesa: il worker la confronta con quella del file gia' presente prima
+  di dichiararlo completo. Senza, un file OMONIMO lasciato da un'altra cartella Mega (nell'albero
+  il path e' stabile fra le sessioni) verrebbe scambiato per il nostro e il download risulterebbe
+  completato senza aver scaricato niente. `&s=` e' opzionale in lettura (job vecchio stile).
+- Richiesta `g` per un nodo di cartella: `n` ha DUE significati diversi nella stessa chiamata —
+  handle del NODO nel payload, id della CARTELLA nella query (`_api_request(..., extra_params)`).
+  Non è un refuso: documentarlo se si tocca quel codice.
+- Il nome del file di un job-cartella viene dal job, NON dagli attributi della risposta `g`: è già
+  stato sanificato e de-collisionato in espansione, e il path su disco deve restare stabile fra i
+  retry.
+- `decrypt_key` (in `mega_crypto.py`) decifra a blocchi INDIPENDENTI da 16 byte (ECB). Una singola
+  CBC su 32 byte sbaglierebbe il secondo blocco: è l'errore classico nell'implementare le cartelle.
+
+## Layout su disco dei job-cartella
+- Albero: `<output_root>/<Nome cartella Mega>/<sottocartelle>/<file>` — niente suffisso
+  `_<file_id>`, niente livello `ciclo_N` (`DownloadWorker._cycle_dir`).
+- La cartella è CONDIVISA con gli altri file dello stesso albero. Conseguenze vincolanti: il check
+  di resume deve guardare il NOME ESATTO del file (non "un file finale qualsiasi nella cartella"),
+  e la pulizia dei temporanei `megapy_*` va saltata (non sono nostri).
+- Cancellare/eliminare un job-cartella rimuove SOLO quel file (+ `.part` + sidecar) e pota le
+  cartelle rimaste vuote fino alla radice dei download esclusa: mai `rmtree` dell'albero condiviso.
+- **Due job non possono condividere la destinazione su disco.** La de-collisione dentro una
+  cartella la fa `build_folder_expansion`; quella GLOBALE (piu' cartelle nello stesso avvio) la fa
+  `deduplicate_job_urls`, chiamata dal `FolderExpandWorker` perche' e' l'unico punto che vede
+  l'insieme completo dei job. Tre casi coperti: stesso nodo incollato due volte (si scarta il
+  doppione), due share diverse con lo stesso nome di radice (la seconda va in `<nome> (2)`, cosi'
+  gli alberi non si mescolano), file che si chiamerebbe come una cartella sorella (vince la
+  cartella). I link a FILE SINGOLO passano invariati: i loro duplicati sono leciti (finiscono in
+  cartelle distinte grazie al suffisso `_<file_id>`) e li governa la checkbox «Consenti duplicati».
+- Il suffisso di de-collisione va calcolato con il BUDGET di lunghezza del nome
+  (`_suffixed_name` per i file su `MAX_FILE_NAME_LEN`, `_suffixed_folder_name` per le cartelle su
+  `_TREE_SEGMENT_MAX_LEN`): accodarlo e basta lo farebbe ritagliare via dalla ri-sanificazione a
+  valle, riportando la collisione e mandando il ciclo di dedup in LOOP INFINITO.
+
 ## Segnali emessi da DownloadWorker
 Tutti i segnali hanno `file_id: int` come primo parametro per permettere alla GUI di indirizzare l'update:
 - `progress(file_id, ciclo, percent)` — `percent` in 0..100

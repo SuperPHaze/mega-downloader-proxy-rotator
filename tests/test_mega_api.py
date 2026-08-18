@@ -1,10 +1,21 @@
 # Test per MegaPublicClient._api_request: retry su -3 (EAGAIN), cancellazione
 # cooperativa (should_abort) durante il backoff, codici errore. Nessuna rete:
 # la sessione requests è sostituita da una fake; time.sleep è neutralizzato.
+import base64
+import json
+import struct
+
 import pytest
 
+from src.core.mega_links import build_folder_job_url
 from src.downloader import mega_api
 from src.downloader.mega_api import MegaApiError, MegaPublicClient
+
+
+def _b64_key(words):
+    """a32 -> base64url senza padding, come nei job-cartella."""
+    raw = struct.pack(">%dI" % len(words), *words)
+    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
 
 
 class _FakeResp:
@@ -72,3 +83,107 @@ def test_retries_exhausted_raises():
     with pytest.raises(MegaApiError, match="tentativi esauriti"):
         client._api_request({"a": "g"})
     assert state["i"] == 5  # bounded a 5 tentativi
+
+
+# ---- parametri di query extra (cartelle condivise) -------------------------
+
+def _client_capturing():
+    """Client la cui POST registra params/data invece di andare in rete."""
+    client = MegaPublicClient()
+    seen = {}
+
+    def fake_post(url, params=None, data=None, timeout=None):
+        seen["url"] = url
+        seen["params"] = params
+        seen["data"] = data
+        return _FakeResp('[{"g": "http://cdn/x", "s": "42", "at": ""}]')
+
+    client._session.post = fake_post
+    return client, seen
+
+
+def test_extra_params_land_in_the_query_string():
+    client, seen = _client_capturing()
+    client._api_request({"a": "f", "c": 1, "r": 1}, extra_params={"n": "FOLDERID"})
+    assert seen["params"]["n"] == "FOLDERID"
+    assert "id" in seen["params"]        # il seq number resta
+
+
+def test_without_extra_params_only_id_is_sent():
+    client, seen = _client_capturing()
+    client._api_request({"a": "g"})
+    assert list(seen["params"]) == ["id"]
+
+
+def test_list_folder_sends_recursive_listing_request():
+    client = MegaPublicClient()
+    seen = {}
+
+    def fake_post(url, params=None, data=None, timeout=None):
+        seen["params"] = params
+        seen["data"] = data
+        return _FakeResp('[{"f": [{"h": "A", "t": 2}, "non-dict"]}]')
+
+    client._session.post = fake_post
+    nodes = client.list_folder("FOLDERID")
+    assert json.loads(seen["data"]) == [{"a": "f", "c": 1, "r": 1, "ca": 1}]
+    assert seen["params"]["n"] == "FOLDERID"
+    # I nodi non-dict della risposta vengono scartati, non fanno esplodere.
+    assert nodes == [{"h": "A", "t": 2}]
+
+
+def test_list_folder_without_f_raises():
+    client, _ = _client_capturing()   # risponde con 'g', non con 'f'
+    with pytest.raises(MegaApiError, match="elenco della cartella"):
+        client.list_folder("FOLDERID")
+
+
+# ---- resolve di un nodo dentro una cartella --------------------------------
+
+JOB_URL = build_folder_job_url(
+    "FOLDERID", "NODE1", _b64_key((1, 2, 3, 4, 5, 6, 7, 8)), ("Cart", "sub", "f.bin"),
+)
+
+
+def test_folder_job_resolve_uses_node_in_payload_and_folder_in_query():
+    client, seen = _client_capturing()
+    info = client.resolve_public_url(JOB_URL)
+    # Doppio uso di 'n': handle del NODO nel payload, id della CARTELLA in query.
+    assert json.loads(seen["data"]) == [{"a": "g", "g": 1, "n": "NODE1"}]
+    assert seen["params"]["n"] == "FOLDERID"
+    assert info["handle"] == "NODE1"
+    assert info["cdn_url"] == "http://cdn/x"
+    assert info["file_size"] == 42
+
+
+def test_folder_job_file_name_comes_from_the_job_not_from_the_attributes():
+    # Il nome e' gia' stato deciso (sanificato e de-collisionato) in fase di
+    # espansione: il path su disco deve restare stabile fra i retry.
+    client, _ = _client_capturing()
+    assert client.resolve_public_url(JOB_URL)["file_name"] == "f.bin"
+
+
+def test_folder_job_key_is_the_already_decrypted_eight_word_key():
+    client, _ = _client_capturing()
+    info = client.resolve_public_url(JOB_URL)
+    assert info["k"], info["iv"]
+    assert info["iv"] == (5, 6, 0, 0)     # iv = (raw[4], raw[5], 0, 0)
+
+
+def test_folder_job_with_short_key_raises():
+    bad = build_folder_job_url("F", "N", _b64_key((1, 2, 3, 4)), ("a", "b.bin"))
+    client, _ = _client_capturing()
+    with pytest.raises(MegaApiError, match="troppo corta"):
+        client.resolve_public_url(bad)
+
+
+def test_plain_folder_link_is_refused_with_a_clear_message():
+    client, _ = _client_capturing()
+    with pytest.raises(MegaApiError, match="va espanso"):
+        client.resolve_public_url("https://mega.nz/folder/AAA#KEYKEY")
+
+
+def test_unparsable_url_still_raises():
+    client, _ = _client_capturing()
+    with pytest.raises(MegaApiError, match="non parsabile"):
+        client.resolve_public_url("https://example.com/nope")
