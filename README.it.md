@@ -32,7 +32,7 @@
 
 ## 🚀 Panoramica
 
-App **desktop per Windows** (Python + PyQt6) che scarica file da Mega.nz instradando il traffico su proxy HTTP pubblici e gratuiti. Il file viene diviso in una **coda di chunk a dimensione fissa**, scaricati in parallelo ognuno su un proxy diverso, decifrati al volo e riassemblati. Nata come test tecnico di rotazione IP, oggi è un downloader a uso reale, single-user e single-process.
+App **desktop per Windows** (Python + PyQt6) che scarica file **e intere cartelle** da Mega.nz instradando il traffico su proxy HTTP pubblici e gratuiti. Il file viene diviso in una **coda di chunk a dimensione fissa**, scaricati in parallelo ognuno su un proxy diverso, decifrati al volo e riassemblati. Nata come test tecnico di rotazione IP, oggi è un downloader a uso reale, single-user e single-process.
 
 ## ✨ Perché è diversa
 

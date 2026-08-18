@@ -36,7 +36,7 @@ https://github.com/user-attachments/assets/bb04b245-43e9-430d-8cf6-6c240761c588
 
 ## 🚀 Overview
 
-A **Windows desktop app** (Python + PyQt6) that downloads files from Mega.nz by routing traffic through public, free HTTP proxies. The file is split into a **queue of fixed-size fragments**, downloaded in parallel — each through a different proxy — decrypted on the fly and reassembled. It started as a technical IP-rotation experiment and is now a real-world downloader: single-user, single-process.
+A **Windows desktop app** (Python + PyQt6) that downloads files **and entire folders** from Mega.nz by routing traffic through public, free HTTP proxies. The file is split into a **queue of fixed-size fragments**, downloaded in parallel — each through a different proxy — decrypted on the fly and reassembled. It started as a technical IP-rotation experiment and is now a real-world downloader: single-user, single-process.
 
 ## ✨ What makes it different
 
