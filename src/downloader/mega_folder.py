@@ -320,16 +320,14 @@ def build_folder_expansion(
     l'albero su disco e' identico qualunque sia il punto di ingresso.
     """
     if len(master) != 4:
-        raise MegaFolderError(
-            f"chiave della cartella non valida ({len(master)} word invece di 4)"
-        )
+        raise MegaFolderError("folder_key_invalid", words=len(master))
     if not nodes:
-        raise MegaFolderError("la cartella non ha restituito alcun nodo")
+        raise MegaFolderError("folder_no_nodes")
 
     by_handle = {n["h"]: n for n in nodes if isinstance(n.get("h"), str)}
     root_handle = _resolve_root(nodes, folder_id)
     if root_handle is None:
-        raise MegaFolderError("nodo radice della cartella non individuabile")
+        raise MegaFolderError("folder_root_not_found")
 
     keys: dict[str, tuple[int, ...] | None] = {}
     names: dict[str, str | None] = {}
@@ -348,7 +346,7 @@ def build_folder_expansion(
     if sub_handle:
         if sub_handle not in by_handle:
             raise MegaFolderError(
-                f"il nodo selezionato dal link ({sub_handle}) non e' nella cartella"
+                "folder_node_not_in_folder", node=sub_handle
             )
         if kind == SUB_AUTO:
             kind = (
@@ -603,15 +601,13 @@ def expand_folder_link(
     """
     link: MegaFolderLink | None = parse_folder_link(url)
     if link is None:
-        raise MegaFolderError(f"non e' un link a cartella Mega: {url}")
+        raise MegaFolderError("not_a_folder_link", url=url)
     try:
         master = base64_to_a32(link.key_b64)
     except (ValueError, TypeError) as exc:
-        raise MegaFolderError(f"chiave della cartella illeggibile: {exc}") from exc
+        raise MegaFolderError("folder_key_unreadable", error=str(exc)) from exc
     if len(master) < 4:
-        raise MegaFolderError(
-            f"chiave della cartella troppo corta ({len(master)} word)"
-        )
+        raise MegaFolderError("folder_key_too_short", words=len(master))
     client = MegaPublicClient(proxy, timeout=timeout, should_abort=should_abort)
     nodes = client.list_folder(link.folder_id)
     expansion = build_folder_expansion(

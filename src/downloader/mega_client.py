@@ -21,6 +21,7 @@ from src.core.config import (
     USER_AGENT,
 )
 from src.core.disk import ensure_free_space
+from src.core.errors import UserFacingRuntimeError
 from src.core.proxy_url import build_proxies_dict, build_proxy_url
 from src.downloader.mega_api import MegaApiError, MegaPublicClient
 from src.downloader.mega_crypto import a32_to_str
@@ -28,7 +29,7 @@ from src.downloader.mega_crypto import a32_to_str
 log = logging.getLogger(__name__)
 
 
-class MegaCryptoDependencyError(RuntimeError):
+class MegaCryptoDependencyError(UserFacingRuntimeError):
     """Dipendenza pycryptodome mancante o non importabile.
 
     Why: distinguere errori d'ambiente (permanenti) da fallimenti del proxy
@@ -73,8 +74,7 @@ class MegaClient:
             from Crypto.Util import Counter
         except ImportError as exc:
             raise MegaCryptoDependencyError(
-                f"pycryptodome non importabile ({exc}). "
-                "Verifica le dipendenze (pip install -r requirements.txt)."
+                "crypto_not_importable", error=str(exc)
             ) from exc
 
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -152,7 +152,7 @@ class MegaClient:
 
         if file_size and downloaded != file_size:
             raise MegaApiError(
-                f"download incompleto: {downloaded}/{file_size} byte"
+                "download_incomplete", downloaded=downloaded, expected=file_size
             )
         # Download verificato: promuovi il .part al nome finale.
         os.replace(part_path, final_path)

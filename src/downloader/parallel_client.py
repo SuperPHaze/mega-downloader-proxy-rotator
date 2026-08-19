@@ -54,6 +54,7 @@ from src.core.config import (
     USER_AGENT,
 )
 from src.core.disk import ensure_free_space
+from src.core.errors import UserFacingRuntimeError, error_payload
 from src.core.proxy_url import build_proxies_dict as _proxies_dict
 from src.core.state import SessionState
 from src.downloader.mega_api import MegaPublicClient
@@ -211,7 +212,7 @@ class ParallelMegaDownloader:
             from Crypto.Cipher import AES
             from Crypto.Util import Counter
         except ImportError as exc:
-            raise MegaCryptoDependencyError(f"pycryptodome mancante ({exc})") from exc
+            raise MegaCryptoDependencyError("crypto_missing", error=str(exc)) from exc
 
         output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -367,6 +368,12 @@ class ParallelMegaDownloader:
             progress_thread.start()
 
         chunk_errors: list[str] = []
+        # Stessa raccolta, in forma strutturata: codice + parametri di
+        # ogni errore, nello stesso ordine. Serve a E2 per rendere in
+        # inglese anche il dettaglio dei chunk invece della sola cornice.
+        # La lista delle stringhe NON cambia (annullamenti compresi):
+        # e' cio' che tiene il testo identico a prima.
+        chunk_details: list[dict] = []
         try:
             with ThreadPoolExecutor(
                 max_workers=eff_conn, thread_name_prefix="ParallelChunk"
@@ -397,6 +404,7 @@ class ParallelMegaDownloader:
                         fut.result()
                     except Exception as exc:
                         chunk_errors.append(str(exc))
+                        chunk_details.append(error_payload(exc))
                         # WARNING, non ERROR: copre abort locale/cancellazione,
                         # retry esauriti e rate-limit CDN — fisiologico coi
                         # proxy gratuiti, non un bug. Vedi rules/logging.md.
@@ -428,9 +436,14 @@ class ParallelMegaDownloader:
             # NON cancellare il .part ne' il sidecar: i chunk completati restano
             # su disco. Al prossimo retry del worker il sidecar viene riletto e
             # solo i chunk mancanti vengono riscaricati.
-            raise RuntimeError(
-                f"{len(chunk_errors)}/{len(chunks)} chunk falliti: "
-                + "; ".join(chunk_errors[:3])
+            raise UserFacingRuntimeError(
+                "chunks_failed",
+                failed=len(chunk_errors),
+                total=len(chunks),
+                detail="; ".join(chunk_errors[:3]),
+                # Gli stessi tre errori che compaiono in `detail`, come
+                # dato: E2 rendera' questi e ignorera' `detail`.
+                children=chunk_details[:3],
             )
 
         # Successo totale: rimuovi il sidecar, poi promuovi il .part al nome
@@ -511,11 +524,11 @@ class ParallelMegaDownloader:
         sticky_proxy: dict | None = None
         while attempt < PARALLEL_SEGMENT_RETRIES:
             if self._abort.is_set():
-                raise RuntimeError(
-                    f"chunk {chunk_idx}: abort locale (altri chunk hanno esaurito i retry)"
+                raise UserFacingRuntimeError(
+                    "chunk_local_abort", chunk=chunk_idx
                 )
             if self.session_state is not None and self.session_state.is_cancelled():
-                raise RuntimeError(f"chunk {chunk_idx}: cancellato dall'utente")
+                raise UserFacingRuntimeError("chunk_cancelled", chunk=chunk_idx)
             if self.session_state is not None:
                 # La pausa è onorata QUI, al confine del tentativo/pezzo: un chunk
                 # già in trasferimento prosegue fino alla fine (sospenderlo a metà
@@ -541,7 +554,9 @@ class ParallelMegaDownloader:
             if proxy is None:
                 last_exc = RuntimeError("pool proxy vuoto")
                 if self._sleep_interruptible(5):
-                    raise RuntimeError(f"chunk {chunk_idx}: abort durante attesa pool")
+                    raise UserFacingRuntimeError(
+                        "chunk_abort_pool_wait", chunk=chunk_idx
+                    )
                 continue
             proxies = _proxies_dict(proxy)
             current_url = self._cdn_url or cdn_url
@@ -621,7 +636,9 @@ class ParallelMegaDownloader:
                             _attempt_t0, error=last_exc, backoff=backoff,
                         )
                         if self._sleep_interruptible(backoff):
-                            raise RuntimeError(f"chunk {chunk_idx}: abort durante backoff")
+                            raise UserFacingRuntimeError(
+                                "chunk_abort_backoff", chunk=chunk_idx
+                            )
                         continue
                     if resp.status_code == 503:
                         last_exc = RuntimeError("CDN 503 (overload o URL scaduta)")
@@ -639,7 +656,9 @@ class ParallelMegaDownloader:
                             _attempt_t0, error=last_exc, backoff=backoff,
                         )
                         if self._sleep_interruptible(backoff):
-                            raise RuntimeError(f"chunk {chunk_idx}: abort durante backoff")
+                            raise UserFacingRuntimeError(
+                                "chunk_abort_backoff", chunk=chunk_idx
+                            )
                         continue
                     if resp.status_code == 429:
                         # Limite PER-FILE di Mega (troppi IP concorrenti sullo
@@ -671,13 +690,16 @@ class ParallelMegaDownloader:
                             _attempt_t0, error=last_exc, backoff=backoff,
                         )
                         if self._sleep_interruptible(backoff):
-                            raise RuntimeError(f"chunk {chunk_idx}: abort durante backoff 429")
+                            raise UserFacingRuntimeError(
+                                "chunk_abort_backoff_429", chunk=chunk_idx
+                            )
                         continue
                     resp.raise_for_status()
                     if resp.status_code != 206 and chunk_size_actual != self._content_length(resp):
-                        raise RuntimeError(
-                            f"chunk {chunk_idx}: server ignora Range "
-                            f"(status={resp.status_code})"
+                        raise UserFacingRuntimeError(
+                            "chunk_range_ignored",
+                            chunk=chunk_idx,
+                            status=resp.status_code,
                         )
 
                     initial_counter = base_counter + (start // 16)
@@ -695,13 +717,13 @@ class ParallelMegaDownloader:
                         fp.seek(start)
                         for net_chunk in resp.iter_content(chunk_size=64 * 1024):
                             if self._abort.is_set():
-                                raise RuntimeError(
-                                    f"chunk {chunk_idx}: abort locale mid-download"
+                                raise UserFacingRuntimeError(
+                                    "chunk_local_abort_mid", chunk=chunk_idx
                                 )
                             if (self.session_state is not None
                                     and self.session_state.is_cancelled()):
-                                raise RuntimeError(
-                                    f"chunk {chunk_idx}: cancellato mid-download"
+                                raise UserFacingRuntimeError(
+                                    "chunk_cancelled_mid", chunk=chunk_idx
                                 )
                             if not net_chunk:
                                 continue
@@ -724,10 +746,12 @@ class ParallelMegaDownloader:
                                 rec["intra_samples"] = samples[::2]
                             elapsed_attempt = now - attempt_start
                             if elapsed_attempt > self.segment_max_duration_s:
-                                raise RuntimeError(
-                                    f"chunk {chunk_idx}: superato budget temporale di "
-                                    f"{self.segment_max_duration_s}s "
-                                    f"(scaricati {downloaded}/{chunk_size_actual} B)"
+                                raise UserFacingRuntimeError(
+                                    "chunk_time_budget",
+                                    chunk=chunk_idx,
+                                    budget_s=self.segment_max_duration_s,
+                                    downloaded=downloaded,
+                                    expected=chunk_size_actual,
                                 )
                             window_elapsed = now - window_start
                             if (
@@ -736,18 +760,21 @@ class ParallelMegaDownloader:
                             ):
                                 bps = window_bytes / window_elapsed
                                 if bps < PARALLEL_MIN_THROUGHPUT_BPS:
-                                    raise RuntimeError(
-                                        f"chunk {chunk_idx}: proxy troppo lento "
-                                        f"({bps / 1024:.1f} KB/s < "
-                                        f"{PARALLEL_MIN_THROUGHPUT_BPS / 1024:.0f} KB/s "
-                                        f"per {window_elapsed:.0f}s)"
+                                    raise UserFacingRuntimeError(
+                                        "chunk_too_slow",
+                                        chunk=chunk_idx,
+                                        kbps=bps / 1024,
+                                        min_kbps=PARALLEL_MIN_THROUGHPUT_BPS / 1024,
+                                        window_s=window_elapsed,
                                     )
                                 window_start = now
                                 window_bytes = 0
                     if downloaded != chunk_size_actual:
-                        raise RuntimeError(
-                            f"chunk {chunk_idx}: ricevuti {downloaded}B "
-                            f"su {chunk_size_actual}B attesi"
+                        raise UserFacingRuntimeError(
+                            "chunk_short_read",
+                            chunk=chunk_idx,
+                            received=downloaded,
+                            expected=chunk_size_actual,
                         )
 
                 # Persisti il chunk nel sidecar prima di tornare.
@@ -821,7 +848,7 @@ class ParallelMegaDownloader:
                 error=last_exc, backoff=backoff,
             )
             if self._sleep_interruptible(backoff):
-                raise RuntimeError(f"chunk {chunk_idx}: abort durante backoff")
+                raise UserFacingRuntimeError("chunk_abort_backoff", chunk=chunk_idx)
         rec_final = {
             "file_id": getattr(self, "_file_id", None),
             "url_hash": getattr(self, "_url_hash", None),
@@ -834,8 +861,11 @@ class ParallelMegaDownloader:
         self._emit_attempt(
             rec_final, "retries_exhausted", None, time.monotonic(), error=last_exc,
         )
-        raise RuntimeError(
-            f"chunk {chunk_idx}: esauriti {PARALLEL_SEGMENT_RETRIES} tentativi ({last_exc})"
+        raise UserFacingRuntimeError(
+            "chunk_retries_exhausted",
+            chunk=chunk_idx,
+            attempts=PARALLEL_SEGMENT_RETRIES,
+            error=str(last_exc),
         )
 
     def _should_abort_resolve(self) -> bool:

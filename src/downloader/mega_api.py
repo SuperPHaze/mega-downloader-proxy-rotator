@@ -15,6 +15,7 @@ from typing import Callable
 
 import requests
 
+from src.core.errors import UserFacingError
 from src.core.file_naming import sanitize_file_name
 from src.core.mega_links import (
     MegaFolderJobLink,
@@ -37,11 +38,18 @@ _SEQ_LOCK = threading.Lock()
 _SEQUENCE_NUMBER = random.randint(0, 0xFFFFFFFF)
 
 
-class MegaApiError(Exception):
-    def __init__(self, message: str, code: int | None = None) -> None:
-        super().__init__(message)
-        self.code = code
-        self.message = message
+class MegaApiError(UserFacingError):
+    """Errore dell'API pubblica Mega.
+
+    Il codice numerico dell'API (-3, -9...) non e' piu' un attributo a
+    parte: vive in `params["api_code"]` del messaggio `api_error_code`,
+    insieme a tutti gli altri parametri. Un solo posto invece di due.
+    """
+
+    @property
+    def message(self) -> str:
+        """Testo italiano. Compatibilita' con chi leggeva `.message`."""
+        return str(self)
 
 
 def _next_seq() -> int:
@@ -120,7 +128,7 @@ class MegaPublicClient:
                 last_err = exc
                 log.warning("[mega_api] tentativo %d errore rete/parse: %s", attempt, exc)
                 if self._sleep_interruptible(min(30, 2 ** attempt)):
-                    raise MegaApiError("resolve annullato durante il backoff") from exc
+                    raise MegaApiError("resolve_cancelled") from exc
                 continue
             item = data[0] if isinstance(data, list) and data else data
             if isinstance(item, int):
@@ -129,13 +137,13 @@ class MegaPublicClient:
                 if item == -3:
                     log.info("[mega_api] -3 (EAGAIN), retry %d/5", attempt)
                     if self._sleep_interruptible(min(30, 2 ** attempt)):
-                        raise MegaApiError("resolve annullato durante il backoff")
+                        raise MegaApiError("resolve_cancelled")
                     continue
-                raise MegaApiError(f"API Mega ha risposto codice {item}", code=item)
+                raise MegaApiError("api_error_code", api_code=item)
             if not isinstance(item, dict):
-                raise MegaApiError(f"API Mega: risposta inattesa {item!r}")
+                raise MegaApiError("api_unexpected_response", response=repr(item))
             return item
-        raise MegaApiError(f"API Mega: 5 tentativi esauriti ({last_err})")
+        raise MegaApiError("api_retries_exhausted", error=str(last_err))
 
     def _parse_url(self, url: str) -> tuple[str, str]:
         """(handle, chiave b64) di un link a FILE singolo.
@@ -147,11 +155,8 @@ class MegaPublicClient:
         if link is not None:
             return link.handle, link.key_b64
         if parse_folder_link(url) is not None:
-            raise MegaApiError(
-                "link a cartella Mega: va espanso in singoli file prima del "
-                f"download ({url})"
-            )
-        raise MegaApiError(f"URL Mega non parsabile: {url}")
+            raise MegaApiError("folder_link_not_downloadable", url=url)
+        raise MegaApiError("url_not_parsable", url=url)
 
     def resolve_public_url(self, mega_url: str) -> dict:
         job = parse_folder_job_url(mega_url)
@@ -162,12 +167,12 @@ class MegaPublicClient:
         k, iv = derive_file_key(raw_key)
         resp = self._api_request({"a": "g", "g": 1, "p": handle})
         if "g" not in resp:
-            raise MegaApiError(f"File non accessibile (API senza 'g'): {resp!r}")
+            raise MegaApiError("file_not_accessible", response=repr(resp))
         cdn_url = resp["g"]
         try:
             file_size = int(resp["s"])
         except (KeyError, TypeError, ValueError) as exc:
-            raise MegaApiError(f"size mancante o invalida: {exc}") from exc
+            raise MegaApiError("size_missing", error=str(exc)) from exc
         attribs = decrypt_attr(base64_url_decode(resp.get("at", "")), k)
         raw_name = attribs.get("n") if attribs else None
         # Sanitizza alla SORGENTE: il nome così risolto è quello usato da tutti
@@ -202,8 +207,9 @@ class MegaPublicClient:
         raw_key = base64_to_a32(job.node_key_b64)
         if len(raw_key) < 8:
             raise MegaApiError(
-                f"chiave del nodo troppo corta ({len(raw_key)} word): "
-                f"{job.node_handle}"
+                "node_key_too_short",
+                words=len(raw_key),
+                node=job.node_handle,
             )
         k, iv = derive_file_key(raw_key)
         resp = self._api_request(
@@ -212,13 +218,13 @@ class MegaPublicClient:
         )
         if "g" not in resp:
             raise MegaApiError(
-                f"File non accessibile nella cartella (API senza 'g'): {resp!r}"
+                "folder_file_not_accessible", response=repr(resp)
             )
         cdn_url = resp["g"]
         try:
             file_size = int(resp["s"])
         except (KeyError, TypeError, ValueError) as exc:
-            raise MegaApiError(f"size mancante o invalida: {exc}") from exc
+            raise MegaApiError("size_missing", error=str(exc)) from exc
         file_name = sanitize_file_name(
             job.file_name, fallback=f"mega_{job.node_handle}"
         )
@@ -245,7 +251,7 @@ class MegaPublicClient:
         nodes = resp.get("f")
         if not isinstance(nodes, list):
             raise MegaApiError(
-                f"elenco della cartella non disponibile (risposta: {resp!r})"
+                "folder_listing_unavailable", response=repr(resp)
             )
         return [n for n in nodes if isinstance(n, dict)]
 

@@ -19,6 +19,7 @@ from src.core.config import (
 )
 from src.core import telemetry
 from src.core.disk import InsufficientDiskSpaceError
+from src.core.errors import error_payload, format_it
 from src.core.file_naming import (
     final_output_dir,
     folder_job_output_dir,
@@ -75,6 +76,14 @@ class DownloadWorker(QThread):
     cycle_completed = pyqtSignal(int, int)
     failed = pyqtSignal(int, int, str)     # tentativo fallito, NON ciclo abbandonato
     fatal_error = pyqtSignal(int, str)     # errore permanente: worker termina
+    # Gli stessi tre eventi in forma TRADUCIBILE: codice d'errore +
+    # parametri. Viaggiano ACCANTO ai segnali di sopra, che continuano a
+    # portare la frase italiana: i log, la telemetria e `failed_links.log`
+    # restano identici, e chi non conosce i `_detail` non se ne accorge.
+    # La GUI li usera' in E2 per rendere l'errore nella lingua scelta.
+    failed_detail = pyqtSignal(int, int, str, dict)      # file_id, ciclo, code, params
+    fatal_detail = pyqtSignal(int, str, dict)            # file_id, code, params
+    abandoned_detail = pyqtSignal(int, str, int, str, dict)  # + url, attempts
     all_done = pyqtSignal(int)
     # Metadati del download completato, emesso UNA volta subito prima di
     # all_done: (file_id, url, file_name, file_size, path). file_size passa
@@ -127,6 +136,10 @@ class DownloadWorker(QThread):
         # Cumulativo per worker, NON resettato fra cicli (cosi' il cap su
         # MAX_ATTEMPTS_PER_FILE e' globale al link).
         self._last_error_msg: str = ""
+        # Lo stesso errore in forma traducibile (codice, parametri). Va tenuto
+        # a parte: quando si raggiunge il cap dei tentativi l'eccezione non
+        # c'e' piu', e da una stringa non si torna indietro.
+        self._last_error_detail: tuple[str, dict] = ("unknown_reason", {})
         self._total_attempts: int = 0
         # Path del file prodotto dall'ultimo ciclo riuscito: alimenta il
         # segnale completed_info (storico download).
@@ -355,21 +368,26 @@ class DownloadWorker(QThread):
             if self._effective_state.is_cancelled():
                 if self._is_deadline_expired():
                     limit_min = (self._file_time_limit_s or 0) // 60
+                    params = {"minutes": limit_min}
+                    msg = format_it("time_limit_exceeded", params)
                     telemetry.event(
                         "file_abandoned", file_id=self.file_id,
                         attempts=self._total_attempts,
-                        last_error=f"superato il limite di {limit_min} minuti",
+                        last_error=msg,
                     )
                     self.abandoned.emit(
+                        self.file_id, self.mega_url, self._total_attempts, msg,
+                    )
+                    self.abandoned_detail.emit(
                         self.file_id, self.mega_url, self._total_attempts,
-                        f"superato il limite di {limit_min} minuti",
+                        "time_limit_exceeded", params,
                     )
                 return False
             self._effective_state.wait_if_paused()
             attempt += 1
             self._total_attempts += 1
             if self._total_attempts > MAX_ATTEMPTS_PER_FILE:
-                last_err = self._last_error_msg or "motivo sconosciuto"
+                last_err = self._last_error_msg or format_it("unknown_reason", {})
                 # WARNING, non ERROR: esaurire i tentativi e' un esito atteso
                 # con i proxy gratuiti (mortalita' alta), non un bug. Vedi
                 # rules/logging.md.
@@ -384,6 +402,14 @@ class DownloadWorker(QThread):
                 self.abandoned.emit(
                     self.file_id, self.mega_url, self._total_attempts - 1, last_err,
                 )
+                # L'ultimo errore in forma traducibile: il worker lo ha messo da
+                # parte quando e' accaduto (`_last_error_detail`), perche' qui la
+                # sua eccezione non esiste piu'.
+                code, params = self._last_error_detail
+                self.abandoned_detail.emit(
+                    self.file_id, self.mega_url, self._total_attempts - 1,
+                    code, params,
+                )
                 return False
             # Ricalcola cycle_dir: _current_base_dir potrebbe essere stato
             # rinominato da _resolved_cb nell'iterazione precedente.
@@ -396,8 +422,8 @@ class DownloadWorker(QThread):
                 # a meno che non sia stato cancellato.
                 log.warning("[file %d] ciclo %d: nessun proxy disponibile, riprovo fra 5s",
                             self.file_id, cycle)
-                self._last_error_msg = "pool proxy vuoto, refill in attesa"
-                self.failed.emit(self.file_id, cycle, f"Tentativo {attempt}: pool vuoto, attendo refill")
+                self._last_error_msg = format_it("pool_empty", {})
+                self._emit_failed(cycle, attempt, "pool_empty_short", {})
                 if self._sleep_interruptible(5):
                     return False
                 continue
@@ -419,8 +445,10 @@ class DownloadWorker(QThread):
                 # Fallimento transitorio (endpoint IP irraggiungibile via
                 # proxy): penalita' soft, non pena di morte.
                 self.proxy_pool.penalize(proxy, hard=False)
-                self._last_error_msg = f"IP check fallito: {exc}"
-                self.failed.emit(self.file_id, cycle, f"Tentativo {attempt}: IP check fallito ({exc})")
+                self._last_error_msg = format_it("ip_check_failed", {"error": str(exc)})
+                self._emit_failed(
+                    cycle, attempt, "ip_check_failed_paren", {"error": str(exc)}
+                )
                 continue
 
             # Download vero (parallelo se PARALLEL_CONNECTIONS_PER_FILE > 1).
@@ -429,14 +457,19 @@ class DownloadWorker(QThread):
                 if self._effective_state.is_cancelled():
                     if self._is_deadline_expired():
                         limit_min = (self._file_time_limit_s or 0) // 60
+                        params = {"minutes": limit_min}
+                        msg = format_it("time_limit_exceeded", params)
                         telemetry.event(
                             "file_abandoned", file_id=self.file_id,
                             attempts=self._total_attempts,
-                            last_error=f"superato il limite di {limit_min} minuti",
+                            last_error=msg,
                         )
                         self.abandoned.emit(
+                            self.file_id, self.mega_url, self._total_attempts, msg,
+                        )
+                        self.abandoned_detail.emit(
                             self.file_id, self.mega_url, self._total_attempts,
-                            f"superato il limite di {limit_min} minuti",
+                            "time_limit_exceeded", params,
                         )
                     return False
                 self._effective_state.wait_if_paused()
@@ -488,9 +521,12 @@ class DownloadWorker(QThread):
                 # Non marcare morto, non ciclare: terminare il worker.
                 log.error("[file %d] ciclo %d tentativo %d: errore di configurazione: %s",
                           self.file_id, cycle, attempt, exc)
-                msg = f"Errore di configurazione: {exc}"
+                params = {"error": str(exc)}
+                msg = format_it("config_error", params)
                 self.failed.emit(self.file_id, cycle, msg)
+                self.failed_detail.emit(self.file_id, cycle, "config_error", params)
                 self.fatal_error.emit(self.file_id, msg)
+                self.fatal_detail.emit(self.file_id, "config_error", params)
                 return False
             except InsufficientDiskSpaceError as exc:
                 # Errore d'AMBIENTE (disco pieno): ritentare non libera spazio.
@@ -498,15 +534,20 @@ class DownloadWorker(QThread):
                 # tentativi; il proxy è innocente, niente penalità.
                 log.error("[file %d] ciclo %d tentativo %d: %s",
                           self.file_id, cycle, attempt, exc)
-                msg = f"spazio su disco insufficiente ({exc})"
+                params = {"error": str(exc)}
+                msg = format_it("disk_full_short", params)
                 self._last_error_msg = msg
                 telemetry.event(
                     "file_abandoned", file_id=self.file_id,
                     attempts=self._total_attempts, last_error=msg,
                 )
-                self.failed.emit(self.file_id, cycle, f"Tentativo {attempt}: {msg}")
+                self._emit_failed(cycle, attempt, "disk_full_short", params)
                 self.abandoned.emit(
                     self.file_id, self.mega_url, self._total_attempts, msg,
+                )
+                self.abandoned_detail.emit(
+                    self.file_id, self.mega_url, self._total_attempts,
+                    "disk_full_short", params,
                 )
                 return False
             except Exception as exc:
@@ -516,9 +557,31 @@ class DownloadWorker(QThread):
                 # colpa solo indiretta (i segmenti usano proxy propri, gia'
                 # penalizzati dal parallel client): penalita' soft.
                 self.proxy_pool.penalize(proxy, hard=False)
-                self._last_error_msg = f"download fallito: {exc}"
-                self.failed.emit(self.file_id, cycle, f"Tentativo {attempt}: download fallito ({exc})")
+                # Il payload dell'eccezione, non la sua stringa: e' cio' che
+                # permettera' a E2 di rendere anche il dettaglio dei chunk.
+                cause = error_payload(exc)
+                self._last_error_msg = format_it("download_failed", {"error": str(exc)})
+                self._emit_failed(
+                    cycle, attempt, "download_failed_paren",
+                    {"error": str(exc), "cause": cause},
+                )
                 # loop -> nuovo tentativo con nuovo proxy
+
+    def _emit_failed(
+        self, cycle: int, attempt: int, code: str, params: dict,
+    ) -> None:
+        """Emette `failed` (frase italiana, invariata) e `failed_detail`
+        (codice + parametri), e ricorda l'ultimo errore in forma traducibile.
+
+        La cornice "Tentativo N: " resta parte del testo italiano, com'era.
+        In forma strutturata viaggia come parametro `n` di `attempt_frame`."""
+        reason = format_it(code, params)
+        self.failed.emit(
+            self.file_id, cycle,
+            format_it("attempt_frame", {"n": attempt, "reason": reason}),
+        )
+        self._last_error_detail = (code, params)
+        self.failed_detail.emit(self.file_id, cycle, code, params)
 
     def _emit_completed_info(self) -> None:
         # Metadati per lo storico download. Best-effort: se il path non e'

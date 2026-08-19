@@ -4,6 +4,20 @@ paths: ["src/downloader/**/*.py"]
 
 # Regole per il layer downloader
 
+## Errori: codice, non frase
+- Ogni `raise` che l'utente puo' leggere passa da un **codice** del catalogo
+  (`core/error_catalog.py`) piu' parametri nominati: vedi `rules/core.md`. `MegaApiError`,
+  `MegaFolderError`, `MegaCryptoDependencyError` e le tre basi `UserFacing*Error` lo portano gia'.
+- **`str(exc)` resta la frase italiana**: e' quello che finisce nei log e dentro le stringhe che
+  lo incorporano (`worker.py`, l'aggregato dei chunk in `parallel_client.py`).
+- Restano senza codice **solo** le violazioni di contratto interno (parametri obbligatori
+  mancanti): non sono errori d'uso, se un utente le vede e' un bug nostro. Se ne aggiungi una,
+  il test di copertura te lo fa notare: o e' user-facing e va codificata, o va dichiarata li'.
+- I segnali `failed_detail` / `fatal_detail` / `abandoned_detail` di `DownloadWorker` portano
+  `code` + `params` **accanto** ai segnali di sempre, che continuano a portare la stringa
+  italiana. Chi aggiunge un percorso d'errore emette entrambi, altrimenti la GUI ricasca sul
+  testo grezzo e quell'errore non sara' traducibile.
+
 ## Mega API e proxy (post-vendoring)
 - `mega.py` NON è più una dipendenza. Le primitive crypto (`mega_crypto.py`) e l'API pubblica (`mega_api.py`) sono vendorizzate localmente.
 - `MegaPublicClient` (in `mega_api.py`) risolve un link pubblico Mega via API `cs?g=1` ritornando handle, URL CDN, dimensione, nome file decifrato. Usa `requests.Session` per-istanza con `session.proxies` nativi: nessun monkey-patch globale, nessun `threading.local`. Retry esplicito su `-3` (EAGAIN) bounded a 5 tentativi.

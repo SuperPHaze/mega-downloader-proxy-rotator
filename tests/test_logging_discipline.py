@@ -80,12 +80,18 @@ def test_parallel_chunk_exhausted_retries_logs_warning_not_error(tmp_path, monke
     )
 
     with caplog.at_level(logging.DEBUG, logger="src.downloader.parallel_client"):
-        with pytest.raises(RuntimeError, match="chunk falliti"):
+        with pytest.raises(RuntimeError, match="chunk falliti") as exc:
             downloader.download(
                 "https://mega.nz/file/AAA#BBB",
                 Path(tmp_path),
                 resolver_proxy={"host": "1.2.3.4", "port": "8080", "protocol": "http"},
             )
+
+    # L'aggregato porta il codice e i figli in forma strutturata: e' cio'
+    # che permettera' a E2 di tradurre anche il dettaglio dei singoli chunk.
+    assert exc.value.error_code == "chunks_failed"
+    assert exc.value.params["children"], "i figli non sono stati raccolti"
+    assert all("code" in c for c in exc.value.params["children"])
 
     fallito = [r for r in caplog.records if "chunk fallito" in r.message]
     assert fallito, "il log di chunk fallito non e' stato scritto"

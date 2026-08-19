@@ -5,8 +5,10 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
+from src.core.errors import UserFacingOSError
 
-class InsufficientDiskSpaceError(OSError):
+
+class InsufficientDiskSpaceError(UserFacingOSError):
     """Spazio su disco insufficiente per il file richiesto.
 
     Why: è un errore d'AMBIENTE (permanente), non transitorio. Ritentare con un
@@ -42,7 +44,10 @@ def ensure_free_space(
     free = free_space_bytes(path)
     if free < required:
         raise InsufficientDiskSpaceError(
-            f"spazio su disco insufficiente in '{path}': "
-            f"servono {required:,} B (file {needed_bytes:,} + margine {margin_bytes:,}), "
-            f"liberi {free:,} B"
+            "disk_full",
+            path=path,
+            required=required,
+            needed_bytes=needed_bytes,
+            margin_bytes=margin_bytes,
+            free=free,
         )

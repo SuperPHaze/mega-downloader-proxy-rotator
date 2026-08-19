@@ -12,6 +12,8 @@ src/
 ├── core/
 │   ├── config.py          # costanti globali (timeout, soglie, paths, UA); include SPEED_SELECTION_* e VALIDATOR_SPEED_TEST_* per la selezione per velocità
 │   ├── state.py           # SessionState thread-safe (pausa/annullo)
+│   ├── errors.py          # UserFacingError: le eccezioni che l'utente legge portano `error_code` + `params`; `str(exc)` resta la frase ITALIANA (e' cio' che finisce nei log). `format_it()` non solleva mai (gira dentro la gestione degli errori); `error_payload()` da' codice+parametri anche per le eccezioni non nostre (ripiego `unexpected`). Le basi miste vogliono UserFacingError per PRIMO: con OSError davanti, il suo __new__ intercetta la costruzione
+│   ├── error_catalog.py   # ERROR_TEXTS_IT: i 50 testi italiani degli errori, indicizzati per codice. Vive in core/ e non nei dizionari GUI perche' serve ai LOG, che restano italiani anche con l'interfaccia in inglese; in E2 `strings_it.py` li innestera' come chiavi `err.*`
 │   ├── telemetry.py       # telemetria "scatola nera": recorder asincrono (writer daemon) di tentativi-chunk + campioni 1Hz in logs/telemetry/<id>/; no-op se TELEMETRY_ENABLED=False
 │   ├── diagnostics.py     # heartbeat periodico (INFO), RSS via psutil se disponibile / fallback GetProcessMemoryInfo (psapi) su Windows, marcatori di sessione, riga CONFIG a inizio sessione
 │   ├── events.py          # EventBus opzionale (non usato dal flusso)
@@ -23,7 +25,7 @@ src/
 │   ├── branding.py        # Branding (nome/acronimo/autore/nick/link/logo): default -> cache -> remoto
 │   ├── icon_loader.py     # build_app_icon(): QIcon robusta .ico->fallback .png, mai null senza log
 │   ├── file_naming.py     # sanitize_folder_name() + sanitize_file_name() (nome file sicuro per Windows: caratteri riservati + device name CON/NUL/…, estensione preservata; applicata alla SORGENTE in mega_api.resolve_public_url) + final_output_dir(file_name, file_id, output_root): path finale del download (output_root = cartella scelta dall'utente, None=default); rinomina la cartella hash-based al primo resolve riuscito; + folder_job_output_dir(rel_path, output_root): cartella di destinazione ad ALBERO per i job nati da un link cartella (ri-sanifica i segmenti: è il confine col filesystem)
-│   ├── disk.py            # ensure_free_space()/free_space_bytes() + InsufficientDiskSpaceError (OSError): check spazio disco PRIMA del download (errore d'ambiente: il worker abbandona subito senza bruciare i tentativi). Solo stdlib
+│   ├── disk.py            # ensure_free_space()/free_space_bytes() + InsufficientDiskSpaceError (UserFacingError+OSError, codice `disk_full`): check spazio disco PRIMA del download (errore d'ambiente: il worker abbandona subito senza bruciare i tentativi). Solo stdlib
 │   ├── mega_links.py      # FONTE UNICA delle forme di URL Mega (stdlib puro, niente I/O né Crypto):
 │   │                     #   file singolo, legacy, cartella `/folder/#key`, cartella con nodo selezionato
 │   │                     #   (`/file/<n>`, `/folder/<n>`, legacy `#F!id!key!node`) e la forma INTERNA dei

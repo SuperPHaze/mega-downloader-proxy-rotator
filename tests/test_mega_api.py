@@ -63,25 +63,31 @@ def test_eagain_minus3_retries_then_succeeds():
 
 
 def test_error_code_raises_with_code():
+    # Il codice numerico dell'API Mega non e' piu' un attributo a parte:
+    # sta fra i parametri del messaggio, insieme a tutto il resto.
     client, _ = _client([_FakeResp("[-9]")])
     with pytest.raises(MegaApiError) as exc:
         client._api_request({"a": "g"})
-    assert exc.value.code == -9
+    assert exc.value.error_code == "api_error_code"
+    assert exc.value.params["api_code"] == -9
+    assert str(exc.value) == "API Mega ha risposto codice -9"
 
 
 def test_should_abort_interrupts_backoff_on_minus3():
     # should_abort=True: il backoff dopo un -3 esce subito con errore, senza
     # esaurire i 5 tentativi.
     client, state = _client([_FakeResp("[-3]")], should_abort=lambda: True)
-    with pytest.raises(MegaApiError, match="annullato"):
+    with pytest.raises(MegaApiError, match="annullato") as exc:
         client._api_request({"a": "g"})
+    assert exc.value.error_code == "resolve_cancelled"
     assert state["i"] == 1  # un solo POST, poi abort nel backoff
 
 
 def test_retries_exhausted_raises():
     client, state = _client([_FakeResp("[-3]")])  # sempre -3
-    with pytest.raises(MegaApiError, match="tentativi esauriti"):
+    with pytest.raises(MegaApiError, match="tentativi esauriti") as exc:
         client._api_request({"a": "g"})
+    assert exc.value.error_code == "api_retries_exhausted"
     assert state["i"] == 5  # bounded a 5 tentativi
 
 
@@ -134,8 +140,9 @@ def test_list_folder_sends_recursive_listing_request():
 
 def test_list_folder_without_f_raises():
     client, _ = _client_capturing()   # risponde con 'g', non con 'f'
-    with pytest.raises(MegaApiError, match="elenco della cartella"):
+    with pytest.raises(MegaApiError, match="elenco della cartella") as exc:
         client.list_folder("FOLDERID")
+    assert exc.value.error_code == "folder_listing_unavailable"
 
 
 # ---- resolve di un nodo dentro una cartella --------------------------------
@@ -173,17 +180,20 @@ def test_folder_job_key_is_the_already_decrypted_eight_word_key():
 def test_folder_job_with_short_key_raises():
     bad = build_folder_job_url("F", "N", _b64_key((1, 2, 3, 4)), ("a", "b.bin"))
     client, _ = _client_capturing()
-    with pytest.raises(MegaApiError, match="troppo corta"):
+    with pytest.raises(MegaApiError, match="troppo corta") as exc:
         client.resolve_public_url(bad)
+    assert exc.value.error_code == "node_key_too_short"
 
 
 def test_plain_folder_link_is_refused_with_a_clear_message():
     client, _ = _client_capturing()
-    with pytest.raises(MegaApiError, match="va espanso"):
+    with pytest.raises(MegaApiError, match="va espanso") as exc:
         client.resolve_public_url("https://mega.nz/folder/AAA#KEYKEY")
+    assert exc.value.error_code == "folder_link_not_downloadable"
 
 
 def test_unparsable_url_still_raises():
     client, _ = _client_capturing()
-    with pytest.raises(MegaApiError, match="non parsabile"):
+    with pytest.raises(MegaApiError, match="non parsabile") as exc:
         client.resolve_public_url("https://example.com/nope")
+    assert exc.value.error_code == "url_not_parsable"

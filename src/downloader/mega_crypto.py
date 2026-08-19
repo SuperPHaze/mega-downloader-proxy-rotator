@@ -8,6 +8,8 @@ import struct
 
 from Crypto.Cipher import AES
 
+from src.core.errors import UserFacingValueError
+
 
 def base64_url_decode(data: str) -> bytes:
     data += "=="[(2 - len(data) * 3) % 4:]
@@ -56,9 +58,9 @@ def decrypt_key(enc: tuple[int, ...], master: tuple[int, ...]) -> tuple[int, ...
     derive_file_key).
     """
     if not enc or len(enc) % 4 != 0:
-        raise ValueError(f"chiave cifrata di lunghezza non valida: {len(enc)} word")
+        raise UserFacingValueError("crypto_bad_key_length", words=len(enc))
     if len(master) != 4:
-        raise ValueError(f"master key della cartella non a 4 word: {len(master)}")
+        raise UserFacingValueError("crypto_bad_master_key", words=len(master))
     aes = AES.new(a32_to_str(master), AES.MODE_ECB)
     return _str_to_a32(aes.decrypt(a32_to_str(enc)))
 
@@ -69,7 +71,7 @@ def derive_file_key(raw_key: tuple[int, ...]) -> tuple[tuple[int, ...], tuple[in
     k = XOR fra le due meta' (4 word). iv = (raw[4], raw[5], 0, 0).
     """
     if len(raw_key) < 8:
-        raise ValueError(f"file_key troppo corta: {len(raw_key)} word")
+        raise UserFacingValueError("crypto_file_key_short", words=len(raw_key))
     k = (
         raw_key[0] ^ raw_key[4],
         raw_key[1] ^ raw_key[5],
