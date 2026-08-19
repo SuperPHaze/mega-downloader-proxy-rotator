@@ -2,6 +2,10 @@
 # media aritmetica per-download, picco/minima, tempo attivo con auto-freeze,
 # dettaglio per-job, pulsante "Copia riepilogo". Header sempre visibile con
 # riassunto 1 Hz; body collassabile. Aggiornamento event-driven + tick 1 Hz.
+#
+# i18n: superficie PERSISTENTE, quindi retranslate(). Le etichette statiche
+# (titolo, intestazioni, pulsante) restano appese come attributi apposta per
+# poterle riscrivere; il resto si rigenera da refresh().
 from __future__ import annotations
 
 import time
@@ -23,6 +27,7 @@ from PyQt6.QtWidgets import (
 )
 
 from src.gui import style as _style
+from src.gui.i18n import t
 from src.gui.format_helpers import (
     build_header_summary,
     fmt_bytes,
@@ -38,14 +43,22 @@ from src.gui.preferences import load_stats_panel_expanded, save_stats_panel_expa
 from src.gui.session_clock import SessionClock
 from src.gui.session_speed import SessionSpeedStats, is_plausible_bps
 
-_TERMINAL_STATUS_LABEL = {
-    "completato": "ok",
-    "fallito": "fallito",
-    "annullato": "annullato",
-    "abbandonato": "abbandonato",
-    "in_corso": "in corso",
-    "in_coda": "in coda",
+# Stato del modello -> chiave i18n. La MAPPA e' di stats_panel, quindi il testo
+# mostrato si traduce; lo stato grezzo (chiave) appartiene a jobs_model e resta
+# com'e', anche nel fallback quando non e' mappato.
+_TERMINAL_STATUS_KEY = {
+    "completato": "stats_panel.status_completed",
+    "fallito": "stats_panel.status_failed",
+    "annullato": "stats_panel.status_cancelled",
+    "abbandonato": "stats_panel.status_abandoned",
+    "in_corso": "stats_panel.status_running",
+    "in_coda": "stats_panel.status_queued",
 }
+
+
+def _status_label(status: str) -> str:
+    key = _TERMINAL_STATUS_KEY.get(status)
+    return t(key) if key else status
 
 
 def _short_url(url: str, max_len: int = 40) -> str:
@@ -112,15 +125,15 @@ class StatsPanel(QWidget):
         self._toggle_btn.setFixedSize(20, 20)
         header_row.addWidget(self._toggle_btn)
 
-        title_lbl = QLabel("Statistiche")
-        title_lbl.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
-        header_row.addWidget(title_lbl)
+        self._title_lbl = QLabel(t("stats_panel.title"))
+        self._title_lbl.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
+        header_row.addWidget(self._title_lbl)
 
         self._summary_lbl = QLabel("—")
         self._summary_lbl.setFont(QFont("Segoe UI", 9))
         header_row.addWidget(self._summary_lbl, 1)
 
-        self._copy_btn = QPushButton("Copia riepilogo")
+        self._copy_btn = QPushButton(t("stats_panel.copy_button"))
         self._copy_btn.setFixedHeight(24)
         self._copy_btn.clicked.connect(self._on_copy)
         header_row.addWidget(self._copy_btn)
@@ -133,50 +146,50 @@ class StatsPanel(QWidget):
         body_vl.setSpacing(3)
         body_vl.setContentsMargins(0, 4, 0, 0)
 
-        self._session_lbl = QLabel("Sessione: —")
+        self._session_lbl = QLabel(t("stats_panel.session_placeholder"))
         self._session_lbl.setFont(QFont("Segoe UI", 10))
         body_vl.addWidget(self._session_lbl)
 
-        self._volume_lbl = QLabel("Volume scaricato:  —")
+        self._volume_lbl = QLabel(t("stats_panel.volume", value="—"))
         body_vl.addWidget(self._volume_lbl)
 
-        speed_hdr = QLabel("Velocità di sessione")
-        speed_hdr.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
-        body_vl.addWidget(speed_hdr)
+        self._speed_hdr = QLabel(t("stats_panel.speed_header"))
+        self._speed_hdr.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
+        body_vl.addWidget(self._speed_hdr)
 
         speed_cols = QHBoxLayout()
         speed_cols.setSpacing(24)
 
         left = QVBoxLayout()
         left.setSpacing(1)
-        self._throughput_lbl = QLabel("  Throughput effettivo : —")
+        self._throughput_lbl = QLabel(t("stats_panel.throughput", value="—"))
         self._throughput_lbl.setFont(QFont("Consolas", 9))
         left.addWidget(self._throughput_lbl)
-        self._avg_dl_lbl = QLabel("  Media per-download   : —")
+        self._avg_dl_lbl = QLabel(t("stats_panel.avg_per_download", value="—"))
         self._avg_dl_lbl.setFont(QFont("Consolas", 9))
         left.addWidget(self._avg_dl_lbl)
         speed_cols.addLayout(left, 1)
 
         right = QVBoxLayout()
         right.setSpacing(1)
-        self._peak_lbl = QLabel("  Picco  : —")
+        self._peak_lbl = QLabel(t("stats_panel.peak", value="—"))
         self._peak_lbl.setFont(QFont("Consolas", 9))
         right.addWidget(self._peak_lbl)
-        self._min_lbl = QLabel("  Minima : —")
+        self._min_lbl = QLabel(t("stats_panel.minimum", value="—"))
         self._min_lbl.setFont(QFont("Consolas", 9))
         right.addWidget(self._min_lbl)
         speed_cols.addLayout(right, 1)
 
         body_vl.addLayout(speed_cols)
 
-        self._counts_lbl = QLabel("Job: —")
+        self._counts_lbl = QLabel(t("stats_panel.counts_placeholder"))
         body_vl.addWidget(self._counts_lbl)
-        self._rate_lbl = QLabel("Tasso completati: —")
+        self._rate_lbl = QLabel(t("stats_panel.rate", value="—"))
         body_vl.addWidget(self._rate_lbl)
 
-        detail_hdr = QLabel("Dettaglio per-download:")
-        detail_hdr.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
-        body_vl.addWidget(detail_hdr)
+        self._detail_hdr = QLabel(t("stats_panel.detail_header"))
+        self._detail_hdr.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
+        body_vl.addWidget(self._detail_hdr)
 
         self._detail_text = QPlainTextEdit()
         self._detail_text.setReadOnly(True)
@@ -227,7 +240,7 @@ class StatsPanel(QWidget):
         agg = self.model.aggregates()
         self._refresh_labels(agg, time.time())
 
-    def _refresh_labels(self, agg: dict, now: float) -> None:
+    def _refresh_labels(self, agg: dict, now: float, force: bool = False) -> None:
         p = _style.CURRENT_PALETTE
         elapsed = self._clock.elapsed(now)
         all_term = bool(agg.get("all_terminated", False))
@@ -250,48 +263,68 @@ class StatsPanel(QWidget):
             all_terminated=all_term,
         ))
 
-        if not self._body.isVisible():
+        # Col body nascosto non vale la pena formattare: nessuno legge quelle
+        # etichette. `force` serve al cambio lingua, che deve lasciare TUTTO
+        # nella lingua nuova anche se il pannello e' chiuso — altrimenti
+        # riaprendolo si vedrebbe la lingua vecchia fino al tick successivo.
+        if not force and not self._body.isVisible():
             return
 
         # Body labels
-        status_str = "completata" if all_term else "in corso"
-        self._session_lbl.setText(f"Sessione: {fmt_hhmmss(elapsed)}  ({status_str})")
+        status_str = t(
+            "stats_panel.session_completed" if all_term
+            else "stats_panel.session_running"
+        )
+        self._session_lbl.setText(
+            t("stats_panel.session", time=fmt_hhmmss(elapsed), status=status_str)
+        )
         self._session_lbl.setStyleSheet(f"color: {p['text']};")
 
-        self._volume_lbl.setText(f"Volume scaricato:  {fmt_bytes(total_bytes)}")
+        self._volume_lbl.setText(
+            t("stats_panel.volume", value=fmt_bytes(total_bytes))
+        )
         self._volume_lbl.setStyleSheet(f"color: {p['text']};")
 
         eff_str = fmt_speed(eff_bps) if eff_bps > 0 else "—"
-        self._throughput_lbl.setText(f"  Throughput effettivo : {eff_str}")
+        self._throughput_lbl.setText(t("stats_panel.throughput", value=eff_str))
         self._throughput_lbl.setStyleSheet(f"color: {p['text_dim']};")
 
         arith = agg.get("arithmetic_avg_bps")
         self._avg_dl_lbl.setText(
-            f"  Media per-download   : {fmt_speed(arith) if arith is not None else '—'}"
+            t(
+                "stats_panel.avg_per_download",
+                value=fmt_speed(arith) if arith is not None else "—",
+            )
         )
         self._avg_dl_lbl.setStyleSheet(f"color: {p['text_dim']};")
 
         peak = self._speed_stats.peak
         minimum = self._speed_stats.minimum
         self._peak_lbl.setText(
-            f"  Picco  : {fmt_speed(peak) if peak is not None else '—'}"
+            t("stats_panel.peak", value=fmt_speed(peak) if peak is not None else "—")
         )
         self._peak_lbl.setStyleSheet(f"color: {p['text_dim']};")
         self._min_lbl.setText(
-            f"  Minima : {fmt_speed(minimum) if minimum is not None else '—'}"
+            t(
+                "stats_panel.minimum",
+                value=fmt_speed(minimum) if minimum is not None else "—",
+            )
         )
         self._min_lbl.setStyleSheet(f"color: {p['text_dim']};")
 
         running = int(agg.get("running", 0))
         queued = int(agg.get("queued", 0))
         self._counts_lbl.setText(
-            f"Job: {total} totali · {ok} ok · {failed} fall. · "
-            f"{abandoned} abb. · {cancelled} ann. · {running} in corso · {queued} coda"
+            t(
+                "stats_panel.counts",
+                total=total, ok=ok, failed=failed, abandoned=abandoned,
+                cancelled=cancelled, running=running, queued=queued,
+            )
         )
         self._counts_lbl.setStyleSheet(f"color: {p['text']};")
 
         tasso_str = f"{round(ok / total * 100)}%" if total > 0 else "—"
-        self._rate_lbl.setText(f"Tasso completati: {tasso_str}")
+        self._rate_lbl.setText(t("stats_panel.rate", value=tasso_str))
         self._rate_lbl.setStyleSheet(f"color: {p['text_dim']};")
 
         lines = []
@@ -305,7 +338,7 @@ class StatsPanel(QWidget):
                 spd_str = fmt_speed(job.speed)
             else:
                 spd_str = "—"
-            status_short = _TERMINAL_STATUS_LABEL.get(job.status, job.status)
+            status_short = _status_label(job.status)
             lines.append(
                 f"#{job.file_id + 1:<3} {name:<40}  {vol_str:>9}  {dur_str}"
                 f"  {spd_str:>12}  {status_short}"
@@ -337,21 +370,33 @@ class StatsPanel(QWidget):
         queued = int(agg.get("queued", 0))
         tasso_str = f"{round(ok / total * 100)}%" if total > 0 else "—"
 
+        status_str = t(
+            "stats_panel.session_completed" if all_term
+            else "stats_panel.session_running"
+        )
         lines = [
-            "=== Sessione MDPR ===",
-            f"Tempo:    {fmt_hhmmss(elapsed)}  ({'completata' if all_term else 'in corso'})",
-            f"Volume:   {fmt_bytes(total_bytes)}",
-            "Velocita':",
-            f"  - Throughput effettivo: {eff_str}",
-            f"  - Media per-download:   {fmt_speed(arith) if arith is not None else '—'}",
-            f"  - Picco / Minima:       "
-            f"{fmt_speed(peak) if peak is not None else '—'} / "
-            f"{fmt_speed(minimum) if minimum is not None else '—'}",
-            f"Job: {total} totali  ok={ok}  fall={failed}  abb={abandoned}"
-            f"  ann={cancelled}  in_corso={running}  in_coda={queued}",
-            f"Tasso completati: {tasso_str}",
+            t("stats_panel.copy_header"),
+            t("stats_panel.copy_time", time=fmt_hhmmss(elapsed), status=status_str),
+            t("stats_panel.copy_volume", value=fmt_bytes(total_bytes)),
+            t("stats_panel.copy_speed_header"),
+            t("stats_panel.copy_throughput", value=eff_str),
+            t(
+                "stats_panel.copy_avg",
+                value=fmt_speed(arith) if arith is not None else "—",
+            ),
+            t(
+                "stats_panel.copy_peak_min",
+                peak=fmt_speed(peak) if peak is not None else "—",
+                min=fmt_speed(minimum) if minimum is not None else "—",
+            ),
+            t(
+                "stats_panel.copy_counts",
+                total=total, ok=ok, failed=failed, abandoned=abandoned,
+                cancelled=cancelled, running=running, queued=queued,
+            ),
+            t("stats_panel.copy_rate", value=tasso_str),
             "",
-            "Dettaglio:",
+            t("stats_panel.copy_detail_header"),
         ]
         for job in self.model.jobs_iter():
             name = job.file_name if job.file_name else _short_url(job.url, 40)
@@ -363,13 +408,25 @@ class StatsPanel(QWidget):
                 spd_str = fmt_speed(job.speed)
             else:
                 spd_str = "—"
-            status_short = _TERMINAL_STATUS_LABEL.get(job.status, job.status)
+            status_short = _status_label(job.status)
             lines.append(
                 f"#{job.file_id + 1}  {name}  {vol_str}  {dur_str}  {spd_str}  {status_short}"
             )
 
         QApplication.clipboard().setText("\n".join(lines))
-        QMessageBox.information(self, "Copiato", "Riepilogo copiato negli appunti.")
+        QMessageBox.information(
+            self, t("stats_panel.copied_title"), t("stats_panel.copied_body")
+        )
+
+    # ---- i18n -----------------------------------------------------------
+
+    def retranslate(self) -> None:
+        """Riscrive le etichette statiche e rigenera quelle con dati."""
+        self._title_lbl.setText(t("stats_panel.title"))
+        self._copy_btn.setText(t("stats_panel.copy_button"))
+        self._speed_hdr.setText(t("stats_panel.speed_header"))
+        self._detail_hdr.setText(t("stats_panel.detail_header"))
+        self._refresh_labels(self.model.aggregates(), time.time(), force=True)
 
     # ---- tema -----------------------------------------------------------
 

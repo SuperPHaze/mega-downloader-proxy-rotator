@@ -3,6 +3,9 @@
 # minima/ETA/tempo) e zona download (totale + barra segmentata + conteggi),
 # separate da una linea verticale interna. Aggiornamento event-driven dal
 # modello + tick 1s per tempo/ETA/campionamento.
+#
+# i18n: superficie PERSISTENTE, quindi retranslate(). Le due micro-etichette
+# tengono la CHIAVE, il resto dei testi si rigenera da refresh().
 from __future__ import annotations
 
 import time
@@ -12,6 +15,7 @@ from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import QFrame, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 from src.gui import style as _style
+from src.gui.i18n import t
 from src.gui.jobs_model import JobsModel
 from src.gui.radial_gauge import RadialGauge, gauge_fraction
 from src.gui.segment_bar import SegmentBar
@@ -46,9 +50,12 @@ def _fmt_speed_parts(bps: float) -> tuple[str, str]:
     return f"{bps / 1024:.0f}", "KB/s"
 
 
-def _micro_label(text: str) -> QLabel:
-    lbl = QLabel(text.upper())
+def _micro_label(label_key: str) -> QLabel:
+    lbl = QLabel(t(label_key).upper())
     lbl.setFont(QFont("Segoe UI", 8))
+    # La chiave resta appesa al widget: retranslate() la rilegge senza
+    # dover ricostruire la zona.
+    lbl.setProperty('i18n_key', label_key)
     return lbl
 
 
@@ -94,7 +101,7 @@ class StatsBar(QWidget):
         v.setContentsMargins(0, 0, 0, 0)
         v.setSpacing(2)
 
-        self._speed_micro = _micro_label("Velocità")
+        self._speed_micro = _micro_label("stats_bar.speed")
         v.addWidget(self._speed_micro)
 
         gauge_row = QHBoxLayout()
@@ -129,7 +136,7 @@ class StatsBar(QWidget):
         v.setContentsMargins(0, 0, 0, 0)
         v.setSpacing(2)
 
-        self._job_micro = _micro_label("Download")
+        self._job_micro = _micro_label("stats_bar.downloads")
         v.addWidget(self._job_micro)
 
         self._job_total = QLabel("—")
@@ -172,7 +179,8 @@ class StatsBar(QWidget):
 
         self._job_total.setText(
             f"<span style='font-size:13pt;font-weight:500;color:{p['text']};'>{total}</span>"
-            f" <span style='font-size:8pt;color:{p['text_dim']};'>totali</span>"
+            f" <span style='font-size:8pt;color:{p['text_dim']};'>"
+            f"{t('stats_bar.total_suffix')}</span>"
         )
         self._job_segment.set_segments([
             (running, "accent_info"),
@@ -181,9 +189,20 @@ class StatsBar(QWidget):
             (failed_tot, "accent_fail"),
         ])
         fail_color = p["accent_fail"] if failed_tot > 0 else p["text_dim"]
+        # Il segmento dei falliti porta il proprio colore: si formatta a parte
+        # e finisce come ultimo parametro della riga tradotta.
+        failed_html = (
+            f"<span style='color:{fail_color};'>"
+            f"{t('stats_bar.count_failed', n=failed_tot)}</span>"
+        )
         self._job_counts.setText(
-            f"{running} corso · {queued} coda · {completed} ok · "
-            f"<span style='color:{fail_color};'>{failed_tot} fall.</span>"
+            t(
+                "stats_bar.counts",
+                running=running,
+                queued=queued,
+                completed=completed,
+                failed=failed_html,
+            )
         )
         self._job_counts.setStyleSheet(f"color: {p['text_dim']};")
 
@@ -193,7 +212,9 @@ class StatsBar(QWidget):
         frac = gauge_fraction(bps, peak)
         value_text, unit_text = _fmt_speed_parts(bps)
         self._speed_gauge.set_value(frac, value_text, unit_text)
-        self._speed_pct.setText(f"{round(frac * 100)}% del picco" if peak > 0 else "—")
+        self._speed_pct.setText(
+            t("stats_bar.pct_of_peak", pct=round(frac * 100)) if peak > 0 else "—"
+        )
         self._speed_pct.setStyleSheet(f"font-size: 13px; color: {p['text']};")
 
     def _refresh_speed_substats(self) -> None:
@@ -202,9 +223,12 @@ class StatsBar(QWidget):
         peak = self._speed_stats.peak
         minimum = self._speed_stats.minimum
         self._speed_substats.setText(
-            f"picco {_fmt_speed(peak) if peak is not None else '—'} · "
-            f"media {_fmt_speed(avg)} · min "
-            f"{_fmt_speed(minimum) if minimum is not None else '—'}"
+            t(
+                "stats_bar.substats",
+                peak=_fmt_speed(peak) if peak is not None else "—",
+                avg=_fmt_speed(avg),
+                min=_fmt_speed(minimum) if minimum is not None else "—",
+            )
         )
         self._speed_substats.setStyleSheet(f"color: {p['text_dim']};")
 
@@ -217,7 +241,9 @@ class StatsBar(QWidget):
             h, rem = divmod(sec, 3600)
             m, s = divmod(rem, 60)
             clock = f"{h:02d}:{m:02d}:{s:02d}"
-        self._speed_eta_time.setText(f"ETA {self._eta_text} · {clock}")
+        self._speed_eta_time.setText(
+            t("stats_bar.eta_time", eta=self._eta_text, clock=clock)
+        )
         self._speed_eta_time.setStyleSheet(f"color: {p['text_dim']};")
 
     def _on_tick(self) -> None:
@@ -233,8 +259,6 @@ class StatsBar(QWidget):
         self._refresh_speed_substats()
         self._update_eta_time_line()
 
-    # ---- tema -----------------------------------------------------------------
-
     def _restyle_separator(self) -> None:
         p = _style.CURRENT_PALETTE
         self._inner_separator.setStyleSheet(
@@ -247,6 +271,20 @@ class StatsBar(QWidget):
             lbl.setStyleSheet(
                 f"color: {p['text_dim']}; letter-spacing: 1px; border: none;"
             )
+
+    # ---- i18n -----------------------------------------------------------------
+
+    def retranslate(self) -> None:
+        """Riscrive le micro-etichette e rigenera i testi con dati (refresh())."""
+        for lbl in (self._speed_micro, self._job_micro):
+            key = lbl.property("i18n_key")
+            if key:
+                lbl.setText(t(key).upper())
+        self.refresh()
+        self._refresh_speed_substats()
+        self._update_eta_time_line()
+
+    # ---- tema -----------------------------------------------------------------
 
     def refresh_theme(self) -> None:
         self._restyle_separator()

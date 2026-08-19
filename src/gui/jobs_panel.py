@@ -4,6 +4,11 @@
 # Architettura: QScrollArea + un _JobCard per riga, creato e aggiornato da
 # JobsPanel. Il JobsModel resta la fonte di verita'; le card si aggiornano
 # tramite model.job_updated (segnale con file_id).
+#
+# i18n: superficie PERSISTENTE con cascata. retranslate() ricasca su _EmptyState
+# e su OGNI _JobCard, come gia' fa refresh_theme(). Si traduce solo il CROMO del
+# pannello: i testi che arrivano dal modello (nome file, ultimo errore, stato
+# grezzo di fallback) restano intatti — sono materia della fase Errori&Cronologia.
 from __future__ import annotations
 
 import os
@@ -33,6 +38,7 @@ from PyQt6.QtWidgets import (
 
 from src.core.failed_log import failed_log_path
 from src.gui import style as _style
+from src.gui.i18n import t
 from src.core.mega_links import parse_folder_job_url
 from src.gui.format_helpers import fmt_bytes as _fmt_bytes, fmt_speed as _fmt_speed_stat
 from src.gui.jobs_model import (
@@ -75,13 +81,16 @@ _STATUS_BG_KEY = {
     STATUS_CANCELLED: "status_bg_cancelled",
     STATUS_ABANDONED: "status_bg_abandoned",
 }
-_STATUS_LABELS = {
-    STATUS_QUEUED: "In coda",
-    STATUS_RUNNING: "In corso",
-    STATUS_COMPLETED: "Completato",
-    STATUS_FAILED: "Fallito",
-    STATUS_CANCELLED: "Annullato",
-    STATUS_ABANDONED: "Abbandonato",
+# Lo stato del modello -> chiave i18n. La MAPPA e' di jobs_panel, quindi il
+# testo del badge si traduce; lo stato grezzo (chiave) appartiene a jobs_model
+# e resta com'e', anche nel fallback quando non e' mappato.
+_STATUS_LABEL_KEY = {
+    STATUS_QUEUED: "jobs_panel.status_queued",
+    STATUS_RUNNING: "jobs_panel.status_running",
+    STATUS_COMPLETED: "jobs_panel.status_completed",
+    STATUS_FAILED: "jobs_panel.status_failed",
+    STATUS_CANCELLED: "jobs_panel.status_cancelled",
+    STATUS_ABANDONED: "jobs_panel.status_abandoned",
 }
 _PROGRESS_COLOR_KEY = {
     STATUS_RUNNING: "accent_active",
@@ -275,7 +284,7 @@ class _JobCard(QFrame):
             Qt.TextInteractionFlag.TextSelectableByMouse
         )
         path_row.addWidget(self._path_lbl, 1)
-        self._open_btn = QPushButton("Apri cartella")
+        self._open_btn = QPushButton(t("jobs_panel.open_folder_button"))
         self._open_btn.setFixedHeight(22)
         self._open_btn.clicked.connect(self._open_folder)
         path_row.addWidget(self._open_btn)
@@ -356,7 +365,8 @@ class _JobCard(QFrame):
         # Badge stato.
         fg = p.get(_STATUS_FG_KEY.get(job.status, "text_dim"), p["text"])
         bg = p.get(_STATUS_BG_KEY.get(job.status, "panel_alt"), p["panel_alt"])
-        label = _STATUS_LABELS.get(job.status, job.status)
+        label_key = _STATUS_LABEL_KEY.get(job.status)
+        label = t(label_key) if label_key else job.status
         self._badge.setText(label)
         self._badge.setStyleSheet(
             f"color: {fg}; background-color: {bg}; border-radius: 4px; "
@@ -366,7 +376,7 @@ class _JobCard(QFrame):
         # Pulsante azione — selettori CSS multipli per hover visibile.
         if job.status in (STATUS_QUEUED, STATUS_RUNNING):
             self._action_btn.setText("✕")
-            self._action_btn.setToolTip("Annulla download")
+            self._action_btn.setToolTip(t("jobs_panel.action_cancel"))
             self._action_btn.setStyleSheet(
                 f"QPushButton {{ color: {p['danger']}; border: 1.5px solid {p['danger']}; "
                 f"border-radius: 4px; background: transparent; font-size: 12pt; font-weight: bold; }}"
@@ -375,7 +385,7 @@ class _JobCard(QFrame):
             )
         elif job.status == STATUS_COMPLETED:
             self._action_btn.setText("📂")
-            self._action_btn.setToolTip("Apri cartella")
+            self._action_btn.setToolTip(t("jobs_panel.action_open_folder"))
             self._action_btn.setStyleSheet(
                 f"QPushButton {{ color: {p['accent_ok']}; border: 1px solid {p['border']}; "
                 f"border-radius: 4px; background: transparent; font-size: 12pt; }}"
@@ -383,7 +393,7 @@ class _JobCard(QFrame):
             )
         elif job.status in (STATUS_FAILED, STATUS_ABANDONED, STATUS_CANCELLED):
             self._action_btn.setText("↻")
-            self._action_btn.setToolTip("Riavvia download")
+            self._action_btn.setToolTip(t("jobs_panel.action_restart"))
             self._action_btn.setStyleSheet(
                 f"QPushButton {{ color: {p['accent_info']}; border: 1px solid {p['accent_info']}; "
                 f"border-radius: 4px; background: transparent; font-size: 14pt; font-weight: bold; }}"
@@ -392,7 +402,7 @@ class _JobCard(QFrame):
             )
         else:
             self._action_btn.setText("⎘")
-            self._action_btn.setToolTip("Copia URL")
+            self._action_btn.setToolTip(t("jobs_panel.action_copy_url"))
             self._action_btn.setStyleSheet(
                 f"QPushButton {{ color: {p['text_dim']}; border: 1px solid {p['border']}; "
                 f"border-radius: 4px; background: transparent; font-size: 12pt; }}"
@@ -418,10 +428,18 @@ class _JobCard(QFrame):
             dur = job.duration_s()
             dur_str = f"{int(dur) // 60:02d}:{int(dur) % 60:02d}"
             if job.average_bps_final is not None:
-                spd_str = f"media {_fmt_speed_stat(job.average_bps_final)}"
+                spd_str = t(
+                    "jobs_panel.avg_speed",
+                    value=_fmt_speed_stat(job.average_bps_final),
+                )
             else:
                 spd_str = "—"
-            self._terminal_stats_lbl.setText(f"{spd_str} · {vol_str} · {dur_str}")
+            self._terminal_stats_lbl.setText(
+                t(
+                    "jobs_panel.terminal_stats",
+                    speed=spd_str, volume=vol_str, duration=dur_str,
+                )
+            )
             self._terminal_stats_lbl.setStyleSheet(
                 f"color: {p['text_dim']}; border: none; padding-left: 24px;"
             )
@@ -430,12 +448,23 @@ class _JobCard(QFrame):
             self._terminal_stats_lbl.setVisible(False)
 
         # Pannello dettagli.
-        self._ip_lbl.setText(f"IP corrente: {job.current_ip or '—'}")
+        self._ip_lbl.setText(
+            t("jobs_panel.current_ip", ip=job.current_ip or "—")
+        )
         self._ip_lbl.setStyleSheet(f"color: {p['text_dim']}; border: none;")
+        # Le tre parti restano chiavi distinte perche' sono condizionali: ognuna
+        # e' una frase compiuta, non un mezzo periodo. Il TESTO dell'errore
+        # arriva dal modello e non si traduce qui.
         self._attempts_lbl.setText(
-            f"Tentativi: {job.attempts}"
-            + (f"  •  Errori: {job.errors_count}" if job.errors_count else "")
-            + (f"  •  Ultimo errore: {job.last_error}" if job.last_error else "")
+            t("jobs_panel.attempts", n=job.attempts)
+            + (
+                t("jobs_panel.errors_suffix", n=job.errors_count)
+                if job.errors_count else ""
+            )
+            + (
+                t("jobs_panel.last_error_suffix", error=job.last_error)
+                if job.last_error else ""
+            )
         )
         self._attempts_lbl.setStyleSheet(f"color: {p['text_dim']}; border: none;")
         path_text = job.output_path or "—"
@@ -444,6 +473,11 @@ class _JobCard(QFrame):
         self._open_btn.setVisible(bool(job.output_path))
 
     def refresh_theme(self) -> None:
+        self._refresh()
+
+    def retranslate(self) -> None:
+        # _refresh() ridisegna badge, tooltip e dettagli dai testi correnti:
+        # e' lo stesso identico lavoro che serve al cambio lingua.
         self._refresh()
 
 
@@ -463,23 +497,30 @@ class _EmptyState(QWidget):
         icon_lbl.setFont(QFont("Segoe UI", 36))
         layout.addWidget(icon_lbl)
 
-        msg = QLabel("Aggiungi i tuoi link Mega per iniziare")
-        msg.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        msg.setFont(QFont("Segoe UI", 13))
-        layout.addWidget(msg)
+        self._msg = QLabel()
+        self._msg.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._msg.setFont(QFont("Segoe UI", 13))
+        layout.addWidget(self._msg)
 
-        sub = QLabel(
-            "Usa il pulsante «Aggiungi link» nella barra comandi\n"
-            "oppure clicca qui sotto."
-        )
-        sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(sub)
+        self._sub = QLabel()
+        self._sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self._sub)
 
-        btn = QPushButton("  Aggiungi link")
-        btn.setProperty("primary", "true")
-        btn.setFixedWidth(160)
-        btn.clicked.connect(self.paste_clicked)
-        layout.addWidget(btn, 0, Qt.AlignmentFlag.AlignCenter)
+        self._btn = QPushButton()
+        self._btn.setProperty("primary", "true")
+        self._btn.setFixedWidth(160)
+        self._btn.clicked.connect(self.paste_clicked)
+        layout.addWidget(self._btn, 0, Qt.AlignmentFlag.AlignCenter)
+
+        self.retranslate()
+
+    def retranslate(self) -> None:
+        # Il pulsante riusa la chiave della barra comandi e il suggerimento lo
+        # nomina come parametro: cosi' i due non possono sfasarsi.
+        button_label = t("controls.paste_links")
+        self._msg.setText(t("jobs_panel.empty_title"))
+        self._sub.setText(t("jobs_panel.empty_hint", button=button_label))
+        self._btn.setText("  " + button_label)
 
     def refresh_theme(self) -> None:
         pass  # colori ereditati da QSS globale
@@ -515,13 +556,13 @@ class JobsPanel(QWidget):
         self._filter_buttons: dict[str, QPushButton] = {}
         # Etichette base (senza conteggio): il numero di file per categoria
         # viene appeso da _update_filter_counts a ogni cambio di aggregati.
-        self._filter_base_labels: dict[str, str] = {
-            FILTER_IN_PROGRESS: "In corso",
-            FILTER_COMPLETED: "Completati",
-            FILTER_NOT_COMPLETED: "Non completati",
+        self._filter_label_keys: dict[str, str] = {
+            FILTER_IN_PROGRESS: "jobs_panel.filter_in_progress",
+            FILTER_COMPLETED: "jobs_panel.filter_completed",
+            FILTER_NOT_COMPLETED: "jobs_panel.filter_not_completed",
         }
-        for category, label in self._filter_base_labels.items():
-            btn = QPushButton(label)
+        for category in self._filter_label_keys:
+            btn = QPushButton()
             btn.setCheckable(True)
             btn.setChecked(category == FILTER_IN_PROGRESS)
             btn.clicked.connect(lambda _checked, c=category: self._on_filter_button_clicked(c))
@@ -532,12 +573,9 @@ class JobsPanel(QWidget):
         self._style_filter_buttons()
         filter_row.addStretch(1)
         # Pulsante bulk per riavviare tutti i job falliti/abbandonati/annullati.
-        self._restart_all_btn = QPushButton("Riavvia falliti (0)")
+        self._restart_all_btn = QPushButton(t("jobs_panel.restart_all", n=0))
         self._restart_all_btn.setEnabled(False)
-        self._restart_all_btn.setToolTip(
-            "Riavvia tutti i download falliti, abbandonati o annullati.\n"
-            "Il download riprende dai segmenti già scaricati (.part)."
-        )
+        self._restart_all_btn.setToolTip(t("jobs_panel.restart_all_tooltip"))
         self._restart_all_btn.clicked.connect(self.restart_all_failed_requested)
         filter_row.addWidget(self._restart_all_btn)
         layout.addLayout(filter_row)
@@ -633,13 +671,18 @@ class JobsPanel(QWidget):
     def _update_filter_counts(self) -> None:
         counts = self._category_counts()
         for category, btn in self._filter_buttons.items():
-            base = self._filter_base_labels[category]
-            btn.setText(f"{base} ({counts.get(category, 0)})")
+            btn.setText(
+                t(
+                    "jobs_panel.filter_with_count",
+                    label=t(self._filter_label_keys[category]),
+                    n=counts.get(category, 0),
+                )
+            )
 
     def _on_aggregates_changed(self) -> None:
         self._update_filter_counts()
         n = self.model.restartable_count()
-        self._restart_all_btn.setText(f"Riavvia falliti ({n})")
+        self._restart_all_btn.setText(t("jobs_panel.restart_all", n=n))
         self._restart_all_btn.setEnabled(n > 0)
 
     def _on_job_status_changed(self, file_id: int) -> None:
@@ -705,6 +748,19 @@ class JobsPanel(QWidget):
         self, file_id: int, _url: str, file_name: str, _file_size: object, path: str,
     ) -> None:
         self.model.set_file_info(file_id, file_name, path)
+
+    # ---- i18n ------------------------------------------------------------
+
+    def retranslate(self) -> None:
+        """Ritraduce il cromo del pannello e ricasca su stato vuoto e card."""
+        self._update_filter_counts()
+        self._restart_all_btn.setText(
+            t("jobs_panel.restart_all", n=self.model.restartable_count())
+        )
+        self._restart_all_btn.setToolTip(t("jobs_panel.restart_all_tooltip"))
+        self._empty.retranslate()
+        for card in self._cards.values():
+            card.retranslate()
 
     def refresh_theme(self) -> None:
         self._style_filter_buttons()

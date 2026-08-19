@@ -19,6 +19,11 @@ from src.gui import about_dialog, i18n, preferences
 from src.gui.about_dialog import AboutDialog
 from src.gui.controls import ControlsBar
 from src.gui.experimental_dialog import ExperimentalFeaturesDialog
+from src.gui.format_helpers import build_header_summary
+from src.gui.jobs_panel import JobsPanel
+from src.gui.proxy_bar import ProxyBar
+from src.gui.stats_bar import StatsBar
+from src.gui.stats_panel import StatsPanel
 from src.gui.i18n import TR, Translator, language_from_locale_name, t, tn
 from src.gui.paste_links_dialog import PasteLinksDialog
 from src.gui.strings_en import STRINGS as STRINGS_EN
@@ -328,7 +333,10 @@ def test_retranslate_does_not_reenter_preference_change(qapp, isolated_prefs, mo
 
 # Superfici migrate finora: un file che perde la sua voce qui e' un file
 # dimenticato dalla migrazione, non un test da aggiornare a cuor leggero.
-MIGRATED_SURFACES = ("main_window", "controls", "update_banner", "about", "experimental", "paste")
+MIGRATED_SURFACES = (
+    "main_window", "controls", "update_banner", "about", "experimental", "paste",
+    "format", "stats_bar", "proxy_bar", "stats_panel", "jobs_panel",
+)
 
 
 @pytest.mark.parametrize("surface", MIGRATED_SURFACES)
@@ -426,3 +434,140 @@ def test_paste_dialog_counters_are_named_params(qapp, isolated_prefs, monkeypatc
     assert dlg.lbl_valid.text() == "Valid: 1"
     assert dlg.lbl_invalid.text() == "Invalid: 1"
     assert dlg.add_btn.text() == "Add 1"
+
+
+# ---- F2b: pannelli persistenti e cascate ----------------------------------
+
+def _in_italian(monkeypatch):
+    monkeypatch.setattr(i18n, "detect_system_language", lambda: "it")
+    TR.set_preference("it")
+
+
+def test_proxy_bar_retranslates_with_cascade(qapp, isolated_prefs, monkeypatch):
+    """La cascata sulle _MetricCard: ogni card tiene la chiave, non il testo."""
+    _in_italian(monkeypatch)
+    bar = ProxyBar()
+    assert bar._card_alive._label.text() == "VIVI"
+    assert bar._card_validation._label.text() == "VALIDAZIONE"
+
+    TR.set_preference("en")
+    bar.retranslate()
+    assert bar._card_alive._label.text() == "ALIVE"
+    assert bar._card_validation._label.text() == "VALIDATION"
+    assert bar._card_band_proxy._label.text() == "PROXY SPEED"
+    assert bar._reset_btn.text() == "Reset cache"
+    assert "proxy pool" in bar._proxy_speedtest_btn.toolTip()
+
+
+def test_proxy_bar_retranslation_keeps_card_values(qapp, isolated_prefs, monkeypatch):
+    """Ritradurre riscrive le ETICHETTE, non i VALORI: un cambio lingua non
+    deve azzerare i numeri gia' mostrati."""
+    _in_italian(monkeypatch)
+    bar = ProxyBar()
+    bar.on_pool_size(42)
+    bar.on_proxy_stats(17, 3, 95.0)
+    TR.set_preference("en")
+    bar.retranslate()
+    assert bar._card_alive._value.text() == "42"
+    assert bar._card_discarded._value.text() == "17"
+    assert bar._card_refills._value.text() == "3"
+
+
+def test_stats_bar_retranslates(qapp, isolated_prefs, monkeypatch):
+    _in_italian(monkeypatch)
+    panel = JobsPanel()
+    bar = StatsBar(panel.model)
+    assert bar._speed_micro.text() == "VELOCITÀ"
+    assert bar._job_micro.text() == "DOWNLOAD"
+    assert "totali" in bar._job_total.text()
+
+    TR.set_preference("en")
+    bar.retranslate()
+    assert bar._speed_micro.text() == "SPEED"
+    assert bar._job_micro.text() == "DOWNLOADS"
+    assert "total" in bar._job_total.text()
+    assert "running" in bar._job_counts.text()
+
+
+def test_stats_panel_retranslates(qapp, isolated_prefs, monkeypatch):
+    _in_italian(monkeypatch)
+    panel = JobsPanel()
+    stats = StatsPanel(panel.model)
+    stats._body.setVisible(True)
+    stats.refresh()
+    assert stats._title_lbl.text() == "Statistiche"
+    assert stats._copy_btn.text() == "Copia riepilogo"
+    assert stats._speed_hdr.text() == "Velocità di sessione"
+
+    TR.set_preference("en")
+    stats.retranslate()
+    assert stats._title_lbl.text() == "Statistics"
+    assert stats._copy_btn.text() == "Copy summary"
+    assert stats._speed_hdr.text() == "Session speed"
+    assert stats._detail_hdr.text() == "Per-download detail:"
+    assert stats._throughput_lbl.text().startswith("  Effective throughput :")
+
+
+def test_jobs_panel_retranslates_with_cascade(qapp, isolated_prefs, monkeypatch):
+    """La cascata su _EmptyState e su OGNI _JobCard."""
+    _in_italian(monkeypatch)
+    panel = JobsPanel()
+    assert panel._empty._msg.text() == "Aggiungi i tuoi link Mega per iniziare"
+    assert panel._filter_buttons["in_progress"].text() == "In corso (0)"
+
+    panel.reset(["https://mega.nz/file/AAA#k", "https://mega.nz/file/BBB#k"])
+    panel.on_all_done(1)
+    assert panel._cards[0]._badge.text() == "In coda"
+    assert panel._cards[1]._badge.text() == "Completato"
+
+    TR.set_preference("en")
+    panel.retranslate()
+    assert panel._empty._msg.text() == "Add your Mega links to get started"
+    assert panel._filter_buttons["in_progress"].text() == "In progress (1)"
+    assert panel._filter_buttons["completed"].text() == "Completed (1)"
+    assert panel._restart_all_btn.text() == "Restart failed (0)"
+    # La cascata ha raggiunto entrambe le card, non solo la prima.
+    assert panel._cards[0]._badge.text() == "Queued"
+    assert panel._cards[1]._badge.text() == "Completed"
+
+
+def test_empty_state_button_matches_controls_key(qapp, isolated_prefs, monkeypatch):
+    """Il pulsante dello stato vuoto e il suggerimento che lo nomina usano la
+    STESSA chiave della barra comandi: non possono sfasarsi."""
+    _in_italian(monkeypatch)
+    panel = JobsPanel()
+    TR.set_preference("en")
+    panel.retranslate()
+    assert panel._empty._btn.text().strip() == t("controls.paste_links")
+    assert t("controls.paste_links") in panel._empty._sub.text()
+
+
+def test_jobs_panel_does_not_translate_model_text(qapp, isolated_prefs, monkeypatch):
+    """Confine di F2b: i testi che arrivano dal MODELLO (ultimo errore, nome
+    file) restano come sono anche in inglese — sono materia della fase
+    «Errori & Cronologia»."""
+    _in_italian(monkeypatch)
+    panel = JobsPanel()
+    panel.reset(["https://mega.nz/file/AAA#k"])
+    panel.on_abandoned(0, "https://mega.nz/file/AAA#k", 3, "errore che viene dal modello")
+
+    TR.set_preference("en")
+    panel.retranslate()
+    testo = panel._cards[0]._attempts_lbl.text()
+    assert testo.startswith("Attempts: 3")           # cromo: tradotto
+    assert "errore che viene dal modello" in testo   # dato del modello: intatto
+
+
+def test_header_summary_follows_language(isolated_prefs, monkeypatch):
+    """build_header_summary non e' piu' puro rispetto alla lingua: le
+    abbreviazioni tot/ok/fall. sono parole, non unita' di misura."""
+    _in_italian(monkeypatch)
+    totals = {"total": 5, "ok": 3, "fallen": 1}
+    it_out = build_header_summary(60, 1024, 0.0, totals, True)
+    assert "5 tot" in it_out and "1 fall." in it_out and "(completata)" in it_out
+
+    TR.set_preference("en")
+    en_out = build_header_summary(60, 1024, 0.0, totals, True)
+    assert "5 tot" in en_out and "1 fail." in en_out and "(completed)" in en_out
+    # Le unita' NON si traducono.
+    assert "1 KB" in it_out and "1 KB" in en_out

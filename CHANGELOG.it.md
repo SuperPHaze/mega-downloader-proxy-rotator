@@ -12,10 +12,12 @@ Tutte le modifiche rilevanti del progetto. Formato basato su [Keep a Changelog](
   **Impostazioni** compare la voce **Lingua** con «Automatica / Italiano / English». La scelta si
   applica **subito**, senza riavviare, e viene ricordata al riavvio successivo. Sono tradotti
   finora la **barra dei comandi**, il **titolo della finestra**, la barra «nuova versione
-  disponibile» e le finestre **Info**, **Funzioni Sperimentali** e **Incolla link Mega**; i
-  pannelli restanti (elenco download, statistiche, zona proxy) restano per ora in italiano e
-  verranno tradotti nelle fasi successive. I messaggi nei file di log restano in italiano:
-  servono alla diagnosi e devono restare stabili.
+  disponibile», le finestre **Info**, **Funzioni Sperimentali** e **Incolla link Mega**, e
+  l'intero cruscotto: **zona proxy**, **statistiche** ed **elenco dei download** (filtri,
+  schede, stato vuoto). Restano per ora in italiano la finestra di dettaglio di un download e
+  i **messaggi d'errore** dei singoli file, che verranno tradotti insieme in una fase
+  dedicata. I messaggi nei file di log restano in italiano: servono alla diagnosi e devono
+  restare stabili.
 
 ## [1.21.0] — 2026-08-18
 

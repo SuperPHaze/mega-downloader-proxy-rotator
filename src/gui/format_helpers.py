@@ -1,5 +1,13 @@
-"""Helper di formattazione condivisi (bytes, velocita', durata)."""
+"""Helper di formattazione condivisi (bytes, velocita', durata).
+
+i18n: le UNITA' di misura non si traducono (MB/s, GB, KB, B) e nemmeno il
+trattino lungo dei valori assenti — restano literal qui. L'unico testo vero e'
+la riga di riepilogo di `build_header_summary`, che percio' dipende dalla
+lingua corrente (le sue abbreviazioni tot/ok/fall. sono parole, non unita').
+"""
 from __future__ import annotations
+
+from src.gui.i18n import t
 
 
 def fmt_speed(bps: float) -> str:
@@ -42,13 +50,16 @@ def build_header_summary(
     totals_dict: dict,
     all_terminated: bool,
 ) -> str:
-    """Riassunto compatto per l'header del widget Statistiche (puro, senza Qt)."""
+    """Riassunto compatto per l'header del widget Statistiche (senza Qt)."""
     time_str = fmt_hhmmss(elapsed_s)
     if all_terminated:
-        time_str += " (completata)"
-    vol_str = fmt_bytes(total_bytes)
-    thr_str = fmt_speed(throughput_eff_bps)
-    total = totals_dict.get("total", 0)
-    ok = totals_dict.get("ok", 0)
-    fallen = totals_dict.get("fallen", 0)
-    return f"{time_str} · {vol_str} · {thr_str} · {total} tot · {ok} ok · {fallen} fall."
+        time_str += " " + t("format.session_completed")
+    return t(
+        "format.header_summary",
+        time=time_str,
+        volume=fmt_bytes(total_bytes),
+        speed=fmt_speed(throughput_eff_bps),
+        total=totals_dict.get("total", 0),
+        ok=totals_dict.get("ok", 0),
+        fallen=totals_dict.get("fallen", 0),
+    )

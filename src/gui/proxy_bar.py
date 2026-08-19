@@ -2,6 +2,11 @@
 # Validazione, Scartati, Ricariche, Ultimo refill, Banda, Banda proxy), niente
 # sparkline. Popolata da segnali dell'orchestrator (pool_size_changed,
 # setup_progress, proxy_stats).
+#
+# i18n: superficie PERSISTENTE con cascata. retranslate() riscrive i propri
+# testi e ricasca su ogni _MetricCard, esattamente come refresh_theme() ->
+# restyle(). Ogni card tiene la CHIAVE della propria etichetta, non il testo:
+# e' quello che le permette di ritradursi da sola.
 from __future__ import annotations
 
 from PyQt6.QtCore import pyqtSignal
@@ -18,6 +23,7 @@ from PyQt6.QtWidgets import (
 )
 
 from src.gui import style as _style
+from src.gui.i18n import t
 from src.proxy.proxy_cache import delete_proxy_cache
 
 
@@ -33,8 +39,9 @@ def _fmt_ago(seconds: float | None) -> str:
 class _MetricCard(QFrame):
     """Card compatta: etichetta piccola sopra, valore sotto."""
 
-    def __init__(self, label: str) -> None:
+    def __init__(self, label_key: str) -> None:
         super().__init__()
+        self._label_key = label_key
         # Min width sufficiente a mostrare su UNA riga l'etichetta più lunga
         # ("VALIDAZIONE" ~99px @7pt) più i margini: così, disposte su due righe
         # (griglia 2×4), le etichette non vengono MAI tagliate.
@@ -43,7 +50,7 @@ class _MetricCard(QFrame):
         v.setContentsMargins(5, 3, 5, 3)
         v.setSpacing(1)
 
-        self._label = QLabel(label.upper())
+        self._label = QLabel(t(label_key).upper())
         self._label.setFont(QFont("Segoe UI", 7))
         v.addWidget(self._label)
 
@@ -52,6 +59,9 @@ class _MetricCard(QFrame):
         fv.setWeight(QFont.Weight.Medium)
         self._value.setFont(fv)
         v.addWidget(self._value)
+
+    def retranslate(self) -> None:
+        self._label.setText(t(self._label_key).upper())
 
     def set_value(self, text: str, color: str | None = None) -> None:
         p = _style.CURRENT_PALETTE
@@ -86,7 +96,7 @@ class ProxyBar(QWidget):
         layout.setContentsMargins(5, 4, 5, 4)
         layout.setSpacing(3)
 
-        self._micro = QLabel("PROXY")
+        self._micro = QLabel(t("proxy_bar.micro"))
         self._micro.setFont(QFont("Segoe UI", 8))
         layout.addWidget(self._micro)
 
@@ -95,13 +105,13 @@ class ProxyBar(QWidget):
         cards_grid.setHorizontalSpacing(4)
         cards_grid.setVerticalSpacing(4)
 
-        self._card_alive = _MetricCard("Vivi")
-        self._card_validation = _MetricCard("Validazione")
-        self._card_discarded = _MetricCard("Scartati")
-        self._card_refills = _MetricCard("Ricariche")
-        self._card_since = _MetricCard("Ultimo refill")
-        self._card_band = _MetricCard("Banda")
-        self._card_band_proxy = _MetricCard("Banda proxy")
+        self._card_alive = _MetricCard("proxy_bar.card_alive")
+        self._card_validation = _MetricCard("proxy_bar.card_validation")
+        self._card_discarded = _MetricCard("proxy_bar.card_discarded")
+        self._card_refills = _MetricCard("proxy_bar.card_refills")
+        self._card_since = _MetricCard("proxy_bar.card_last_refill")
+        self._card_band = _MetricCard("proxy_bar.card_band")
+        self._card_band_proxy = _MetricCard("proxy_bar.card_band_proxy")
         self._cards = (
             self._card_alive,
             self._card_validation,
@@ -119,29 +129,20 @@ class ProxyBar(QWidget):
 
         # Pulsante per rifare la misura della banda della linea (diretto, fuori
         # dai proxy). La misura iniziale parte da MainWindow all'avvio.
-        self._speedtest_btn = QPushButton("↻ Banda")
+        self._speedtest_btn = QPushButton()
         self._speedtest_btn.setFixedHeight(22)
-        self._speedtest_btn.setToolTip(
-            "Misura la banda della linea (download diretto, senza proxy)."
-        )
         self._speedtest_btn.clicked.connect(self.speedtest_requested.emit)
 
         # Pulsante per misurare la banda ATTRAVERSO il pool di proxy. Abilitato
         # solo quando il pool ha proxy vivi (durante una sessione): a riposo non
         # ci sono proxy da testare.
-        self._proxy_speedtest_btn = QPushButton("↻ Banda proxy")
+        self._proxy_speedtest_btn = QPushButton()
         self._proxy_speedtest_btn.setFixedHeight(22)
-        self._proxy_speedtest_btn.setToolTip(
-            "Misura la banda reale del pool di proxy (solo durante una sessione)."
-        )
         self._proxy_speedtest_btn.setEnabled(False)
         self._proxy_speedtest_btn.clicked.connect(self.proxy_speedtest_requested.emit)
 
-        self._reset_btn = QPushButton("Reset cache")
+        self._reset_btn = QPushButton()
         self._reset_btn.setFixedHeight(22)
-        self._reset_btn.setToolTip(
-            "Cancella proxy_cache.json. Il prossimo avvio rifarà lo scrape da zero."
-        )
         self._reset_btn.clicked.connect(self._on_reset_cache)
 
         # I tre pulsanti (Banda / Banda proxy / Reset cache) impilati in
@@ -161,9 +162,29 @@ class ProxyBar(QWidget):
         main_row.addLayout(buttons_col)
         layout.addLayout(main_row)
 
+        self.retranslate()
         self._restyle_micro()
         self._restyle_cards()
         self.reset()
+
+    # ---- i18n ----------------------------------------------------------------
+
+    def retranslate(self) -> None:
+        """Riscrive i testi e ricasca su ogni card (gemello di refresh_theme()).
+
+        NON tocca i VALORI delle card: sono numeri e unita' di misura, gia'
+        indipendenti dalla lingua, e riscriverli qui li azzererebbe."""
+        self._micro.setText(t("proxy_bar.micro"))
+        for card in self._cards:
+            card.retranslate()
+        self._speedtest_btn.setText("↻ " + t("proxy_bar.speedtest_button"))
+        self._speedtest_btn.setToolTip(t("proxy_bar.speedtest_tooltip"))
+        self._proxy_speedtest_btn.setText(
+            "↻ " + t("proxy_bar.proxy_speedtest_button")
+        )
+        self._proxy_speedtest_btn.setToolTip(t("proxy_bar.proxy_speedtest_tooltip"))
+        self._reset_btn.setText(t("proxy_bar.reset_button"))
+        self._reset_btn.setToolTip(t("proxy_bar.reset_tooltip"))
 
     # ---- slot da pool/validazione --------------------------------------------
 
@@ -228,21 +249,28 @@ class ProxyBar(QWidget):
     def _on_reset_cache(self) -> None:
         answer = QMessageBox.question(
             self,
-            "Reset cache proxy",
-            "Cancellare la cache dei proxy?\n"
-            "Il prossimo avvio sarà più lento perché rifarà lo scrape da zero.",
+            t("proxy_bar.reset_confirm_title"),
+            t("proxy_bar.reset_confirm_body"),
         )
         if answer != QMessageBox.StandardButton.Yes:
             return
         try:
             deleted = delete_proxy_cache()
         except OSError as exc:
-            QMessageBox.warning(self, "Errore", f"Impossibile cancellare la cache:\n{exc}")
+            QMessageBox.warning(
+                self,
+                t("proxy_bar.reset_error_title"),
+                t("proxy_bar.reset_error_body", error=exc),
+            )
             return
         if deleted:
-            QMessageBox.information(self, "Cache proxy", "Cache proxy cancellata.")
+            QMessageBox.information(
+                self, t("proxy_bar.cache_title"), t("proxy_bar.cache_deleted")
+            )
         else:
-            QMessageBox.information(self, "Cache proxy", "Nessuna cache da cancellare.")
+            QMessageBox.information(
+                self, t("proxy_bar.cache_title"), t("proxy_bar.cache_absent")
+            )
 
     # ---- reset / tema ---------------------------------------------------------
 

@@ -11,10 +11,12 @@ All notable changes to this project. Format based on [Keep a Changelog](https://
   language (Italian if the system is in Italian, English in every other case) and the **Settings**
   menu gains a **Language** row with "Automatic / Italiano / English". The choice applies
   **immediately**, with no restart, and is remembered next time. Translated so far: the
-  **command bar**, the **window title**, the "new version available" bar and the **About**,
-  **Experimental Features** and **Paste Mega links** windows; the remaining panels (download
-  list, statistics, proxy area) stay in Italian for now and will be translated in the following
-  phases. Messages in the log files stay in Italian: they are diagnostic and must remain stable.
+  **command bar**, the **window title**, the "new version available" bar, the **About**,
+  **Experimental Features** and **Paste Mega links** windows, and the whole dashboard:
+  **proxy area**, **statistics** and **download list** (filters, cards, empty state). Still in
+  Italian for now: the per-download detail window and the **error messages** of individual
+  files, which will be translated together in a dedicated phase. Messages in the log files stay
+  in Italian: they are diagnostic and must remain stable.
 
 ## [1.21.0] — 2026-08-18
 

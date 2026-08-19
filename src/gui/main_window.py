@@ -776,15 +776,19 @@ class MainWindow(QMainWindow):
     def _on_language_changed(self, lang: str) -> None:
         """Ritraduzione a caldo: gemello di `_on_theme_toggle`.
 
-        F1 copre titolo + ControlsBar, F2a aggiunge UpdateBanner; gli altri
-        pannelli hanno ancora il testo hard-coded e si aggiungono qui a mano a
-        mano che F2 li migra (link_panel, jobs_panel, stats_bar, proxy_bar,
-        _stats_panel). I dialoghi non servono: nascono all'apertura e leggono
-        i testi alla costruzione."""
+        F1 copre titolo + ControlsBar, F2a UpdateBanner, F2b i quattro pannelli
+        persistenti (jobs_panel e proxy_bar ricascano sulle proprie card).
+        Resta da migrare link_panel/folder_expand_worker/main_window (F2c) e i
+        testi che nascono dagli errori (fase Errori & Cronologia). I dialoghi
+        non servono: nascono all'apertura e leggono i testi alla costruzione."""
         log.info("Ritraduzione interfaccia in corso: %s", lang)
         self._refresh_window_title()
         self.controls.retranslate()
         self.update_banner.retranslate()
+        self.stats_bar.retranslate()
+        self.proxy_bar.retranslate()
+        self._stats_panel.retranslate()
+        self.jobs_panel.retranslate()
 
     def _restyle_dashboard_separator(self) -> None:
         p = _style.CURRENT_PALETTE

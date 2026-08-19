@@ -157,4 +157,132 @@ STRINGS: dict[str, str | dict[str, str]] = {
     ),
     "paste.cancel": "Cancel",
     "paste.add_button": "Add {n}",
+
+    # ---- shared formatting helpers ---------------------------------------------
+    "format.session_completed": "(completed)",
+    "format.header_summary": (
+        "{time} · {volume} · {speed} · {total} tot · {ok} ok · {fallen} fail."
+    ),
+
+    # ---- compact dashboard (StatsBar) -------------------------------------------
+    "stats_bar.speed": "Speed",
+    "stats_bar.downloads": "Downloads",
+    "stats_bar.total_suffix": "total",
+    "stats_bar.pct_of_peak": "{pct}% of peak",
+    "stats_bar.substats": "peak {peak} · avg {avg} · min {min}",
+    "stats_bar.eta_time": "ETA {eta} · {clock}",
+    "stats_bar.counts": "{running} running · {queued} queued · {completed} ok · {failed}",
+    "stats_bar.count_failed": "{n} fail.",
+
+    # ---- proxy area (ProxyBar) ---------------------------------------------------
+    # Le etichette delle card stanno in uno spazio di ~100px a 7pt: "Proxy
+    # bandwidth" (143px) verrebbe TAGLIATA. "Line speed"/"Proxy speed" dicono
+    # la stessa cosa e ci stanno; il tooltip dei pulsanti spiega per esteso.
+    "proxy_bar.micro": "PROXY",
+    "proxy_bar.card_alive": "Alive",
+    "proxy_bar.card_validation": "Validation",
+    "proxy_bar.card_discarded": "Discarded",
+    "proxy_bar.card_refills": "Refills",
+    "proxy_bar.card_last_refill": "Last refill",
+    "proxy_bar.card_band": "Line speed",
+    "proxy_bar.card_band_proxy": "Proxy speed",
+    "proxy_bar.speedtest_button": "Line speed",
+    "proxy_bar.speedtest_tooltip": (
+        "Measures the line bandwidth (direct download, without proxies)."
+    ),
+    "proxy_bar.proxy_speedtest_button": "Proxy speed",
+    "proxy_bar.proxy_speedtest_tooltip": (
+        "Measures the real bandwidth of the proxy pool (only during a session)."
+    ),
+    "proxy_bar.reset_button": "Reset cache",
+    "proxy_bar.reset_tooltip": (
+        "Deletes proxy_cache.json. The next run will scrape from scratch."
+    ),
+    "proxy_bar.reset_confirm_title": "Reset proxy cache",
+    "proxy_bar.reset_confirm_body": (
+        "Delete the proxy cache?\n"
+        "The next run will be slower because it will scrape from scratch."
+    ),
+    "proxy_bar.reset_error_title": "Error",
+    "proxy_bar.reset_error_body": "Could not delete the cache:\n{error}",
+    "proxy_bar.cache_title": "Proxy cache",
+    "proxy_bar.cache_deleted": "Proxy cache deleted.",
+    "proxy_bar.cache_absent": "No cache to delete.",
+
+    # ---- Statistics panel (StatsPanel) ---------------------------------------------
+    "stats_panel.title": "Statistics",
+    "stats_panel.copy_button": "Copy summary",
+    "stats_panel.session": "Session: {time}  ({status})",
+    "stats_panel.session_placeholder": "Session: —",
+    "stats_panel.session_running": "running",
+    "stats_panel.session_completed": "completed",
+    "stats_panel.volume": "Downloaded volume:  {value}",
+    "stats_panel.speed_header": "Session speed",
+    # Colonne allineate in Consolas: la spaziatura e' ritarata sull'inglese
+    # ("Effective throughput" e "Per-download average" hanno la stessa lunghezza).
+    "stats_panel.throughput": "  Effective throughput : {value}",
+    "stats_panel.avg_per_download": "  Per-download average : {value}",
+    "stats_panel.peak": "  Peak    : {value}",
+    "stats_panel.minimum": "  Minimum : {value}",
+    "stats_panel.counts": (
+        "Jobs: {total} total · {ok} ok · {failed} fail. · {abandoned} aband. · "
+        "{cancelled} canc. · {running} running · {queued} queued"
+    ),
+    "stats_panel.counts_placeholder": "Jobs: —",
+    "stats_panel.rate": "Completion rate: {value}",
+    "stats_panel.detail_header": "Per-download detail:",
+    "stats_panel.status_completed": "ok",
+    "stats_panel.status_failed": "failed",
+    "stats_panel.status_cancelled": "cancelled",
+    "stats_panel.status_abandoned": "abandoned",
+    "stats_panel.status_running": "running",
+    "stats_panel.status_queued": "queued",
+    "stats_panel.copy_header": "=== MDPR session ===",
+    "stats_panel.copy_time": "Time:     {time}  ({status})",
+    "stats_panel.copy_volume": "Volume:   {value}",
+    "stats_panel.copy_speed_header": "Speed:",
+    "stats_panel.copy_throughput": "  - Effective throughput: {value}",
+    "stats_panel.copy_avg": "  - Per-download average: {value}",
+    "stats_panel.copy_peak_min": "  - Peak / Minimum:       {peak} / {min}",
+    "stats_panel.copy_counts": (
+        "Jobs: {total} total  ok={ok}  fail={failed}  aband={abandoned}"
+        "  canc={cancelled}  running={running}  queued={queued}"
+    ),
+    "stats_panel.copy_rate": "Completion rate: {value}",
+    "stats_panel.copy_detail_header": "Detail:",
+    "stats_panel.copied_title": "Copied",
+    "stats_panel.copied_body": "Summary copied to the clipboard.",
+
+    # ---- job list (JobsPanel) --------------------------------------------------
+    "jobs_panel.status_queued": "Queued",
+    "jobs_panel.status_running": "Running",
+    "jobs_panel.status_completed": "Completed",
+    "jobs_panel.status_failed": "Failed",
+    "jobs_panel.status_cancelled": "Cancelled",
+    "jobs_panel.status_abandoned": "Abandoned",
+    "jobs_panel.action_cancel": "Cancel download",
+    "jobs_panel.action_open_folder": "Open folder",
+    "jobs_panel.action_restart": "Restart download",
+    "jobs_panel.action_copy_url": "Copy URL",
+    "jobs_panel.open_folder_button": "Open folder",
+    "jobs_panel.terminal_stats": "{speed} · {volume} · {duration}",
+    "jobs_panel.avg_speed": "avg {value}",
+    "jobs_panel.current_ip": "Current IP: {ip}",
+    "jobs_panel.attempts": "Attempts: {n}",
+    "jobs_panel.errors_suffix": "  •  Errors: {n}",
+    "jobs_panel.last_error_suffix": "  •  Last error: {error}",
+    "jobs_panel.filter_in_progress": "In progress",
+    "jobs_panel.filter_completed": "Completed",
+    "jobs_panel.filter_not_completed": "Not completed",
+    "jobs_panel.filter_with_count": "{label} ({n})",
+    "jobs_panel.restart_all": "Restart failed ({n})",
+    "jobs_panel.restart_all_tooltip": (
+        "Restarts every failed, abandoned or cancelled download.\n"
+        "The download resumes from the segments already fetched (.part)."
+    ),
+    "jobs_panel.empty_title": "Add your Mega links to get started",
+    "jobs_panel.empty_hint": (
+        'Use the "{button}" button in the command bar\n'
+        "or click below."
+    ),
 }

@@ -1,5 +1,11 @@
-# Test puri per build_header_summary (nessuna dipendenza Qt).
+# Test per build_header_summary. Da F2b la riga di riepilogo passa da t():
+# il testo dipende dalla lingua, quindi la fixture `italian_ui` la fissa a
+# italiano — l'esito non deve dipendere dal locale della macchina.
+import pytest
+
 from src.gui.format_helpers import build_header_summary
+
+pytestmark = pytest.mark.usefixtures("italian_ui")
 
 
 def test_elapsed_zero_throughput_dash():

@@ -10,12 +10,17 @@ QtWidgets = pytest.importorskip("PyQt6.QtWidgets")
 
 from PyQt6.QtWidgets import QApplication
 
+# I testi asseriti qui sono in italiano: `italian_ui` fissa la lingua, cosi'
+# la suite non dipende dal locale della macchina (vedi tests/conftest.py).
 from src.gui.jobs_panel import (
     FILTER_COMPLETED,
     FILTER_IN_PROGRESS,
     FILTER_NOT_COMPLETED,
     JobsPanel,
 )
+
+
+pytestmark = pytest.mark.usefixtures("italian_ui")
 
 
 @pytest.fixture(scope="module")

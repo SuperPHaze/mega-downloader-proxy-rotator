@@ -36,3 +36,20 @@ def qt_app():
         return
     _APP = QApplication.instance() or QApplication([])
     yield _APP
+
+
+@pytest.fixture
+def italian_ui():
+    """Fissa la lingua dell'interfaccia a ITALIANO per la durata del test.
+
+    Serve a ogni test che asserisce testo italiano a video: senza, l'esito
+    dipenderebbe dal locale della macchina che lancia la suite (verde in
+    Italia, rosso altrove). Scrive direttamente lo stato del singolo
+    Translator, quindi non tocca `preferences.json`.
+    """
+    from src.gui.i18n import TR
+
+    pref, lang = TR.preference(), TR.language()
+    TR._preference, TR._language = "it", "it"
+    yield
+    TR._preference, TR._language = pref, lang

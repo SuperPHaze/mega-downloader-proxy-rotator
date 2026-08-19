@@ -166,4 +166,140 @@ STRINGS: dict[str, str | dict[str, str]] = {
     "paste.cancel": "Annulla",
     # Il numero e' un parametro, non un plurale: il testo non cambia forma.
     "paste.add_button": "Aggiungi {n}",
+
+    # ---- helper di formattazione condivisi ---------------------------------
+    # Le UNITA' non si traducono (MB/s, GB, KB): qui c'e' solo il testo.
+    "format.session_completed": "(completata)",
+    "format.header_summary": (
+        "{time} · {volume} · {speed} · {total} tot · {ok} ok · {fallen} fall."
+    ),
+
+    # ---- cruscotto compatto (StatsBar) -------------------------------------
+    "stats_bar.speed": "Velocità",
+    "stats_bar.downloads": "Download",
+    "stats_bar.total_suffix": "totali",
+    "stats_bar.pct_of_peak": "{pct}% del picco",
+    "stats_bar.substats": "picco {peak} · media {avg} · min {min}",
+    "stats_bar.eta_time": "ETA {eta} · {clock}",
+    # {failed} arriva gia' formattato (porta il colore): e' l'ultimo segmento.
+    "stats_bar.counts": "{running} corso · {queued} coda · {completed} ok · {failed}",
+    "stats_bar.count_failed": "{n} fall.",
+
+    # ---- zona proxy (ProxyBar) ---------------------------------------------
+    "proxy_bar.micro": "PROXY",
+    # Etichette delle card: il codice le mette in MAIUSCOLO da sé.
+    "proxy_bar.card_alive": "Vivi",
+    "proxy_bar.card_validation": "Validazione",
+    "proxy_bar.card_discarded": "Scartati",
+    "proxy_bar.card_refills": "Ricariche",
+    "proxy_bar.card_last_refill": "Ultimo refill",
+    "proxy_bar.card_band": "Banda",
+    "proxy_bar.card_band_proxy": "Banda proxy",
+    "proxy_bar.speedtest_button": "Banda",
+    "proxy_bar.speedtest_tooltip": (
+        "Misura la banda della linea (download diretto, senza proxy)."
+    ),
+    "proxy_bar.proxy_speedtest_button": "Banda proxy",
+    "proxy_bar.proxy_speedtest_tooltip": (
+        "Misura la banda reale del pool di proxy (solo durante una sessione)."
+    ),
+    "proxy_bar.reset_button": "Reset cache",
+    "proxy_bar.reset_tooltip": (
+        "Cancella proxy_cache.json. Il prossimo avvio rifarà lo scrape da zero."
+    ),
+    "proxy_bar.reset_confirm_title": "Reset cache proxy",
+    "proxy_bar.reset_confirm_body": (
+        "Cancellare la cache dei proxy?\n"
+        "Il prossimo avvio sarà più lento perché rifarà lo scrape da zero."
+    ),
+    "proxy_bar.reset_error_title": "Errore",
+    "proxy_bar.reset_error_body": "Impossibile cancellare la cache:\n{error}",
+    "proxy_bar.cache_title": "Cache proxy",
+    "proxy_bar.cache_deleted": "Cache proxy cancellata.",
+    "proxy_bar.cache_absent": "Nessuna cache da cancellare.",
+
+    # ---- pannello Statistiche (StatsPanel) ---------------------------------
+    "stats_panel.title": "Statistiche",
+    "stats_panel.copy_button": "Copia riepilogo",
+    "stats_panel.session": "Sessione: {time}  ({status})",
+    "stats_panel.session_placeholder": "Sessione: —",
+    "stats_panel.session_running": "in corso",
+    "stats_panel.session_completed": "completata",
+    "stats_panel.volume": "Volume scaricato:  {value}",
+    "stats_panel.speed_header": "Velocità di sessione",
+    # Le righe seguenti sono allineate a colonna in Consolas: gli spazi prima
+    # dei due punti fanno parte dell'impaginazione e vanno ritarati per lingua.
+    "stats_panel.throughput": "  Throughput effettivo : {value}",
+    "stats_panel.avg_per_download": "  Media per-download   : {value}",
+    "stats_panel.peak": "  Picco  : {value}",
+    "stats_panel.minimum": "  Minima : {value}",
+    "stats_panel.counts": (
+        "Job: {total} totali · {ok} ok · {failed} fall. · {abandoned} abb. · "
+        "{cancelled} ann. · {running} in corso · {queued} coda"
+    ),
+    "stats_panel.counts_placeholder": "Job: —",
+    "stats_panel.rate": "Tasso completati: {value}",
+    "stats_panel.detail_header": "Dettaglio per-download:",
+    # Stato del job nel dettaglio: la MAPPA vive in stats_panel, quindi il testo
+    # e' suo. La chiave della mappa resta lo stato del modello (dato, non testo).
+    "stats_panel.status_completed": "ok",
+    "stats_panel.status_failed": "fallito",
+    "stats_panel.status_cancelled": "annullato",
+    "stats_panel.status_abandoned": "abbandonato",
+    "stats_panel.status_running": "in corso",
+    "stats_panel.status_queued": "in coda",
+    # Riepilogo copiato negli appunti: lo legge l'utente, quindi si traduce.
+    "stats_panel.copy_header": "=== Sessione MDPR ===",
+    "stats_panel.copy_time": "Tempo:    {time}  ({status})",
+    "stats_panel.copy_volume": "Volume:   {value}",
+    "stats_panel.copy_speed_header": "Velocita':",
+    "stats_panel.copy_throughput": "  - Throughput effettivo: {value}",
+    "stats_panel.copy_avg": "  - Media per-download:   {value}",
+    "stats_panel.copy_peak_min": "  - Picco / Minima:       {peak} / {min}",
+    "stats_panel.copy_counts": (
+        "Job: {total} totali  ok={ok}  fall={failed}  abb={abandoned}"
+        "  ann={cancelled}  in_corso={running}  in_coda={queued}"
+    ),
+    "stats_panel.copy_rate": "Tasso completati: {value}",
+    "stats_panel.copy_detail_header": "Dettaglio:",
+    "stats_panel.copied_title": "Copiato",
+    "stats_panel.copied_body": "Riepilogo copiato negli appunti.",
+
+    # ---- elenco job (JobsPanel) --------------------------------------------
+    # Solo il CROMO del pannello: i testi che arrivano dal modello (stato grezzo
+    # di fallback, ultimo errore, nome file) NON si traducono qui — nascono in
+    # jobs_model/core/downloader e sono materia della fase «Errori & Cronologia».
+    "jobs_panel.status_queued": "In coda",
+    "jobs_panel.status_running": "In corso",
+    "jobs_panel.status_completed": "Completato",
+    "jobs_panel.status_failed": "Fallito",
+    "jobs_panel.status_cancelled": "Annullato",
+    "jobs_panel.status_abandoned": "Abbandonato",
+    "jobs_panel.action_cancel": "Annulla download",
+    "jobs_panel.action_open_folder": "Apri cartella",
+    "jobs_panel.action_restart": "Riavvia download",
+    "jobs_panel.action_copy_url": "Copia URL",
+    "jobs_panel.open_folder_button": "Apri cartella",
+    "jobs_panel.terminal_stats": "{speed} · {volume} · {duration}",
+    "jobs_panel.avg_speed": "media {value}",
+    "jobs_panel.current_ip": "IP corrente: {ip}",
+    "jobs_panel.attempts": "Tentativi: {n}",
+    "jobs_panel.errors_suffix": "  •  Errori: {n}",
+    "jobs_panel.last_error_suffix": "  •  Ultimo errore: {error}",
+    "jobs_panel.filter_in_progress": "In corso",
+    "jobs_panel.filter_completed": "Completati",
+    "jobs_panel.filter_not_completed": "Non completati",
+    "jobs_panel.filter_with_count": "{label} ({n})",
+    "jobs_panel.restart_all": "Riavvia falliti ({n})",
+    "jobs_panel.restart_all_tooltip": (
+        "Riavvia tutti i download falliti, abbandonati o annullati.\n"
+        "Il download riprende dai segmenti già scaricati (.part)."
+    ),
+    "jobs_panel.empty_title": "Aggiungi i tuoi link Mega per iniziare",
+    # {button} e' il nome del pulsante preso da controls.paste_links: cosi' il
+    # suggerimento non puo' sfasarsi dal pulsante che nomina.
+    "jobs_panel.empty_hint": (
+        "Usa il pulsante «{button}» nella barra comandi\n"
+        "oppure clicca qui sotto."
+    ),
 }
