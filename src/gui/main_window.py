@@ -38,7 +38,7 @@ from src.gui.folder_expand_worker import FolderExpandWorker
 from src.gui.about_dialog import AboutDialog
 from src.gui.controls import ControlsBar
 from src.gui.experimental_dialog import ExperimentalFeaturesDialog
-from src.gui.i18n import TR, t
+from src.gui.i18n import TR, t, tn
 from src.gui.job_detail_dialog import JobDetailDialog
 from src.gui.jobs_panel import JobsPanel
 from src.gui.link_panel import LinkPanel, confirm_already_downloaded
@@ -88,6 +88,10 @@ class MainWindow(QMainWindow):
         # persistiti su disco per il ripristino all'avvio (2.7).
         self._session_incomplete: dict[int, str] = {}
         self._dark_theme = False
+        # Ultimo messaggio di stato in forma ancora ritraducibile
+        # (chiave + parametri): resta None quando il testo arriva gia'
+        # formattato dall'orchestrator e non e' quindi ritraducibile.
+        self._status_source: tuple[str, int | None, dict[str, object]] | None = None
         self._startup_update_worker: UpdateCheckWorker | None = None
         self._speedtest_worker: SpeedTestWorker | None = None
         self._proxy_speedtest_worker: ProxySpeedTestWorker | None = None
@@ -264,12 +268,12 @@ class MainWindow(QMainWindow):
         # score (export_for_cache include host/port/protocol, gia' filtrati sui
         # vivi) e ne prendiamo i top PROXY_SPEEDTEST_STREAMS.
         if self.orchestrator is None:
-            self._set_status("Banda proxy: nessuna sessione attiva.")
+            self._set_status_t("main_window.proxy_speed_no_session")
             self.proxy_bar.on_proxy_speedtest_result(0.0, False)
             return
         snapshot = self.orchestrator.pool.export_for_cache()
         if not snapshot:
-            self._set_status("Banda proxy: nessun proxy disponibile nel pool.")
+            self._set_status_t("main_window.proxy_speed_no_proxy")
             self.proxy_bar.on_proxy_speedtest_result(0.0, False)
             return
         snapshot.sort(key=lambda p: p.get("score", 0), reverse=True)
@@ -287,7 +291,31 @@ class MainWindow(QMainWindow):
     # ---- stato status bar ------------------------------------------------
 
     def _set_status(self, msg: str) -> None:
+        """Testo gia' formattato: e' la forma usata dai segnali
+        dell'orchestrator, che nasce fuori dalla GUI e non e' traducibile qui.
+        """
+        self._status_source = None
         self._status_lbl.setText(msg)
+
+    def _set_status_t(self, key: str, **params: object) -> None:
+        """Come `_set_status`, ma ricorda chiave e parametri: al cambio
+        lingua la riga di stato si riscrive invece di restare indietro.
+        """
+        self._status_source = (key, None, params)
+        self._status_lbl.setText(t(key, **params))
+
+    def _set_status_tn(self, key: str, n: int, **params: object) -> None:
+        """Variante plurale di `_set_status_t`."""
+        self._status_source = (key, n, params)
+        self._status_lbl.setText(tn(key, n, **params))
+
+    def _refresh_status(self) -> None:
+        if self._status_source is None:
+            return
+        key, n, params = self._status_source
+        self._status_lbl.setText(
+            t(key, **params) if n is None else tn(key, n, **params)
+        )
 
     # ---- avvio sessione --------------------------------------------------
 
@@ -296,25 +324,27 @@ class MainWindow(QMainWindow):
         # al default (evita di scoprirlo solo a download avviato).
         if path and not os.access(path, os.W_OK):
             QMessageBox.warning(
-                self, "Cartella non scrivibile",
-                f"Non è possibile scrivere in:\n{path}\n\n"
-                "Torno alla cartella predefinita.",
+                self, t("main_window.dir_not_writable_title"),
+                t("main_window.dir_not_writable_body", path=path),
             )
             self.controls.set_download_dir("")
             save_download_dir("")
-            self._set_status("Cartella di download: predefinita.")
+            self._set_status_t("main_window.dir_reset")
             return
         save_download_dir(path)
-        self._set_status(
-            f"Cartella di download: {path}" if path
-            else "Cartella di download: predefinita (downloads/)."
-        )
+        if path:
+            self._set_status_t("main_window.dir_set", path=path)
+        else:
+            self._set_status_t("main_window.dir_default")
 
     def _on_start(self) -> None:
         links = self.link_panel.get_links()
         if not links:
-            QMessageBox.warning(self, "Nessun link",
-                                "Aggiungi almeno un link Mega prima di avviare.")
+            QMessageBox.warning(
+                self,
+                t("main_window.no_links_title"),
+                t("main_window.no_links_body"),
+            )
             return
         # Un link a cartella non e' scaricabile com'e': va prima elencato ed
         # espanso in un job per file. E' una chiamata di rete, quindi gira in
@@ -330,14 +360,11 @@ class MainWindow(QMainWindow):
         if self._folder_expander is not None and self._folder_expander.isRunning():
             # Il pulsante Avvia e' gia' disabilitato: qui si copre solo il caso
             # di un secondo invio del segnale prima che il thread abbia finito.
-            self._set_status("Espansione gia' in corso, attendi…")
+            self._set_status_t("main_window.expand_already_running")
             return
         n_folders = sum(1 for u in links if is_folder_link(u))
         self.controls.set_start_enabled(False)
-        self._set_status(
-            f"Espansione di {n_folders} cartella Mega in corso…" if n_folders == 1
-            else f"Espansione di {n_folders} cartelle Mega in corso…"
-        )
+        self._set_status_tn("main_window.expand_status", n_folders)
         qc = Qt.ConnectionType.QueuedConnection
         self._folder_expander = FolderExpandWorker(links)
         self._folder_expander.finished_ok.connect(self._on_expansion_done, qc)
@@ -348,10 +375,13 @@ class MainWindow(QMainWindow):
         # fase Pausa/Annulla della sessione non sono ancora attivi: senza questo
         # l'unico modo di uscire sarebbe chiudere la finestra.
         dlg = QProgressDialog(
-            "Lettura delle cartelle Mega in corso…", "Annulla", 0, max(1, n_folders),
+            t("main_window.expand_dialog_text"),
+            t("main_window.expand_dialog_cancel"),
+            0,
+            max(1, n_folders),
             self,
         )
-        dlg.setWindowTitle("Espansione cartelle")
+        dlg.setWindowTitle(t("main_window.expand_dialog_title"))
         dlg.setWindowModality(Qt.WindowModality.WindowModal)
         dlg.setMinimumDuration(0)
         dlg.setAutoClose(False)
@@ -363,11 +393,13 @@ class MainWindow(QMainWindow):
 
     def _on_expansion_cancel_requested(self) -> None:
         if self._folder_expander is not None and self._folder_expander.isRunning():
-            self._set_status("Annullamento dell'espansione…")
+            self._set_status_t("main_window.expand_cancelling")
             self._folder_expander.request_cancel()
 
     def _on_expansion_progress(self, done: int, total: int) -> None:
-        self._set_status(f"Espansione cartelle: {done}/{total}…")
+        self._set_status_t(
+            "main_window.expand_progress", done=done, total=total
+        )
         if self._expand_dialog is not None:
             self._expand_dialog.setValue(done)
 
@@ -381,13 +413,13 @@ class MainWindow(QMainWindow):
         self.controls.set_start_enabled(True)
         if self._folder_expander is not None and self._folder_expander.is_cancelled():
             # Annullata dall'utente: nessun popup d'errore, non e' un guasto.
-            self._set_status("Espansione annullata.")
+            self._set_status_t("main_window.expand_cancelled")
             return
-        self._set_status("Espansione cartella non riuscita.")
+        self._set_status_t("main_window.expand_failed_status")
         QMessageBox.warning(
             self,
-            "Cartella Mega non espansa",
-            "Non è stato possibile ricavare i file dalla cartella:\n\n" + msg,
+            t("main_window.expand_failed_title"),
+            t("main_window.expand_failed_body", details=msg),
         )
 
     def _on_expansion_done(
@@ -401,19 +433,21 @@ class MainWindow(QMainWindow):
         if truncated:
             proceed = QMessageBox.question(
                 self,
-                "Cartella molto grande",
-                f"La cartella contiene più file del limite dell'app: "
-                f"{truncated} file NON verranno scaricati.\n\n"
-                f"Vuoi procedere con i primi {len(unique)}?",
+                t("main_window.expand_truncated_title"),
+                tn(
+                    "main_window.expand_truncated_body",
+                    truncated,
+                    kept=len(unique),
+                ),
             )
             if proceed != QMessageBox.StandardButton.Yes:
-                self._set_status("Avvio annullato.")
+                self._set_status_t("main_window.start_cancelled")
                 return
         if report:
             QMessageBox.information(
-                self, "Cartelle Mega espanse", "\n".join(report),
+                self, t("main_window.expand_report_title"), "\n".join(report),
             )
-        self._set_status(f"{len(unique)} file pronti al download.")
+        self._set_status_tn("main_window.expand_ready", len(unique))
         self._start_with_links(unique)
 
     def _start_with_links(self, links: list[str]) -> None:
@@ -421,16 +455,12 @@ class MainWindow(QMainWindow):
         if links is None:
             return
         if not links:
-            self._set_status(
-                "Nessun link da scaricare: tutti già presenti nello storico."
-            )
+            self._set_status_t("main_window.nothing_to_download")
             return
 
         if self.orchestrator is not None:
             if not self.orchestrator.shutdown():
-                self._set_status(
-                    "Sessione precedente ancora in chiusura: riprova tra qualche secondo."
-                )
+                self._set_status_t("main_window.previous_session_closing")
                 return
 
         self.jobs_panel.reset(links)
@@ -443,7 +473,7 @@ class MainWindow(QMainWindow):
         self.stats_bar.start_clock()
         self._stats_panel.start_clock()
         self.proxy_bar.reset()
-        self._set_status("Raccolta proxy in corso…")
+        self._set_status_t("main_window.collecting_proxies")
         self._expected_files = len(links)
         self._completed_files = 0
         self.controls.set_running(True)
@@ -476,19 +506,24 @@ class MainWindow(QMainWindow):
         self.orchestrator.completed_info.connect(self.jobs_panel.on_completed_info, qc)
         self.orchestrator.pool_ready.connect(
             lambda n: (
-                self._set_status(f"Proxy validi: {n}. Download avviato."),
+                self._set_status_t("main_window.pool_ready", n=n),
                 self.proxy_bar.on_validation_done(),
             ),
             qc,
         )
         self.orchestrator.pool_failed.connect(
-            lambda msg: self._set_status(f"Errore pool proxy: {msg}"), qc
+            lambda msg: self._set_status_t(
+                "main_window.pool_failed", error=msg
+            ),
+            qc,
         )
         self.orchestrator.setup_status.connect(self._set_status, qc)
         self.orchestrator.setup_progress.connect(
-            lambda d, t, a: (
-                self._set_status(f"Validazione proxy: {d}/{t} (vivi: {a})"),
-                self.proxy_bar.on_validation_progress(d, t, a),
+            lambda d, tot, a: (
+                self._set_status_t(
+                    "main_window.validation_progress", done=d, total=tot, alive=a
+                ),
+                self.proxy_bar.on_validation_progress(d, tot, a),
             ),
             qc,
         )
@@ -512,10 +547,10 @@ class MainWindow(QMainWindow):
     def _on_pause(self, paused: bool) -> None:
         if paused:
             self.session_state.pause()
-            self._set_status("In pausa.")
+            self._set_status_t("main_window.paused")
         else:
             self.session_state.resume()
-            self._set_status("Ripreso.")
+            self._set_status_t("main_window.resumed")
 
     def _on_cancel(self) -> None:
         self.session_state.cancel()
@@ -528,7 +563,7 @@ class MainWindow(QMainWindow):
         # volta (i .part restano comunque su disco per un eventuale riavvio).
         self._session_incomplete.clear()
         session_store.clear()
-        self._set_status("Annullato.")
+        self._set_status_t("main_window.cancelled")
 
     # ---- ripristino sessione (2.7) ---------------------------------------
 
@@ -551,17 +586,14 @@ class MainWindow(QMainWindow):
             return
         reply = QMessageBox.question(
             self,
-            "Ripristina sessione",
-            f"La sessione precedente si è chiusa con {len(urls)} link non "
-            "completati.\nVuoi ricaricarli nella lista?\n\n"
-            "I pezzi già scaricati verranno ripresi automaticamente.",
+            t("main_window.restore_title"),
+            tn("main_window.restore_body", len(urls)),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if reply == QMessageBox.StandardButton.Yes:
             self.link_panel.set_links(urls)
-            self._set_status(
-                f"Ripristinati {len(urls)} link dalla sessione precedente. "
-                "Premi Avvia per riprendere."
+            self._set_status_tn(
+                "main_window.restored_status", len(urls)
             )
         else:
             session_store.clear()
@@ -575,12 +607,14 @@ class MainWindow(QMainWindow):
         self.jobs_panel.on_all_done(file_id)
         self._session_mark_finished(file_id)
         self._completed_files += 1
-        self._set_status(
-            f"File {file_id + 1} completato "
-            f"({self._completed_files}/{self._expected_files})."
+        self._set_status_t(
+            "main_window.file_done",
+            file=file_id + 1,
+            done=self._completed_files,
+            total=self._expected_files,
         )
         if self._completed_files >= self._expected_files:
-            self._set_status("Tutti i download completati.")
+            self._set_status_t("main_window.all_completed")
             self.controls.reset()
             self._restore_session_ui()
 
@@ -588,10 +622,12 @@ class MainWindow(QMainWindow):
         self.jobs_panel.on_fatal(file_id, msg)
         QMessageBox.critical(
             self,
-            "Errore bloccante",
-            f"File {file_id + 1}: {msg}\n\nIl worker è terminato.",
+            t("main_window.fatal_title"),
+            t("main_window.fatal_body", file=file_id + 1, error=msg),
         )
-        self._set_status(f"Errore bloccante file {file_id + 1}: {msg}")
+        self._set_status_t(
+            "main_window.fatal_status", file=file_id + 1, error=msg
+        )
         self._session_mark_finished(file_id)
         self._completed_files += 1
         if self._completed_files >= self._expected_files:
@@ -602,11 +638,14 @@ class MainWindow(QMainWindow):
         self.jobs_panel.on_abandoned(file_id, url, attempts, last_error)
         self._session_mark_finished(file_id)
         self._completed_files += 1
-        self._set_status(
-            f"File {file_id + 1} abbandonato dopo {attempts} tentativi: {last_error}"
+        self._set_status_tn(
+            "main_window.abandoned_status",
+            attempts,
+            file=file_id + 1,
+            error=last_error,
         )
         if self._completed_files >= self._expected_files:
-            self._set_status("Tutti i download terminati.")
+            self._set_status_t("main_window.all_terminated")
             self.controls.reset()
             self._restore_session_ui()
 
@@ -626,7 +665,9 @@ class MainWindow(QMainWindow):
         if delete_folder:
             self._pending_delete.add(file_id)
         if state == "running":
-            self._set_status(f"File {file_id + 1}: cancellazione in corso…")
+            self._set_status_t(
+                "main_window.job_cancelling", file=file_id + 1
+            )
 
     def _on_job_cancelled(self, file_id: int) -> None:
         self.jobs_panel.model.mark_cancelled(file_id)
@@ -635,29 +676,31 @@ class MainWindow(QMainWindow):
             self._pending_delete.discard(file_id)
             self._delete_folder_for(file_id)
         self._completed_files += 1
-        self._set_status(
-            f"File {file_id + 1} annullato "
-            f"({self._completed_files}/{self._expected_files})."
+        self._set_status_t(
+            "main_window.job_cancelled",
+            file=file_id + 1,
+            done=self._completed_files,
+            total=self._expected_files,
         )
         if self._completed_files >= self._expected_files:
-            self._set_status("Tutti i download terminati.")
+            self._set_status_t("main_window.all_terminated")
             self.controls.reset()
             self._restore_session_ui()
 
     def _on_delete_folder_requested(self, file_id: int) -> None:
         url = self._links_by_id.get(file_id)
         is_folder_job = url is not None and parse_folder_job_url(url) is not None
+        # Le due varianti erano costruite a pezzi attorno al numero del
+        # file: un frammento come « dalla cartella scaricata?» non e'
+        # traducibile da solo, quindi ognuna e' ora una chiave intera.
+        body_key = (
+            "main_window.delete_folder_job_body" if is_folder_job
+            else "main_window.delete_folder_body"
+        )
         confirm = QMessageBox.question(
             self,
-            "Eliminare dal disco?",
-            (
-                f"Eliminare il file {file_id + 1} dalla cartella scaricata?\n"
-                "Gli altri file della stessa cartella Mega restano al loro posto.\n"
-                "L'operazione è irreversibile."
-                if is_folder_job else
-                f"Eliminare la cartella su disco del file {file_id + 1}?\n"
-                "L'operazione è irreversibile."
-            ),
+            t("main_window.delete_title"),
+            t(body_key, file=file_id + 1),
         )
         if confirm != QMessageBox.StandardButton.Yes:
             return
@@ -689,18 +732,22 @@ class MainWindow(QMainWindow):
                 return
             path = job_output_dir(url, file_id, self._active_output_root)
         if not path.exists():
-            self._set_status(f"File {file_id + 1}: cartella non presente su disco.")
+            self._set_status_t(
+                "main_window.delete_missing", file=file_id + 1
+            )
             return
         try:
             shutil.rmtree(path)
             log.info("Cartella eliminata: %s", path)
-            self._set_status(f"File {file_id + 1}: cartella eliminata ({path.name}).")
+            self._set_status_t(
+                "main_window.delete_done", file=file_id + 1, name=path.name
+            )
         except OSError as exc:
             log.exception("Impossibile eliminare %s", path)
             QMessageBox.warning(
                 self,
-                "Eliminazione cartella fallita",
-                f"Impossibile eliminare {path}:\n{exc}",
+                t("main_window.delete_failed_title"),
+                t("main_window.delete_failed_body", path=path, error=exc),
             )
 
     def _delete_folder_job_file(self, file_id: int, url: str) -> None:
@@ -732,8 +779,8 @@ class MainWindow(QMainWindow):
             except OSError as exc:
                 log.warning("Impossibile eliminare %s: %s", target, exc)
         if removed == 0:
-            self._set_status(
-                f"File {file_id + 1}: nessun file da eliminare su disco."
+            self._set_status_t(
+                "main_window.delete_nothing", file=file_id + 1
             )
             return
         # Potatura delle cartelle rimaste vuote (mai la radice dei download).
@@ -750,7 +797,9 @@ class MainWindow(QMainWindow):
         except OSError as exc:
             log.debug("Potatura cartelle interrotta su %s: %s", current, exc)
         log.info("File del job-cartella eliminato: %s", directory / name)
-        self._set_status(f"File {file_id + 1}: file eliminato ({name}).")
+        self._set_status_t(
+            "main_window.delete_file_done", file=file_id + 1, name=name
+        )
 
     # ---- tema chiaro/scuro ----------------------------------------------
 
@@ -776,11 +825,13 @@ class MainWindow(QMainWindow):
     def _on_language_changed(self, lang: str) -> None:
         """Ritraduzione a caldo: gemello di `_on_theme_toggle`.
 
-        F1 copre titolo + ControlsBar, F2a UpdateBanner, F2b i quattro pannelli
-        persistenti (jobs_panel e proxy_bar ricascano sulle proprie card).
-        Resta da migrare link_panel/folder_expand_worker/main_window (F2c) e i
-        testi che nascono dagli errori (fase Errori & Cronologia). I dialoghi
-        non servono: nascono all'apertura e leggono i testi alla costruzione."""
+        Copre TUTTE le superfici persistenti della finestra: titolo,
+        barra comandi, banner, cruscotto (StatsBar/ProxyBar/StatsPanel),
+        elenco job, pannello link e riga di stato. I dialoghi non servono:
+        nascono all'apertura e leggono i testi alla costruzione.
+
+        Restano in italiano i testi che nascono dagli errori di
+        `core`/`downloader` (fase Errori & Cronologia)."""
         log.info("Ritraduzione interfaccia in corso: %s", lang)
         self._refresh_window_title()
         self.controls.retranslate()
@@ -789,6 +840,8 @@ class MainWindow(QMainWindow):
         self.proxy_bar.retranslate()
         self._stats_panel.retranslate()
         self.jobs_panel.retranslate()
+        self.link_panel.retranslate()
+        self._refresh_status()
 
     def _restyle_dashboard_separator(self) -> None:
         p = _style.CURRENT_PALETTE
@@ -801,21 +854,29 @@ class MainWindow(QMainWindow):
     def _on_restart_job_requested(self, file_id: int) -> None:
         url = self._links_by_id.get(file_id)
         if url is None:
-            self._set_status(f"File {file_id + 1}: URL non trovato, impossibile riavviare.")
+            self._set_status_t(
+                "main_window.restart_no_url", file=file_id + 1
+            )
             return
         if not self.jobs_panel.model.restart_job(file_id):
             return  # job non riavviabile (già in coda o running)
+        # I due testi passati a mark_failed_fatal restano in italiano di
+        # proposito: non sono cromo della finestra ma messaggi d'errore che
+        # finiscono nel modello, insieme a quelli di core/downloader. Si
+        # traducono tutti insieme nella fase Errori & Cronologia, con i codici.
         if self.orchestrator is None:
             self.jobs_panel.model.mark_failed_fatal(file_id, "Nessun orchestrator attivo")
             return
         if not self.orchestrator.restart_job(file_id, url):
             self.jobs_panel.model.mark_failed_fatal(file_id, "Riavvio rifiutato dall'orchestrator")
-            self._set_status(f"File {file_id + 1}: riavvio non riuscito.")
+            self._set_status_t(
+                "main_window.restart_failed", file=file_id + 1
+            )
             return
         self._completed_files = max(0, self._completed_files - 1)
         self.controls.set_running(True)
         self.link_panel.set_running(True)
-        self._set_status(f"File {file_id + 1}: riavvio in coda.")
+        self._set_status_t("main_window.restart_queued", file=file_id + 1)
 
     def _on_restart_all_failed_requested(self) -> None:
         if self.orchestrator is None:
@@ -835,7 +896,7 @@ class MainWindow(QMainWindow):
             self._completed_files = max(0, self._completed_files - n_started)
             self.controls.set_running(True)
             self.link_panel.set_running(True)
-            self._set_status(f"Riavviati {n_started} download.")
+            self._set_status_tn("main_window.restart_all_done", n_started)
 
     # ---- dettaglio job --------------------------------------------------
 

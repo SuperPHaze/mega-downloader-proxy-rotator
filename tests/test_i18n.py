@@ -2,8 +2,8 @@
 # Coprono i punti del piano MyDocs/i18n-gui-2.0.0-design.md §3 "test necessari"
 # relativi alla fase F1: parita' chiavi/parametri IT<->EN, rilevamento dal
 # locale, precedenza della preferenza, chiave mancante, ritraduzione a caldo.
-# I plurali per-chiave si testano in F2 (nessuna voce plurale esiste ancora):
-# qui si verifica solo che il meccanismo di `tn()` funzioni.
+# Da F2c il dizionario ha voci plurali vere: i test sotto le esercitano
+# tutte, a n=1 e n=2, in entrambe le lingue.
 import os
 import re
 
@@ -21,6 +21,8 @@ from src.gui.controls import ControlsBar
 from src.gui.experimental_dialog import ExperimentalFeaturesDialog
 from src.gui.format_helpers import build_header_summary
 from src.gui.jobs_panel import JobsPanel
+from src.gui.link_panel import LinkPanel
+from src.gui.main_window import MainWindow
 from src.gui.proxy_bar import ProxyBar
 from src.gui.stats_bar import StatsBar
 from src.gui.stats_panel import StatsPanel
@@ -336,6 +338,7 @@ def test_retranslate_does_not_reenter_preference_change(qapp, isolated_prefs, mo
 MIGRATED_SURFACES = (
     "main_window", "controls", "update_banner", "about", "experimental", "paste",
     "format", "stats_bar", "proxy_bar", "stats_panel", "jobs_panel",
+    "link_panel", "folder_expand",
 )
 
 
@@ -571,3 +574,238 @@ def test_header_summary_follows_language(isolated_prefs, monkeypatch):
     assert "5 tot" in en_out and "1 fail." in en_out and "(completed)" in en_out
     # Le unita' NON si traducono.
     assert "1 KB" in it_out and "1 KB" in en_out
+
+
+# ---- F2c: plurali veri -----------------------------------------------------
+
+PLURAL_KEYS = tuple(sorted(k for k, v in STRINGS_IT.items() if isinstance(v, dict)))
+
+
+def test_there_are_plural_entries():
+    """Guardia: se il dizionario perdesse le voci plurali, i test sotto
+    passerebbero a vuoto senza verificare nulla."""
+    assert len(PLURAL_KEYS) >= 14, PLURAL_KEYS
+
+
+@pytest.mark.parametrize("key", PLURAL_KEYS)
+@pytest.mark.parametrize("lang", ("it", "en"))
+def test_plural_key_renders_the_right_form(key, lang, isolated_prefs, monkeypatch):
+    """Per ogni voce plurale: n=1 rende la forma "one", n>1 la forma "other".
+
+    E' il test che esercita `tn()` sul serio (in F1 c'era solo un dizionario
+    finto). Il confronto e' sul TESTO reso, non sulla forma scelta: cosi'
+    prende anche un parametro che non si sostituisce.
+    """
+    monkeypatch.setattr(i18n, "detect_system_language", lambda: lang)
+    TR.set_preference(lang)
+    table = STRINGS_IT if lang == "it" else STRINGS_EN
+    forms = table[key]
+    # Parametri fittizi per tutte le variabili diverse da {n}, che tn() mette
+    # da se': senza, il testo resterebbe grezzo e il confronto sarebbe vacuo.
+    names = set()
+    for form in forms.values():
+        names |= set(_PARAM_RE.findall(form))
+    extra = {name: f"<{name}>" for name in names if name != "n"}
+
+    assert tn(key, 1, **extra) == forms["one"].format(n=1, **extra)
+    assert tn(key, 2, **extra) == forms["other"].format(n=2, **extra)
+    # Nessun segnaposto rimasto da sostituire.
+    assert "{" not in tn(key, 2, **extra), key
+
+
+# L'inglese distingue singolare e plurale in ogni voce plurale tranne queste,
+# dove la parola non cambia («2 file», «2 link» non esistono al plurale in
+# quel contesto) oppure la frase non nomina il conteggio.
+EN_INVARIANT_PLURALS = frozenset()
+
+
+@pytest.mark.parametrize("key", PLURAL_KEYS)
+def test_english_plurals_are_distinct(key, isolated_prefs, monkeypatch):
+    """In inglese le due forme devono davvero differire: una voce plurale con
+    forme identiche sarebbe una traduzione lasciata a meta'."""
+    if key in EN_INVARIANT_PLURALS:
+        pytest.skip("parola invariabile in inglese")
+    forms = STRINGS_EN[key]
+    assert forms["one"] != forms["other"], key
+
+
+def test_italian_plurals_kept_as_they_were():
+    """Alcune forme singolari italiane ripetono il plurale («1 sottocartelle»):
+    e' quanto l'app mostra da prima della traduzione e la migrazione non doveva
+    cambiarlo. Questo test blocca il testo italiano attuale; il giorno in cui si
+    decide di correggere la grammatica, va aggiornato di proposito."""
+    identiche = {k for k in PLURAL_KEYS if STRINGS_IT[k]["one"] == STRINGS_IT[k]["other"]}
+    assert "folder_expand.subfolders_suffix" in identiche
+    assert "folder_expand.duplicates_removed" in identiche
+    assert "main_window.expand_ready" in identiche
+    # Le voci che gia' distinguevano le due forme devono continuare a farlo.
+    assert STRINGS_IT["link_panel.counter"]["one"] != STRINGS_IT["link_panel.counter"]["other"]
+    assert STRINGS_IT["main_window.expand_status"]["one"] != STRINGS_IT["main_window.expand_status"]["other"]
+
+
+# ---- F2c: pannello link ----------------------------------------------------
+
+def test_link_panel_retranslates_hot(qapp, isolated_prefs, monkeypatch):
+    """LinkPanel e' una superficie persistente: si ritraduce a caldo."""
+    _in_italian(monkeypatch)
+    panel = LinkPanel()
+    assert panel.import_btn.text() == "Importa da file"
+    assert panel.clear_btn.text() == "Svuota"
+    assert panel.allow_dups.text() == "Consenti duplicati"
+
+    TR.set_preference("en")
+    panel.retranslate()
+    assert panel.import_btn.text() == "Import from file"
+    assert panel.clear_btn.text() == "Clear"
+    assert panel.allow_dups.text() == "Allow duplicates"
+    assert "separate folder" in panel.allow_dups.toolTip()
+
+
+def test_link_panel_counter_singular_and_plural(qapp, isolated_prefs, monkeypatch):
+    """Il contatore attraversa i tre casi: nessuno, uno, molti."""
+    _in_italian(monkeypatch)
+    panel = LinkPanel()
+    assert panel.counter_lbl.text() == "nessun link"
+    panel.set_links(["https://mega.nz/file/A#k"])
+    assert panel.counter_lbl.text() == "1 link pronto"
+    panel.set_links(["https://mega.nz/file/A#k", "https://mega.nz/file/B#k"])
+    assert panel.counter_lbl.text() == "2 link pronti"
+
+    TR.set_preference("en")
+    panel.retranslate()
+    assert panel.counter_lbl.text() == "2 links ready"
+    panel.set_links(["https://mega.nz/file/A#k"])
+    assert panel.counter_lbl.text() == "1 link ready"
+    panel.set_links([])
+    assert panel.counter_lbl.text() == "no links"
+
+
+def test_link_panel_state_survives_retranslation(qapp, isolated_prefs, monkeypatch):
+    """La ritraduzione riscrive i testi, non lo stato: la lista e la checkbox
+    restano quelle."""
+    _in_italian(monkeypatch)
+    panel = LinkPanel()
+    panel.set_links(["https://mega.nz/file/A#k"])
+    panel.allow_dups.setChecked(True)
+    panel.set_running(True)
+
+    TR.set_preference("en")
+    panel.retranslate()
+    assert panel.get_links() == ["https://mega.nz/file/A#k"]
+    assert panel.allow_dups.isChecked()
+    assert not panel.import_btn.isEnabled()
+
+
+# ---- F2c: espansione delle cartelle ---------------------------------------
+
+def test_folder_expand_report_follows_language(qapp, isolated_prefs, monkeypatch):
+    """Il report dell'espansione nasce in un QThread: deve leggere il
+    dizionario come tutto il resto. Nessuna rete: l'espansione e' finta."""
+    from src.downloader.mega_folder import FolderExpansion, FolderFile
+    from src.gui import folder_expand_worker as few
+
+    def fake_expand(url, should_abort=None, max_files=0):
+        return FolderExpansion(
+            folder_id="AAA", folder_name="Vacanze",
+            files=(FolderFile("N1", "S2V5", 100, ("Vacanze", "a.bin")),),
+            total_files=1, n_folders=1, n_skipped=0,
+        )
+
+    monkeypatch.setattr(few, "expand_folder_link", fake_expand)
+
+    _in_italian(monkeypatch)
+    worker = few.FolderExpandWorker(["https://mega.nz/folder/AAA#chiave"])
+    catturato = []
+    worker.finished_ok.connect(lambda links, report, tr: catturato.append(report))
+    worker.run()
+    assert catturato and "1 sottocartelle" in catturato[0][0]
+
+    TR.set_preference("en")
+    worker2 = few.FolderExpandWorker(["https://mega.nz/folder/AAA#chiave"])
+    catturato2 = []
+    worker2.finished_ok.connect(lambda links, report, tr: catturato2.append(report))
+    worker2.run()
+    assert catturato2 and "1 subfolder" in catturato2[0][0]
+    assert "sottocartelle" not in catturato2[0][0]
+
+
+# ---- F2c: riga di stato della finestra ------------------------------------
+
+class _FinestraFinta:
+    """Solo la riga di stato di MainWindow, con i metodi VERI della classe:
+    costruire la finestra intera aprirebbe thread di rete (aggiornamenti,
+    speed test), che i test non devono fare."""
+
+    _set_status = MainWindow._set_status
+    _set_status_t = MainWindow._set_status_t
+    _set_status_tn = MainWindow._set_status_tn
+    _refresh_status = MainWindow._refresh_status
+
+    def __init__(self, label):
+        self._status_lbl = label
+        self._status_source = None
+
+
+def test_status_line_retranslates(qapp, isolated_prefs, monkeypatch):
+    """La riga di stato ricorda chiave e parametri: al cambio lingua si
+    riscrive invece di restare indietro fino all'evento successivo."""
+    from PyQt6.QtWidgets import QLabel
+
+    _in_italian(monkeypatch)
+    win = _FinestraFinta(QLabel())
+    win._set_status_t("main_window.file_done", file=2, done=2, total=5)
+    assert win._status_lbl.text() == "File 2 completato (2/5)."
+
+    TR.set_preference("en")
+    win._refresh_status()
+    assert win._status_lbl.text() == "File 2 completed (2/5)."
+
+
+def test_status_line_retranslates_plural(qapp, isolated_prefs, monkeypatch):
+    _in_italian(monkeypatch)
+    from PyQt6.QtWidgets import QLabel
+
+    win = _FinestraFinta(QLabel())
+    win._set_status_tn("main_window.expand_status", 1)
+    assert win._status_lbl.text() == "Espansione di 1 cartella Mega in corso…"
+
+    TR.set_preference("en")
+    win._refresh_status()
+    assert win._status_lbl.text() == "Expanding 1 Mega folder…"
+
+
+def test_raw_status_is_not_retranslated(qapp, isolated_prefs, monkeypatch):
+    """I messaggi che arrivano gia' formattati dall'orchestrator non hanno una
+    chiave: non devono essere toccati (ne' persi) dal cambio lingua."""
+    from PyQt6.QtWidgets import QLabel
+
+    _in_italian(monkeypatch)
+    win = _FinestraFinta(QLabel())
+    win._set_status_t("main_window.paused")
+    win._set_status("Raccolta proxy: 42 fonti")     # testo grezzo: azzera la memoria
+    assert win._status_source is None
+
+    TR.set_preference("en")
+    win._refresh_status()
+    assert win._status_lbl.text() == "Raccolta proxy: 42 fonti"
+
+
+def test_language_fanout_covers_every_persistent_surface():
+    """Il fan-out di `_on_language_changed` deve nominare TUTTE le superfici
+    persistenti: se ne nasce una nuova e non viene cablata, resta nella lingua
+    vecchia finche' qualcuno non se ne accorge a video."""
+    import inspect
+
+    corpo = inspect.getsource(MainWindow._on_language_changed)
+    for atteso in (
+        "_refresh_window_title",
+        "self.controls.retranslate",
+        "self.update_banner.retranslate",
+        "self.stats_bar.retranslate",
+        "self.proxy_bar.retranslate",
+        "self._stats_panel.retranslate",
+        "self.jobs_panel.retranslate",
+        "self.link_panel.retranslate",
+        "self._refresh_status",
+    ):
+        assert atteso in corpo, atteso

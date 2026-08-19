@@ -11,6 +11,7 @@ from src.core.config import MEGA_FOLDER_MAX_FILES
 from src.core.mega_links import is_folder_link
 from src.downloader.mega_api import MegaApiError
 from src.downloader.mega_folder import deduplicate_job_urls, expand_folder_link
+from src.gui.i18n import t, tn
 
 log = logging.getLogger(__name__)
 
@@ -54,7 +55,7 @@ class FolderExpandWorker(QThread):
 
         for url in self._links:
             if self._cancelled:
-                self.failed.emit("Espansione annullata.")
+                self.failed.emit(t("folder_expand.cancelled"))
                 return
             if not is_folder_link(url):
                 out.append(url)
@@ -68,42 +69,57 @@ class FolderExpandWorker(QThread):
             except MegaApiError as exc:
                 errors += 1
                 log.warning("[espansione] cartella non espansa (%s): %s", url, exc)
-                report.append(f"✗ {url}\n    {exc}")
+                report.append(t("folder_expand.error_line", url=url, error=exc))
                 continue
             except Exception as exc:  # rete/parse imprevisti: non uccidere il thread
                 errors += 1
                 log.exception("[espansione] errore inatteso su %s", url)
-                report.append(f"✗ {url}\n    errore imprevisto: {exc}")
+                report.append(
+                    t("folder_expand.unexpected_line", url=url, error=exc)
+                )
                 continue
 
             jobs = expansion.job_urls()
             if not jobs:
                 report.append(
-                    f"✗ «{expansion.folder_name}»: la cartella è vuota "
-                    "(nessun file da scaricare)."
+                    t("folder_expand.empty_line", folder=expansion.folder_name)
                 )
             else:
                 out.extend(jobs)
-                line = f"✓ «{expansion.folder_name}»: {len(jobs)} file"
+                # La riga di esito si compone per clausole: ognuna e'
+                # autonoma (separatore incluso) e quindi traducibile da
+                # sola, altrimenti servirebbe una chiave per ciascuna
+                # delle otto combinazioni possibili.
+                line = tn(
+                    "folder_expand.ok_line",
+                    len(jobs),
+                    folder=expansion.folder_name,
+                )
                 if expansion.n_folders:
-                    line += f", {expansion.n_folders} sottocartelle"
+                    line += tn(
+                        "folder_expand.subfolders_suffix", expansion.n_folders
+                    )
                 if expansion.truncated:
                     truncated_total += expansion.truncated
-                    line += (
-                        f" — ATTENZIONE: altri {expansion.truncated} file "
-                        f"esclusi dal limite di {self._max_files}"
+                    line += t(
+                        "folder_expand.truncated_suffix",
+                        n=expansion.truncated,
+                        max=self._max_files,
                     )
                 if expansion.n_skipped:
-                    line += f" — {expansion.n_skipped} nodi illeggibili saltati"
+                    line += t(
+                        "folder_expand.skipped_suffix", n=expansion.n_skipped
+                    )
                 report.append(line)
             done += 1
             self.progress.emit(done, total)
 
         if not out:
+            nothing = t("folder_expand.nothing")
             if errors or report:
-                self.failed.emit("\n".join(report) or "Nessun file da scaricare.")
+                self.failed.emit("\n".join(report) or nothing)
             else:
-                self.failed.emit("Nessun file da scaricare.")
+                self.failed.emit(nothing)
             return
         # Due job non possono condividere la destinazione su disco: qui si vede
         # l'insieme COMPLETO (piu' cartelle insieme), quindi e' l'unico punto in
@@ -112,7 +128,6 @@ class FolderExpandWorker(QThread):
         if removed:
             log.warning("[espansione] %d file duplicati rimossi", removed)
             report.append(
-                f"• {removed} file duplicati (stesso file incollato più volte) "
-                "sono stati rimossi."
+                tn("folder_expand.duplicates_removed", removed)
             )
         self.finished_ok.emit(out, report, truncated_total)

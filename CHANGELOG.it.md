@@ -7,17 +7,20 @@ Tutte le modifiche rilevanti del progetto. Formato basato su [Keep a Changelog](
 ## [Non rilasciato]
 
 ### Aggiunto
-- **Interfaccia in italiano e inglese — prima fase.** All'avvio il programma segue la lingua del
-  sistema (italiano se il sistema è in italiano, inglese in tutti gli altri casi) e nel menu
+- **Interfaccia in italiano e inglese.** All'avvio il programma segue la lingua del sistema
+  (italiano se il sistema è in italiano, inglese in tutti gli altri casi) e nel menu
   **Impostazioni** compare la voce **Lingua** con «Automatica / Italiano / English». La scelta si
-  applica **subito**, senza riavviare, e viene ricordata al riavvio successivo. Sono tradotti
-  finora la **barra dei comandi**, il **titolo della finestra**, la barra «nuova versione
-  disponibile», le finestre **Info**, **Funzioni Sperimentali** e **Incolla link Mega**, e
-  l'intero cruscotto: **zona proxy**, **statistiche** ed **elenco dei download** (filtri,
-  schede, stato vuoto). Restano per ora in italiano la finestra di dettaglio di un download e
-  i **messaggi d'errore** dei singoli file, che verranno tradotti insieme in una fase
-  dedicata. I messaggi nei file di log restano in italiano: servono alla diagnosi e devono
-  restare stabili.
+  applica **subito**, senza riavviare, e viene ricordata al riavvio successivo. Sono tradotte
+  la **barra dei comandi**, il **titolo della finestra**, la barra «nuova versione disponibile»,
+  le finestre **Info**, **Funzioni Sperimentali** e **Incolla link Mega**, l'intero cruscotto
+  (**zona proxy**, **statistiche**, **elenco dei download** con filtri, schede e stato vuoto),
+  il **pannello dei link**, la **lettura delle cartelle Mega** e tutti i messaggi della
+  **finestra principale**: avvisi di avvio, ripristino della sessione precedente, conferme di
+  eliminazione dal disco e riga di stato in basso. Singolare e plurale sono corretti in
+  entrambe le lingue («1 link pronto» / «2 link pronti», «1 subfolder» / «3 subfolders»).
+  Restano per ora in italiano la finestra di dettaglio di un download e i **messaggi d'errore**
+  dei singoli file, che verranno tradotti insieme in una fase dedicata. I messaggi nei file di
+  log restano in italiano: servono alla diagnosi e devono restare stabili.
 
 ## [1.21.0] — 2026-08-18
 

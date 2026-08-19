@@ -302,4 +302,256 @@ STRINGS: dict[str, str | dict[str, str]] = {
         "Usa il pulsante «{button}» nella barra comandi\n"
         "oppure clicca qui sotto."
     ),
+    # ---- pannello link (LinkPanel) -----------------------------------------
+    "link_panel.import": "Importa da file",
+    "link_panel.add": "Aggiungi link",
+    "link_panel.clear": "Svuota",
+    "link_panel.allow_duplicates": "Consenti duplicati",
+    "link_panel.allow_duplicates_tooltip": (
+        "Se attivo, lo stesso link puo' essere aggiunto piu' volte. "
+        "Ogni copia viene scaricata in una cartella separata."
+    ),
+    # Contatore: gia' oggi il codice sceglieva la forma con un `if`, qui la
+    # scelta passa a `tn()`.
+    "link_panel.counter_empty": "nessun link",
+    "link_panel.counter": {
+        "one": "{n} link pronto",
+        "other": "{n} link pronti",
+    },
+
+    # ---- pannello link: import da file --------------------------------------
+    "link_panel.import_dialog_title": "Importa link da file",
+    "link_panel.import_dialog_filter": "File di testo (*.txt);;Tutti i file (*)",
+    "link_panel.read_error_title": "Errore lettura file",
+    "link_panel.read_error_body": "Impossibile leggere il file:\n{error}",
+    "link_panel.nothing_imported_title": "Nessun link importato",
+    "link_panel.nothing_imported_body": (
+        "Il file non contiene link Mega validi "
+        "(non validi: {invalid}, duplicati ignorati: {dups})."
+    ),
+    "link_panel.import_done_title": "Import completato",
+    # Le due forme italiane sono identiche ("link" e' invariabile): la coppia
+    # serve all'inglese, che qui distingue link/links.
+    "link_panel.import_done_body": {
+        "one": (
+            "Import completato.\n"
+            "- Aggiunti: {n} link\n"
+            "- Non validi: {invalid}\n"
+            "- Duplicati ignorati: {dups}"
+        ),
+        "other": (
+            "Import completato.\n"
+            "- Aggiunti: {n} link\n"
+            "- Non validi: {invalid}\n"
+            "- Duplicati ignorati: {dups}"
+        ),
+    },
+
+    # ---- pannello link: avviso "gia' scaricati" -----------------------------
+    "link_panel.history_title": "Link gia' scaricati",
+    "link_panel.history_text": {
+        "one": "{n} link su {total} risulta gia' scaricato in passato:",
+        "other": "{n} link su {total} risultano gia' scaricati in passato:",
+    },
+    "link_panel.history_entry": "\u2022 {name} (scaricato il {date})",
+    "link_panel.history_more": {
+        "one": "... e altri {n} link",
+        "other": "... e altri {n} link",
+    },
+    "link_panel.history_skip": "Salta gia' scaricati",
+    "link_panel.history_anyway": "Scarica comunque",
+    "link_panel.history_cancel": "Annulla",
+
+    # ---- espansione cartelle: righe di report (FolderExpandWorker) ----------
+    # Il report e' una lista di righe mostrate in un QMessageBox. Le voci che
+    # finiscono con "_suffix" sono clausole opzionali accodate alla riga di
+    # esito: ognuna e' autonoma (separatore incluso), quindi traducibile da
+    # sola. L'alternativa - una chiave per ogni combinazione - sarebbero otto
+    # varianti della stessa frase.
+    "folder_expand.cancelled": "Espansione annullata.",
+    "folder_expand.nothing": "Nessun file da scaricare.",
+    "folder_expand.error_line": "\u2717 {url}\n    {error}",
+    "folder_expand.unexpected_line": "\u2717 {url}\n    errore imprevisto: {error}",
+    "folder_expand.empty_line": (
+        "\u2717 \u00ab{folder}\u00bb: la cartella è vuota "
+        "(nessun file da scaricare)."
+    ),
+    "folder_expand.ok_line": {
+        "one": "\u2713 \u00ab{folder}\u00bb: {n} file",
+        "other": "\u2713 \u00ab{folder}\u00bb: {n} file",
+    },
+    # NOTA: la forma "one" ripete di proposito il plurale ("1 sottocartelle"),
+    # che e' quanto l'app mostra oggi. Non e' un refuso di traduzione ma un
+    # difetto italiano PREESISTENTE, tenuto identico per non cambiare il testo
+    # IT durante la migrazione. L'inglese, che nasce qui, e' invece corretto.
+    "folder_expand.subfolders_suffix": {
+        "one": ", {n} sottocartelle",
+        "other": ", {n} sottocartelle",
+    },
+    "folder_expand.truncated_suffix": (
+        " \u2014 ATTENZIONE: altri {n} file esclusi dal limite di {max}"
+    ),
+    "folder_expand.skipped_suffix": " \u2014 {n} nodi illeggibili saltati",
+    # Stessa nota di subfolders_suffix: forma singolare identica al plurale.
+    "folder_expand.duplicates_removed": {
+        "one": (
+            "\u2022 {n} file duplicati (stesso file incollato più volte) "
+            "sono stati rimossi."
+        ),
+        "other": (
+            "\u2022 {n} file duplicati (stesso file incollato più volte) "
+            "sono stati rimossi."
+        ),
+    },
+
+    # ---- finestra principale: cartella di download --------------------------
+    "main_window.dir_not_writable_title": "Cartella non scrivibile",
+    "main_window.dir_not_writable_body": (
+        "Non è possibile scrivere in:\n{path}\n\n"
+        "Torno alla cartella predefinita."
+    ),
+    "main_window.dir_reset": "Cartella di download: predefinita.",
+    "main_window.dir_set": "Cartella di download: {path}",
+    "main_window.dir_default": "Cartella di download: predefinita (downloads/).",
+
+    # ---- finestra principale: avvio -----------------------------------------
+    "main_window.no_links_title": "Nessun link",
+    "main_window.no_links_body": "Aggiungi almeno un link Mega prima di avviare.",
+    "main_window.nothing_to_download": (
+        "Nessun link da scaricare: tutti già presenti nello storico."
+    ),
+    "main_window.previous_session_closing": (
+        "Sessione precedente ancora in chiusura: riprova tra qualche secondo."
+    ),
+    "main_window.collecting_proxies": "Raccolta proxy in corso…",
+    "main_window.pool_ready": "Proxy validi: {n}. Download avviato.",
+    "main_window.pool_failed": "Errore pool proxy: {error}",
+    "main_window.validation_progress": (
+        "Validazione proxy: {done}/{total} (vivi: {alive})"
+    ),
+
+    # ---- finestra principale: espansione delle cartelle ---------------------
+    "main_window.expand_already_running": "Espansione gia' in corso, attendi…",
+    "main_window.expand_status": {
+        "one": "Espansione di {n} cartella Mega in corso…",
+        "other": "Espansione di {n} cartelle Mega in corso…",
+    },
+    "main_window.expand_dialog_text": "Lettura delle cartelle Mega in corso…",
+    "main_window.expand_dialog_cancel": "Annulla",
+    "main_window.expand_dialog_title": "Espansione cartelle",
+    "main_window.expand_cancelling": "Annullamento dell'espansione…",
+    "main_window.expand_progress": "Espansione cartelle: {done}/{total}…",
+    "main_window.expand_cancelled": "Espansione annullata.",
+    "main_window.expand_failed_status": "Espansione cartella non riuscita.",
+    "main_window.expand_failed_title": "Cartella Mega non espansa",
+    # Prima era costruita con una concatenazione (" + msg): il frammento finale
+    # non era traducibile da solo, ora il dettaglio e' un parametro.
+    "main_window.expand_failed_body": (
+        "Non è stato possibile ricavare i file dalla cartella:\n\n{details}"
+    ),
+    "main_window.expand_truncated_title": "Cartella molto grande",
+    "main_window.expand_truncated_body": {
+        "one": (
+            "La cartella contiene più file del limite dell'app: "
+            "{n} file NON verranno scaricati.\n\n"
+            "Vuoi procedere con i primi {kept}?"
+        ),
+        "other": (
+            "La cartella contiene più file del limite dell'app: "
+            "{n} file NON verranno scaricati.\n\n"
+            "Vuoi procedere con i primi {kept}?"
+        ),
+    },
+    "main_window.expand_report_title": "Cartelle Mega espanse",
+    "main_window.expand_ready": {
+        "one": "{n} file pronti al download.",
+        "other": "{n} file pronti al download.",
+    },
+    "main_window.start_cancelled": "Avvio annullato.",
+
+    # ---- finestra principale: pausa / annullo -------------------------------
+    "main_window.paused": "In pausa.",
+    "main_window.resumed": "Ripreso.",
+    "main_window.cancelled": "Annullato.",
+
+    # ---- finestra principale: ripristino sessione ---------------------------
+    "main_window.restore_title": "Ripristina sessione",
+    "main_window.restore_body": {
+        "one": (
+            "La sessione precedente si è chiusa con {n} link non "
+            "completati.\nVuoi ricaricarli nella lista?\n\n"
+            "I pezzi già scaricati verranno ripresi automaticamente."
+        ),
+        "other": (
+            "La sessione precedente si è chiusa con {n} link non "
+            "completati.\nVuoi ricaricarli nella lista?\n\n"
+            "I pezzi già scaricati verranno ripresi automaticamente."
+        ),
+    },
+    "main_window.restored_status": {
+        "one": (
+            "Ripristinati {n} link dalla sessione precedente. "
+            "Premi Avvia per riprendere."
+        ),
+        "other": (
+            "Ripristinati {n} link dalla sessione precedente. "
+            "Premi Avvia per riprendere."
+        ),
+    },
+
+    # ---- finestra principale: fine dei download -----------------------------
+    # {file} e' il numero del file mostrato all'utente (1-based), {n} resta
+    # riservato al conteggio che decide la forma plurale.
+    "main_window.file_done": "File {file} completato ({done}/{total}).",
+    "main_window.all_completed": "Tutti i download completati.",
+    "main_window.all_terminated": "Tutti i download terminati.",
+    "main_window.fatal_title": "Errore bloccante",
+    "main_window.fatal_body": "File {file}: {error}\n\nIl worker è terminato.",
+    "main_window.fatal_status": "Errore bloccante file {file}: {error}",
+    "main_window.abandoned_status": {
+        "one": "File {file} abbandonato dopo {n} tentativi: {error}",
+        "other": "File {file} abbandonato dopo {n} tentativi: {error}",
+    },
+
+    # ---- finestra principale: annullo per-job -------------------------------
+    "main_window.job_cancelling": "File {file}: cancellazione in corso…",
+    "main_window.job_cancelled": "File {file} annullato ({done}/{total}).",
+
+    # ---- finestra principale: eliminazione dal disco ------------------------
+    # Le due frasi erano concatenate a pezzi attorno al numero del file: ora
+    # sono due chiavi intere, scelte in base al tipo di job.
+    "main_window.delete_title": "Eliminare dal disco?",
+    "main_window.delete_folder_job_body": (
+        "Eliminare il file {file} dalla cartella scaricata?\n"
+        "Gli altri file della stessa cartella Mega restano al loro posto.\n"
+        "L'operazione è irreversibile."
+    ),
+    "main_window.delete_folder_body": (
+        "Eliminare la cartella su disco del file {file}?\n"
+        "L'operazione è irreversibile."
+    ),
+    "main_window.delete_missing": "File {file}: cartella non presente su disco.",
+    "main_window.delete_done": "File {file}: cartella eliminata ({name}).",
+    "main_window.delete_failed_title": "Eliminazione cartella fallita",
+    "main_window.delete_failed_body": "Impossibile eliminare {path}:\n{error}",
+    "main_window.delete_nothing": "File {file}: nessun file da eliminare su disco.",
+    "main_window.delete_file_done": "File {file}: file eliminato ({name}).",
+
+    # ---- finestra principale: riavvio dei job -------------------------------
+    "main_window.restart_no_url": (
+        "File {file}: URL non trovato, impossibile riavviare."
+    ),
+    "main_window.restart_failed": "File {file}: riavvio non riuscito.",
+    "main_window.restart_queued": "File {file}: riavvio in coda.",
+    "main_window.restart_all_done": {
+        "one": "Riavviati {n} download.",
+        "other": "Riavviati {n} download.",
+    },
+
+    # ---- finestra principale: banda dei proxy -------------------------------
+    "main_window.proxy_speed_no_session": "Banda proxy: nessuna sessione attiva.",
+    "main_window.proxy_speed_no_proxy": (
+        "Banda proxy: nessun proxy disponibile nel pool."
+    ),
+
 }

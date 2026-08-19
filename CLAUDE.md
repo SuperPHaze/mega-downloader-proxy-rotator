@@ -62,8 +62,8 @@ src/
     ├── main_window.py     # MainWindow (QMainWindow); _on_start fa da gate: se ci sono link cartella
     │                      #   avvia FolderExpandWorker e il flusso riprende in _start_with_links;
     │                      #   _delete_folder_job_file elimina il SINGOLO file di un job-cartella
-    │                      #   (+ .part + sidecar) e pota le cartelle vuote, mai l'albero condiviso; ripristino sessione all'avvio (prompt "Riprendi sessione precedente?" da session_store, differito con QTimer.singleShot); propaga la cartella download scelta a orchestrator.start(output_root=...) e la usa per il delete cartella; _on_language_changed fa il fan-out della ritraduzione (gemello di _on_theme_toggle)
-    ├── link_panel.py      # gestore lista link (nascosto nell'UI, API get_links/set_links/open_paste_dialog)
+    │                      #   (+ .part + sidecar) e pota le cartelle vuote, mai l'albero condiviso; ripristino sessione all'avvio (prompt "Riprendi sessione precedente?" da session_store, differito con QTimer.singleShot); propaga la cartella download scelta a orchestrator.start(output_root=...) e la usa per il delete cartella; _on_language_changed fa il fan-out della ritraduzione su TUTTE le superfici persistenti (gemello di _on_theme_toggle), riga di stato compresa: _set_status_t/_set_status_tn ricordano chiave+parametri in _status_source e _refresh_status la riscrive, mentre _set_status (grezzo) azzera la memoria
+    ├── link_panel.py      # gestore lista link (nascosto nell'UI, API get_links/set_links/open_paste_dialog); i suoi widget non si vedono, ma i dialoghi che apre sì (import da file, avviso «già scaricati»); i18n: t()/tn() + retranslate(), contatore link al singolare/plurale
     ├── paste_links_dialog.py # dialog modale incolla/edita lista link; contatori Validi/Non validi/Duplicati/Cartelle (i18n: t("paste.*"), conteggi come parametro {n})
     ├── jobs_model.py      # JobsModel (QAbstractTableModel) + Job (throughput/file_name/output_path)
     ├── jobs_panel.py      # lista job a righe-card (QScrollArea + _JobCard widget per riga); filtri a pulsanti esclusivi (QButtonGroup), senza etichetta; ogni pulsante mostra il conteggio file per categoria ("In corso (N)"/"Completati (N)"/"Non completati (N)"), aggiornato da _update_filter_counts su aggregates_changed; i18n: retranslate() ricasca su _EmptyState e su ogni _JobCard — si traduce il CROMO, non i testi che arrivano da jobs_model
@@ -79,7 +79,7 @@ src/
     ├── speedtest_worker.py # SpeedTestWorker (banda linea diretta, senza proxy) + ProxySpeedTestWorker (banda aggregata del pool live, uno stream per proxy campionato, resiliente ai proxy lenti/caduti); entrambi QThread, emettono finished_test(mbit, ok)
     ├── controls.py        # barra comandi: Avvia/Pausa/Annulla/Paralleli/Incolla/Tema/Info; menu Impostazioni con Paralleli/Limite/Pezzo/"Cartella download:" (QFileDialog, getter get_download_dir, segnale download_dir_changed) + "Lingua:" (QComboBox Automatica/Italiano/English → TR.set_preference); PRIMO pannello migrato a i18n: testi via t("controls.*") e retranslate() per il cambio a caldo
     ├── experimental_dialog.py # ExperimentalFeaturesDialog: 3 controlli con descrizione breve inline e icona "i" (QToolButton) → QMessageBox estesa: "Connessioni per file" (spinbox), "Budget per pezzo (s)" (spinbox), "Selezione per velocità" (checkbox + spinbox soglia KB/s); tutti persistono in preferences.json; i18n: t("experimental.*"), le descrizioni brevi/estese stanno nei dizionari
-    ├── folder_expand_worker.py # FolderExpandWorker(QThread): espande i link cartella prima dell'avvio
+    ├── folder_expand_worker.py # FolderExpandWorker(QThread): espande i link cartella prima dell'avvio; le righe di report passano da t()/tn() (clausole opzionali autonome: separatore incluso nella chiave)
     │                      #   (rete fuori dal thread GUI); i link non-cartella passano invariati e
     │                      #   nell'ordine originale
     ├── preferences.py     # carica/salva preferenze utente (tema, lingua GUI ("auto"/"it"/"en"), check aggiornamenti all'avvio, selezione per velocità abilitata + soglia KB/s, stats_panel_expanded, download_dir) in preferences.json
@@ -129,12 +129,13 @@ package.ps1                # packaging: crea dist/MegaProxyRotator-X.Y.Z.zip
 - GUI bilingue IT/EN; codice (variabili/funzioni/classi) e commenti in inglese/italiano come già in uso.
   **L'italiano è la fonte** (`gui/strings_it.py`), l'inglese la traduzione (`gui/strings_en.py`).
   Nessuna stringa utente hard-coded nei pannelli già migrati: si passa da `t()`/`tn()` di `gui/i18n.py`
-  e si espone `retranslate()` per il cambio a caldo. **Migrazione in corso**: F1 ha convertito
-  `ControlsBar` + titolo finestra, F2a `UpdateBanner` + i dialoghi Info/Sperimentali/Incolla,
-  F2b `proxy_bar`/`stats_bar`/`stats_panel`/`jobs_panel`/`format_helpers` (con le cascate su
-  `_MetricCard` e `_JobCard`); restano in italiano hard-coded `link_panel`,
-  `folder_expand_worker` e `main_window` (F2c) e i testi legati agli errori (`jobs_model`,
-  `job_detail_dialog`), rimandati alla fase «Errori & Cronologia».
+  e si espone `retranslate()` per il cambio a caldo. **Migrazione della GUI completata**
+  (F1 `ControlsBar` + titolo, F2a `UpdateBanner` + dialoghi Info/Sperimentali/Incolla,
+  F2b cruscotto con le cascate su `_MetricCard` e `_JobCard`, F2c `link_panel`,
+  `folder_expand_worker` e `main_window` con i plurali via `tn()`): l'unico testo utente
+  ancora hard-coded in italiano è quello che nasce dagli ERRORI (`jobs_model`,
+  `job_detail_dialog`, e i due messaggi passati a `mark_failed_fatal` da `main_window`),
+  rimandato alla fase «Errori & Cronologia».
   I **log restano in italiano** e non si traducono mai (sono diagnostici e devono restare stabili).
 - Downloader: pattern `.part` + rename atomico. Si scarica SEMPRE su `<nome>.part` (sidecar `.progress.json` riferito al `.part`, include `chunk_size` per validare compatibilità del resume); `os.replace` sul nome finale solo a download completo e verificato. L'esistenza del nome finale è l'UNICO marker di completamento usato dal check di resume del worker. I `.part` non vanno mai cancellati al cleanup (servono al resume: i chunk completati restano scritti e vengono skippati al retry).
 - Pool scoring: i call-site devono registrare anche i successi (`record_success` su segmento completato / IP check ok) e usare `penalize(hard=True)` solo per 503 dal CDN; errori transitori (timeout, throughput basso, connection error) → `penalize(hard=False)`. Mai usare `mark_dead` (alias deprecato).

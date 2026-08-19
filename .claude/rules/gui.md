@@ -27,18 +27,37 @@ paths: ["src/gui/**/*.py"]
   (`Italiano`/`English` sono uguali nei due dizionari).
 - **I log restano in italiano**: sono diagnostici e devono restare stabili nel tempo. Non passare
   mai un testo tradotto a `log.*`, e non "completare il lavoro" traducendoli.
-- **Migrazione in corso** (piano: `MyDocs/i18n-gui-2.0.0-design.md`): F1 ha convertito
-  `ControlsBar` e il titolo della finestra; F2a `UpdateBanner` (persistente, con
-  `retranslate()`) e i dialoghi `about_dialog`/`experimental_dialog`/`paste_links_dialog`
-  (creati su richiesta, nessun `retranslate()`); F2b `proxy_bar`, `stats_bar`, `stats_panel`,
-  `jobs_panel` e `format_helpers`, con le due CASCATE: `retranslate()` di `ProxyBar` ricasca su
-  ogni `_MetricCard` e quello di `JobsPanel` su `_EmptyState` e su ogni `_JobCard`, esattamente
-  dove ricasca `refresh_theme()`. Restano in italiano hard-coded `link_panel`,
-  `folder_expand_worker` e `main_window` (F2c). **`jobs_model` e `job_detail_dialog` sono
-  fuori dal percorso F2**: i loro testi sono cronologia e messaggi d'errore che nascono in
-  `core/`/`downloader/`, e vanno affrontati insieme nella fase «Errori & Cronologia» (con
-  codici d'errore). Se tocchi un file ancora da migrare, convertilo invece di aggiungere
-  altre stringhe fisse.
+- **Plurali**: quando il testo cambia con un conteggio si usa `tn(chiave, n, ...)` e la voce
+  diventa un dict `{"one": ..., "other": ...}` in **entrambi** i dizionari. `tn()` passa `n` da
+  se': la chiave lo scrive come `{n}` senza che il chiamante lo ripeta. Se nella frase compare
+  anche un altro numero (il progressivo del file), quello si chiama `{file}`: `{n}` è riservato
+  al conteggio che sceglie la forma, altrimenti i due si sovrascrivono.
+  Diverse voci italiane hanno `one` **identico** a `other` («1 sottocartelle», «1 file pronti»):
+  non è una svista ma il testo che l'app mostrava già prima della traduzione, tenuto invariato
+  dalla migrazione. La coppia serve all'inglese, che lì distingue davvero. Chi corregge quella
+  grammatica lo fa di proposito e aggiorna `test_italian_plurals_kept_as_they_were`.
+- **Testo composto per concatenazione**: non si traduce a pezzi. Una frase costruita con `+` o
+  con f-string spezzate diventa **una chiave sola con parametri nominati** (un frammento come
+  « dalla cartella scaricata?» non ha senso da solo). Fanno eccezione le clausole opzionali
+  che restano autonome anche isolate e includono il proprio separatore (le code della riga di
+  report in `folder_expand_worker`): l'alternativa sarebbe una chiave per ogni combinazione.
+- **Riga di stato della finestra**: `MainWindow._set_status_t()` / `_set_status_tn()` memorizzano
+  chiave e parametri in `_status_source`, così `_refresh_status()` la riscrive al cambio lingua.
+  `_set_status()` grezzo resta per i messaggi che arrivano già formattati dall'orchestrator e
+  AZZERA la memoria: quel testo nasce fuori dalla GUI e non è traducibile qui.
+- **Migrazione della GUI completata** (piano: `MyDocs/i18n-gui-2.0.0-design.md`): F1
+  `ControlsBar` e titolo della finestra; F2a `UpdateBanner` (persistente, con `retranslate()`) e
+  i dialoghi `about_dialog`/`experimental_dialog`/`paste_links_dialog` (creati su richiesta,
+  nessun `retranslate()`); F2b `proxy_bar`, `stats_bar`, `stats_panel`, `jobs_panel` e
+  `format_helpers`, con le due CASCATE: `retranslate()` di `ProxyBar` ricasca su ogni
+  `_MetricCard` e quello di `JobsPanel` su `_EmptyState` e su ogni `_JobCard`, esattamente dove
+  ricasca `refresh_theme()`; F2c `link_panel` (persistente), `folder_expand_worker` (testi
+  transienti del report) e `main_window` (dialoghi + riga di stato).
+  **`jobs_model` e `job_detail_dialog` sono fuori dal percorso F2**: i loro testi sono cronologia
+  e messaggi d'errore che nascono in `core/`/`downloader/`, e vanno affrontati insieme nella fase
+  «Errori & Cronologia» (con codici d'errore). Nella stessa fase rientrano i due messaggi che
+  `main_window` passa a `mark_failed_fatal`: partono da qui ma finiscono nel modello, quindi
+  restano in italiano finché non si traduce quella superficie.
 - Nomi di variabili, funzioni, classi, file e segnali in inglese.
 - I commenti del codice sono in italiano.
 

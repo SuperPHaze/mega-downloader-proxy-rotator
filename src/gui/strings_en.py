@@ -285,4 +285,236 @@ STRINGS: dict[str, str | dict[str, str]] = {
         'Use the "{button}" button in the command bar\n'
         "or click below."
     ),
+    # ---- pannello link (LinkPanel) -----------------------------------------
+    "link_panel.import": "Import from file",
+    "link_panel.add": "Add links",
+    "link_panel.clear": "Clear",
+    "link_panel.allow_duplicates": "Allow duplicates",
+    "link_panel.allow_duplicates_tooltip": (
+        "If enabled, the same link can be added more than once. "
+        "Each copy is downloaded into a separate folder."
+    ),
+    "link_panel.counter_empty": "no links",
+    "link_panel.counter": {
+        "one": "{n} link ready",
+        "other": "{n} links ready",
+    },
+
+    # ---- pannello link: import da file --------------------------------------
+    "link_panel.import_dialog_title": "Import links from file",
+    "link_panel.import_dialog_filter": "Text files (*.txt);;All files (*)",
+    "link_panel.read_error_title": "File read error",
+    "link_panel.read_error_body": "Cannot read the file:\n{error}",
+    "link_panel.nothing_imported_title": "No links imported",
+    "link_panel.nothing_imported_body": (
+        "The file contains no valid Mega links "
+        "(invalid: {invalid}, duplicates ignored: {dups})."
+    ),
+    "link_panel.import_done_title": "Import complete",
+    "link_panel.import_done_body": {
+        "one": (
+            "Import complete.\n"
+            "- Added: {n} link\n"
+            "- Invalid: {invalid}\n"
+            "- Duplicates ignored: {dups}"
+        ),
+        "other": (
+            "Import complete.\n"
+            "- Added: {n} links\n"
+            "- Invalid: {invalid}\n"
+            "- Duplicates ignored: {dups}"
+        ),
+    },
+
+    # ---- pannello link: avviso "gia' scaricati" -----------------------------
+    "link_panel.history_title": "Links already downloaded",
+    "link_panel.history_text": {
+        "one": "{n} of {total} links was already downloaded before:",
+        "other": "{n} of {total} links were already downloaded before:",
+    },
+    "link_panel.history_entry": "\u2022 {name} (downloaded on {date})",
+    "link_panel.history_more": {
+        "one": "... and {n} more link",
+        "other": "... and {n} more links",
+    },
+    "link_panel.history_skip": "Skip already downloaded",
+    "link_panel.history_anyway": "Download anyway",
+    "link_panel.history_cancel": "Cancel",
+
+    # ---- espansione cartelle: righe di report (FolderExpandWorker) ----------
+    "folder_expand.cancelled": "Expansion cancelled.",
+    "folder_expand.nothing": "No files to download.",
+    "folder_expand.error_line": "\u2717 {url}\n    {error}",
+    "folder_expand.unexpected_line": "\u2717 {url}\n    unexpected error: {error}",
+    "folder_expand.empty_line": (
+        "\u2717 \u00ab{folder}\u00bb: the folder is empty "
+        "(no files to download)."
+    ),
+    "folder_expand.ok_line": {
+        "one": "\u2713 \u00ab{folder}\u00bb: {n} file",
+        "other": "\u2713 \u00ab{folder}\u00bb: {n} files",
+    },
+    "folder_expand.subfolders_suffix": {
+        "one": ", {n} subfolder",
+        "other": ", {n} subfolders",
+    },
+    "folder_expand.truncated_suffix": (
+        " \u2014 WARNING: {n} more files left out by the limit of {max}"
+    ),
+    "folder_expand.skipped_suffix": " \u2014 {n} unreadable nodes skipped",
+    "folder_expand.duplicates_removed": {
+        "one": (
+            "\u2022 {n} duplicate file (the same file pasted more than once) "
+            "was removed."
+        ),
+        "other": (
+            "\u2022 {n} duplicate files (the same file pasted more than once) "
+            "were removed."
+        ),
+    },
+
+    # ---- finestra principale: cartella di download --------------------------
+    "main_window.dir_not_writable_title": "Folder not writable",
+    "main_window.dir_not_writable_body": (
+        "Cannot write to:\n{path}\n\n"
+        "Falling back to the default folder."
+    ),
+    "main_window.dir_reset": "Download folder: default.",
+    "main_window.dir_set": "Download folder: {path}",
+    "main_window.dir_default": "Download folder: default (downloads/).",
+
+    # ---- finestra principale: avvio -----------------------------------------
+    "main_window.no_links_title": "No links",
+    "main_window.no_links_body": "Add at least one Mega link before starting.",
+    "main_window.nothing_to_download": (
+        "Nothing to download: every link is already in the history."
+    ),
+    "main_window.previous_session_closing": (
+        "Previous session still shutting down: try again in a few seconds."
+    ),
+    "main_window.collecting_proxies": "Collecting proxies…",
+    "main_window.pool_ready": "Valid proxies: {n}. Download started.",
+    "main_window.pool_failed": "Proxy pool error: {error}",
+    "main_window.validation_progress": (
+        "Validating proxies: {done}/{total} (alive: {alive})"
+    ),
+
+    # ---- finestra principale: espansione delle cartelle ---------------------
+    "main_window.expand_already_running": "Expansion already running, please wait…",
+    "main_window.expand_status": {
+        "one": "Expanding {n} Mega folder…",
+        "other": "Expanding {n} Mega folders…",
+    },
+    "main_window.expand_dialog_text": "Reading the Mega folders…",
+    "main_window.expand_dialog_cancel": "Cancel",
+    "main_window.expand_dialog_title": "Expanding folders",
+    "main_window.expand_cancelling": "Cancelling the expansion…",
+    "main_window.expand_progress": "Expanding folders: {done}/{total}…",
+    "main_window.expand_cancelled": "Expansion cancelled.",
+    "main_window.expand_failed_status": "Folder expansion failed.",
+    "main_window.expand_failed_title": "Mega folder not expanded",
+    "main_window.expand_failed_body": (
+        "The files could not be read from the folder:\n\n{details}"
+    ),
+    "main_window.expand_truncated_title": "Very large folder",
+    "main_window.expand_truncated_body": {
+        "one": (
+            "The folder holds more files than the app limit: "
+            "{n} file will NOT be downloaded.\n\n"
+            "Do you want to go ahead with the first {kept}?"
+        ),
+        "other": (
+            "The folder holds more files than the app limit: "
+            "{n} files will NOT be downloaded.\n\n"
+            "Do you want to go ahead with the first {kept}?"
+        ),
+    },
+    "main_window.expand_report_title": "Mega folders expanded",
+    "main_window.expand_ready": {
+        "one": "{n} file ready to download.",
+        "other": "{n} files ready to download.",
+    },
+    "main_window.start_cancelled": "Start cancelled.",
+
+    # ---- finestra principale: pausa / annullo -------------------------------
+    "main_window.paused": "Paused.",
+    "main_window.resumed": "Resumed.",
+    "main_window.cancelled": "Cancelled.",
+
+    # ---- finestra principale: ripristino sessione ---------------------------
+    "main_window.restore_title": "Restore session",
+    "main_window.restore_body": {
+        "one": (
+            "The previous session ended with {n} unfinished link.\n"
+            "Do you want to load it back into the list?\n\n"
+            "Chunks already downloaded will resume automatically."
+        ),
+        "other": (
+            "The previous session ended with {n} unfinished links.\n"
+            "Do you want to load them back into the list?\n\n"
+            "Chunks already downloaded will resume automatically."
+        ),
+    },
+    "main_window.restored_status": {
+        "one": (
+            "Restored {n} link from the previous session. "
+            "Press Start to resume."
+        ),
+        "other": (
+            "Restored {n} links from the previous session. "
+            "Press Start to resume."
+        ),
+    },
+
+    # ---- finestra principale: fine dei download -----------------------------
+    "main_window.file_done": "File {file} completed ({done}/{total}).",
+    "main_window.all_completed": "All downloads completed.",
+    "main_window.all_terminated": "All downloads finished.",
+    "main_window.fatal_title": "Blocking error",
+    "main_window.fatal_body": "File {file}: {error}\n\nThe worker has stopped.",
+    "main_window.fatal_status": "Blocking error on file {file}: {error}",
+    "main_window.abandoned_status": {
+        "one": "File {file} abandoned after {n} attempt: {error}",
+        "other": "File {file} abandoned after {n} attempts: {error}",
+    },
+
+    # ---- finestra principale: annullo per-job -------------------------------
+    "main_window.job_cancelling": "File {file}: cancelling…",
+    "main_window.job_cancelled": "File {file} cancelled ({done}/{total}).",
+
+    # ---- finestra principale: eliminazione dal disco ------------------------
+    "main_window.delete_title": "Delete from disk?",
+    "main_window.delete_folder_job_body": (
+        "Delete file {file} from the downloaded folder?\n"
+        "The other files of the same Mega folder stay where they are.\n"
+        "This cannot be undone."
+    ),
+    "main_window.delete_folder_body": (
+        "Delete the disk folder of file {file}?\n"
+        "This cannot be undone."
+    ),
+    "main_window.delete_missing": "File {file}: folder not found on disk.",
+    "main_window.delete_done": "File {file}: folder deleted ({name}).",
+    "main_window.delete_failed_title": "Folder deletion failed",
+    "main_window.delete_failed_body": "Cannot delete {path}:\n{error}",
+    "main_window.delete_nothing": "File {file}: nothing to delete on disk.",
+    "main_window.delete_file_done": "File {file}: file deleted ({name}).",
+
+    # ---- finestra principale: riavvio dei job -------------------------------
+    "main_window.restart_no_url": (
+        "File {file}: URL not found, cannot restart."
+    ),
+    "main_window.restart_failed": "File {file}: restart failed.",
+    "main_window.restart_queued": "File {file}: restart queued.",
+    "main_window.restart_all_done": {
+        "one": "Restarted {n} download.",
+        "other": "Restarted {n} downloads.",
+    },
+
+    # ---- finestra principale: banda dei proxy -------------------------------
+    "main_window.proxy_speed_no_session": "Proxy speed: no active session.",
+    "main_window.proxy_speed_no_proxy": (
+        "Proxy speed: no proxy available in the pool."
+    ),
+
 }

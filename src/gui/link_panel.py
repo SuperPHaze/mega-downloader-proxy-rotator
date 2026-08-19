@@ -19,6 +19,7 @@ from PyQt6.QtWidgets import (
 )
 
 from src.core.download_history import extract_handle, load_history
+from src.gui.i18n import t, tn
 from src.gui.paste_links_dialog import PasteLinksDialog
 from src.gui.style import PALETTE
 
@@ -74,27 +75,24 @@ def confirm_already_downloaded(
     for i, rec in dup_entries[:max_shown]:
         name = rec.get("file_name") or "?"
         date = _format_history_date(rec.get("completed_at"))
-        lines.append(f"• {name} (scaricato il {date})")
+        lines.append(t("link_panel.history_entry", name=name, date=date))
     if len(dup_entries) > max_shown:
-        lines.append(f"... e altri {len(dup_entries) - max_shown} link")
+        rest = len(dup_entries) - max_shown
+        lines.append(tn("link_panel.history_more", rest))
 
     box = QMessageBox(parent)
-    box.setWindowTitle("Link gia' scaricati")
+    box.setWindowTitle(t("link_panel.history_title"))
     box.setIcon(QMessageBox.Icon.Warning)
     n = len(dup_entries)
-    box.setText(
-        f"{n} link su {len(links)} risulta gia' scaricato in passato:"
-        if n == 1
-        else f"{n} link su {len(links)} risultano gia' scaricati in passato:"
-    )
+    box.setText(tn("link_panel.history_text", n, total=len(links)))
     box.setInformativeText("\n".join(lines))
     skip_btn = box.addButton(
-        "Salta gia' scaricati", QMessageBox.ButtonRole.AcceptRole
+        t("link_panel.history_skip"), QMessageBox.ButtonRole.AcceptRole
     )
     anyway_btn = box.addButton(
-        "Scarica comunque", QMessageBox.ButtonRole.DestructiveRole
+        t("link_panel.history_anyway"), QMessageBox.ButtonRole.DestructiveRole
     )
-    box.addButton("Annulla", QMessageBox.ButtonRole.RejectRole)
+    box.addButton(t("link_panel.history_cancel"), QMessageBox.ButtonRole.RejectRole)
     box.setDefaultButton(skip_btn)
     box.exec()
     clicked = box.clickedButton()
@@ -126,28 +124,24 @@ class LinkPanel(QWidget):
         layout.setContentsMargins(4, 4, 4, 4)
         layout.setSpacing(6)
 
-        self.import_btn = QPushButton("Importa da file")
+        self.import_btn = QPushButton()
         self.import_btn.clicked.connect(self._on_import_file)
         layout.addWidget(self.import_btn)
 
-        self.paste_btn = QPushButton("Aggiungi link")
+        self.paste_btn = QPushButton()
         # Marca come azione primaria (vedi selettore QSS in style.py).
         self.paste_btn.setProperty("primary", "true")
         self.paste_btn.clicked.connect(self._on_paste)
         layout.addWidget(self.paste_btn)
 
-        self.clear_btn = QPushButton("Svuota")
+        self.clear_btn = QPushButton()
         self.clear_btn.clicked.connect(self._on_clear)
         layout.addWidget(self.clear_btn)
 
         # Permette di inserire piu' volte lo stesso URL: ogni copia diventa
         # un worker con file_id diverso e va in una cartella separata
         # (es. <hash>_0, <hash>_1).
-        self.allow_dups = QCheckBox("Consenti duplicati")
-        self.allow_dups.setToolTip(
-            "Se attivo, lo stesso link puo' essere aggiunto piu' volte. "
-            "Ogni copia viene scaricata in una cartella separata."
-        )
+        self.allow_dups = QCheckBox()
         layout.addWidget(self.allow_dups)
 
         layout.addStretch(1)
@@ -160,6 +154,8 @@ class LinkPanel(QWidget):
 
         # Altezza fissa contenuta: una sola riga di controlli.
         self.setMaximumHeight(40)
+
+        self.retranslate()
 
     # ---- azioni utente ----------------------------------------------------
 
@@ -191,9 +187,9 @@ class LinkPanel(QWidget):
     def _on_import_file(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
             self,
-            "Importa link da file",
+            t("link_panel.import_dialog_title"),
             "",
-            "File di testo (*.txt);;Tutti i file (*)",
+            t("link_panel.import_dialog_filter"),
         )
         if not path:
             return
@@ -202,8 +198,8 @@ class LinkPanel(QWidget):
         except OSError as exc:
             QMessageBox.critical(
                 self,
-                "Errore lettura file",
-                f"Impossibile leggere il file:\n{exc}",
+                t("link_panel.read_error_title"),
+                t("link_panel.read_error_body", error=exc),
             )
             return
 
@@ -220,19 +216,24 @@ class LinkPanel(QWidget):
         if added == 0:
             QMessageBox.warning(
                 self,
-                "Nessun link importato",
-                "Il file non contiene link Mega validi "
-                f"(non validi: {n_invalid}, duplicati ignorati: {n_dups}).",
+                t("link_panel.nothing_imported_title"),
+                t(
+                    "link_panel.nothing_imported_body",
+                    invalid=n_invalid,
+                    dups=n_dups,
+                ),
             )
             return
 
         QMessageBox.information(
             self,
-            "Import completato",
-            f"Import completato.\n"
-            f"- Aggiunti: {added} link\n"
-            f"- Non validi: {n_invalid}\n"
-            f"- Duplicati ignorati: {n_dups}",
+            t("link_panel.import_done_title"),
+            tn(
+                "link_panel.import_done_body",
+                added,
+                invalid=n_invalid,
+                dups=n_dups,
+            ),
         )
         self._refresh_counter()
         self.links_count_changed.emit(len(self._links))
@@ -292,16 +293,31 @@ class LinkPanel(QWidget):
         self.import_btn.setEnabled(not running)
         self.clear_btn.setEnabled(not running)
 
+    # ---- lingua -----------------------------------------------------------
+
+    def retranslate(self) -> None:
+        """Riscrive il cromo del pannello nella lingua corrente.
+
+        Il contatore passa da `_refresh_counter` perche' il suo testo dipende
+        dal numero di link, non solo dalla lingua.
+        """
+        self.import_btn.setText(t("link_panel.import"))
+        self.paste_btn.setText(t("link_panel.add"))
+        self.clear_btn.setText(t("link_panel.clear"))
+        self.allow_dups.setText(t("link_panel.allow_duplicates"))
+        self.allow_dups.setToolTip(t("link_panel.allow_duplicates_tooltip"))
+        self._refresh_counter()
+
     # ---- helper -----------------------------------------------------------
 
     def _refresh_counter(self) -> None:
         n = len(self._links)
-        if n == 0:
-            text = "nessun link"
-        elif n == 1:
-            text = "1 link pronto"
-        else:
-            text = f"{n} link pronti"
+        # La scelta singolare/plurale la fa `tn()`: il caso 0 resta a
+        # parte perche' non e' un plurale ma un testo diverso.
+        text = (
+            t("link_panel.counter_empty") if n == 0
+            else tn("link_panel.counter", n)
+        )
         self.counter_lbl.setText(text)
         self.counter_lbl.setStyleSheet(
             f"color: {PALETTE['text_dim']}; font-size: 9pt;"

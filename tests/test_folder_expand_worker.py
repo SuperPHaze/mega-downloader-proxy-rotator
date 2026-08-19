@@ -1,6 +1,10 @@
 # Test sul worker di espansione: mescolanza cartelle/file singoli, cartella
 # vuota, errore su una cartella sola, cap superato. Nessuna rete: la funzione
 # di espansione e' sostituita da una fake.
+# NOTA i18n: i test che asseriscono le PAROLE del report ("vuota",
+# "ATTENZIONE", "annullata", "duplicati") usano la fixture `italian_ui`.
+# Da quando il report passa dal dizionario, senza quella fixture l'esito
+# dipenderebbe dal locale della macchina che lancia la suite.
 import pytest
 from PyQt6.QtWidgets import QApplication
 
@@ -40,7 +44,7 @@ def _run(worker):
     return out
 
 
-def test_mixed_input_expands_folders_and_keeps_single_files(monkeypatch):
+def test_mixed_input_expands_folders_and_keeps_single_files(monkeypatch, italian_ui):
     monkeypatch.setattr(
         few, "expand_folder_link",
         lambda url, **kw: _expansion("A", "CartA", 3),
@@ -65,7 +69,7 @@ def test_two_folders_are_both_expanded(monkeypatch):
     assert len(set(links)) == 4
 
 
-def test_empty_folder_is_reported_and_produces_no_jobs(monkeypatch):
+def test_empty_folder_is_reported_and_produces_no_jobs(monkeypatch, italian_ui):
     monkeypatch.setattr(
         few, "expand_folder_link", lambda url, **kw: _expansion("A", "Vuota", 0),
     )
@@ -75,7 +79,7 @@ def test_empty_folder_is_reported_and_produces_no_jobs(monkeypatch):
     assert any("vuota" in line for line in report)
 
 
-def test_only_an_empty_folder_fails_with_a_message(monkeypatch):
+def test_only_an_empty_folder_fails_with_a_message(monkeypatch, italian_ui):
     monkeypatch.setattr(
         few, "expand_folder_link", lambda url, **kw: _expansion("A", "Vuota", 0),
     )
@@ -106,7 +110,7 @@ def test_unexpected_exception_is_contained(monkeypatch):
     assert "imprevisto" in out["failed"]
 
 
-def test_truncation_is_surfaced_never_silent(monkeypatch):
+def test_truncation_is_surfaced_never_silent(monkeypatch, italian_ui):
     monkeypatch.setattr(
         few, "expand_folder_link",
         lambda url, **kw: _expansion("A", "Grande", 4, total=10),
@@ -117,7 +121,7 @@ def test_truncation_is_surfaced_never_silent(monkeypatch):
     assert any("ATTENZIONE" in line for line in report)
 
 
-def test_cancellation_stops_the_expansion(monkeypatch):
+def test_cancellation_stops_the_expansion(monkeypatch, italian_ui):
     monkeypatch.setattr(
         few, "expand_folder_link", lambda url, **kw: _expansion("A", "CartA", 1),
     )
@@ -138,7 +142,7 @@ def test_input_without_folders_passes_through_untouched(monkeypatch):
     assert report == []
 
 
-def test_worker_removes_exact_duplicates_across_two_pastes(monkeypatch):
+def test_worker_removes_exact_duplicates_across_two_pastes(monkeypatch, italian_ui):
     # La stessa cartella incollata due volte: stessi nodi, stessi path.
     monkeypatch.setattr(
         few, "expand_folder_link", lambda url, **kw: _expansion("A", "CartA", 2),
