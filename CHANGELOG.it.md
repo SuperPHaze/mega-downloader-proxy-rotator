@@ -10,10 +10,12 @@ Tutte le modifiche rilevanti del progetto. Formato basato su [Keep a Changelog](
 - **Interfaccia in italiano e inglese — prima fase.** All'avvio il programma segue la lingua del
   sistema (italiano se il sistema è in italiano, inglese in tutti gli altri casi) e nel menu
   **Impostazioni** compare la voce **Lingua** con «Automatica / Italiano / English». La scelta si
-  applica **subito**, senza riavviare, e viene ricordata al riavvio successivo. In questa prima
-  fase sono tradotti la **barra dei comandi** e il **titolo della finestra**; gli altri pannelli
-  restano per ora in italiano e verranno tradotti nelle fasi successive. I messaggi nei file di
-  log restano in italiano: servono alla diagnosi e devono restare stabili.
+  applica **subito**, senza riavviare, e viene ricordata al riavvio successivo. Sono tradotti
+  finora la **barra dei comandi**, il **titolo della finestra**, la barra «nuova versione
+  disponibile» e le finestre **Info**, **Funzioni Sperimentali** e **Incolla link Mega**; i
+  pannelli restanti (elenco download, statistiche, zona proxy) restano per ora in italiano e
+  verranno tradotti nelle fasi successive. I messaggi nei file di log restano in italiano:
+  servono alla diagnosi e devono restare stabili.
 
 ## [1.21.0] — 2026-08-18
 

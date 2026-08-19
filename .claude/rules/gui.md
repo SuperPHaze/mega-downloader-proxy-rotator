@@ -28,8 +28,14 @@ paths: ["src/gui/**/*.py"]
 - **I log restano in italiano**: sono diagnostici e devono restare stabili nel tempo. Non passare
   mai un testo tradotto a `log.*`, e non "completare il lavoro" traducendoli.
 - **Migrazione in corso** (piano: `MyDocs/i18n-gui-2.0.0-design.md`): F1 ha convertito
-  `ControlsBar` e il titolo della finestra. Gli altri pannelli hanno ancora il testo italiano
-  hard-coded e vengono convertiti in F2 — se ne tocchi uno, convertilo invece di aggiungere
+  `ControlsBar` e il titolo della finestra; F2a `UpdateBanner` (persistente, con
+  `retranslate()`) e i dialoghi `about_dialog`/`experimental_dialog`/`paste_links_dialog`
+  (creati su richiesta, nessun `retranslate()`). Restano in italiano hard-coded `link_panel`,
+  `jobs_panel`, `stats_bar`, `stats_panel`, `proxy_bar`, `format_helpers`,
+  `folder_expand_worker` e `main_window` (F2b/F2c). **`jobs_model` e `job_detail_dialog` sono
+  fuori dal percorso F2**: i loro testi sono cronologia e messaggi d'errore che nascono in
+  `core/`/`downloader/`, e vanno affrontati insieme nella fase «Errori & Cronologia» (con
+  codici d'errore). Se tocchi un file ancora da migrare, convertilo invece di aggiungere
   altre stringhe fisse.
 - Nomi di variabili, funzioni, classi, file e segnali in inglese.
 - I commenti del codice sono in italiano.

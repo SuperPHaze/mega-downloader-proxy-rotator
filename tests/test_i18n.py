@@ -15,11 +15,15 @@ pytest.importorskip("PyQt6.QtWidgets")
 
 from PyQt6.QtWidgets import QApplication
 
-from src.gui import i18n, preferences
+from src.gui import about_dialog, i18n, preferences
+from src.gui.about_dialog import AboutDialog
 from src.gui.controls import ControlsBar
+from src.gui.experimental_dialog import ExperimentalFeaturesDialog
 from src.gui.i18n import TR, Translator, language_from_locale_name, t, tn
+from src.gui.paste_links_dialog import PasteLinksDialog
 from src.gui.strings_en import STRINGS as STRINGS_EN
 from src.gui.strings_it import STRINGS as STRINGS_IT
+from src.gui.update_banner import UpdateBanner
 
 _PARAM_RE = re.compile(r"\{(\w+)\}")
 
@@ -318,3 +322,107 @@ def test_retranslate_does_not_reenter_preference_change(qapp, isolated_prefs, mo
         TR.language_changed.disconnect(changes.append)
     assert changes == []
     assert TR.preference() == "en"
+
+
+# ---- F2a: banner e dialoghi ------------------------------------------------
+
+# Superfici migrate finora: un file che perde la sua voce qui e' un file
+# dimenticato dalla migrazione, non un test da aggiornare a cuor leggero.
+MIGRATED_SURFACES = ("main_window", "controls", "update_banner", "about", "experimental", "paste")
+
+
+@pytest.mark.parametrize("surface", MIGRATED_SURFACES)
+def test_migrated_surface_has_keys(surface):
+    prefix = f"{surface}."
+    assert any(k.startswith(prefix) for k in STRINGS_IT), surface
+    assert any(k.startswith(prefix) for k in STRINGS_EN), surface
+
+
+def test_update_banner_retranslates_hot(qapp, isolated_prefs, monkeypatch):
+    """Il banner e' una superficie persistente: deve ritradursi a caldo."""
+    monkeypatch.setattr(i18n, "detect_system_language", lambda: "it")
+    TR.set_preference("it")
+    banner = UpdateBanner()
+    banner.show_update("2.0.0")
+    assert banner._label.text() == "Disponibile la versione 2.0.0."
+    assert banner._download_btn.text() == "Scarica"
+
+    TR.set_preference("en")
+    banner.retranslate()        # in app lo fa MainWindow._on_language_changed
+    assert banner._label.text() == "Version 2.0.0 is available."
+    assert banner._download_btn.text() == "Download"
+
+
+def test_update_banner_keeps_version_across_retranslation(qapp, isolated_prefs, monkeypatch):
+    """La versione annunciata sopravvive al cambio lingua: il chiamante non
+    ripassa da show_update()."""
+    monkeypatch.setattr(i18n, "detect_system_language", lambda: "it")
+    TR.set_preference("it")
+    banner = UpdateBanner()
+    banner.show_update("3.1.4")
+    TR.set_preference("en")
+    banner.retranslate()
+    assert "3.1.4" in banner._label.text()
+
+
+def test_update_banner_empty_before_any_update(qapp, isolated_prefs, monkeypatch):
+    """Senza una versione annunciata l'etichetta resta vuota, in ogni lingua:
+    non deve comparire una frase con un segnaposto al posto del numero."""
+    monkeypatch.setattr(i18n, "detect_system_language", lambda: "it")
+    TR.set_preference("it")
+    banner = UpdateBanner()
+    assert banner._label.text() == ""
+    TR.set_preference("en")
+    banner.retranslate()
+    assert banner._label.text() == ""
+
+
+@pytest.mark.parametrize(
+    "language, expected",
+    [("it", "Incolla link Mega"), ("en", "Paste Mega links")],
+)
+def test_paste_dialog_built_in_current_language(
+    qapp, isolated_prefs, monkeypatch, language, expected
+):
+    """I dialoghi nascono all'apertura: leggono la lingua corrente alla
+    costruzione, quindi non hanno bisogno di retranslate()."""
+    monkeypatch.setattr(i18n, "detect_system_language", lambda: "it")
+    TR.set_preference(language)
+    dlg = PasteLinksDialog([], False)
+    assert dlg.windowTitle() == expected
+
+
+@pytest.mark.parametrize(
+    "language, expected", [("it", "Funzioni Sperimentali"), ("en", "Experimental Features")]
+)
+def test_experimental_dialog_built_in_current_language(
+    qapp, isolated_prefs, monkeypatch, language, expected
+):
+    monkeypatch.setattr(i18n, "detect_system_language", lambda: "it")
+    TR.set_preference(language)
+    dlg = ExperimentalFeaturesDialog()
+    assert dlg.windowTitle() == expected
+
+
+@pytest.mark.parametrize("language, expected", [("it", "Info"), ("en", "About")])
+def test_about_dialog_built_in_current_language(
+    qapp, isolated_prefs, monkeypatch, language, expected
+):
+    # Il fetch remoto del branding non deve partire: il test e' offline.
+    monkeypatch.setattr(about_dialog, "branding_enabled", lambda: False)
+    monkeypatch.setattr(i18n, "detect_system_language", lambda: "it")
+    TR.set_preference(language)
+    dlg = AboutDialog()
+    assert dlg.windowTitle() == expected
+
+
+def test_paste_dialog_counters_are_named_params(qapp, isolated_prefs, monkeypatch):
+    """I conteggi sono parametri {n}, non plurali: il numero finisce nel testo
+    in entrambe le lingue."""
+    monkeypatch.setattr(i18n, "detect_system_language", lambda: "it")
+    TR.set_preference("en")
+    dlg = PasteLinksDialog([], False)
+    dlg.edit.setPlainText("https://mega.nz/file/AAA#k\nnon-un-link")
+    assert dlg.lbl_valid.text() == "Valid: 1"
+    assert dlg.lbl_invalid.text() == "Invalid: 1"
+    assert dlg.add_btn.text() == "Add 1"

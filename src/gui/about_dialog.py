@@ -2,6 +2,9 @@
 # remoto con fallback a cache/default), licenza, e controllo aggiornamenti
 # manuale. Il branding viene aggiornato a runtime se il fetch remoto
 # (in QThread) ritorna un risultato piu' recente della cache.
+#
+# i18n: dialogo creato su richiesta, legge i testi con t("about.*") alla
+# costruzione: nessun retranslate() necessario.
 from __future__ import annotations
 
 from PyQt6.QtCore import Qt, QSize
@@ -18,6 +21,7 @@ from PyQt6.QtWidgets import (
 from src.core.branding import Branding, resolve as resolve_branding
 from src.core.config import APP_LICENSE, APP_VERSION, LOGO_DARK_PATH, LOGO_LIGHT_PATH
 from src.gui.branding_fetch import BrandingFetchWorker, branding_enabled
+from src.gui.i18n import t
 from src.gui.preferences import (
     load_check_updates_on_startup,
     load_dark_theme,
@@ -35,7 +39,7 @@ from src.gui.update_check import (
 class AboutDialog(QDialog):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Info")
+        self.setWindowTitle(t("about.title"))
         self.setMinimumWidth(380)
         self._worker: UpdateCheckWorker | None = None
         self._branding_worker: BrandingFetchWorker | None = None
@@ -53,7 +57,9 @@ class AboutDialog(QDialog):
 
         self._author_lbl = self._centered_label("")
         layout.addWidget(self._author_lbl)
-        layout.addWidget(self._centered_label(f"Licenza: {APP_LICENSE}"))
+        layout.addWidget(
+            self._centered_label(t("about.license", license=APP_LICENSE))
+        )
 
         self._branding_link_lbl = QLabel()
         self._branding_link_lbl.setAlignment(Qt.AlignmentFlag.AlignHCenter)
@@ -71,8 +77,8 @@ class AboutDialog(QDialog):
         layout.addSpacing(8)
 
         update_row = QHBoxLayout()
-        self._update_status_lbl = QLabel("Controllo aggiornamenti non eseguito.")
-        self._check_btn = QPushButton("Controlla aggiornamenti")
+        self._update_status_lbl = QLabel(t("about.update_not_checked"))
+        self._check_btn = QPushButton(t("about.check_button"))
         self._check_btn.clicked.connect(self._check_for_updates)
         update_row.addWidget(self._update_status_lbl, 1)
         update_row.addWidget(self._check_btn)
@@ -80,14 +86,14 @@ class AboutDialog(QDialog):
 
         if not updates_enabled():
             self._check_btn.setEnabled(False)
-            self._update_status_lbl.setText("Controllo aggiornamenti non configurato.")
+            self._update_status_lbl.setText(t("about.updates_not_configured"))
 
-        self._startup_check_box = QCheckBox("Controlla aggiornamenti all'avvio")
+        self._startup_check_box = QCheckBox(t("about.check_on_startup"))
         self._startup_check_box.setChecked(load_check_updates_on_startup())
         self._startup_check_box.toggled.connect(save_check_updates_on_startup)
         layout.addWidget(self._startup_check_box)
 
-        close_btn = QPushButton("Chiudi")
+        close_btn = QPushButton(t("about.close"))
         close_btn.clicked.connect(self.accept)
         layout.addWidget(close_btn, 0, Qt.AlignmentFlag.AlignRight)
 
@@ -96,8 +102,10 @@ class AboutDialog(QDialog):
     # ---- branding (nome/autore/link/logo) ---------------------------------
 
     def _apply_branding(self, b: Branding) -> None:
-        self._title_lbl.setText(f"<b>{b.name}</b> ({b.acronym}) — v{APP_VERSION}")
-        self._author_lbl.setText(f"Autore: {b.author}")
+        self._title_lbl.setText(
+            t("about.name_line", name=b.name, acronym=b.acronym, version=APP_VERSION)
+        )
+        self._author_lbl.setText(t("about.author", author=b.author))
 
         github = b.links.get("github") if b.links else None
         if b.nick and github:
@@ -186,7 +194,7 @@ class AboutDialog(QDialog):
         if not updates_enabled():
             return
         self._check_btn.setEnabled(False)
-        self._update_status_lbl.setText("Controllo in corso…")
+        self._update_status_lbl.setText(t("about.checking"))
         self._worker = UpdateCheckWorker()
         self._worker.finished_check.connect(
             self._on_check_done, Qt.ConnectionType.QueuedConnection
@@ -196,11 +204,13 @@ class AboutDialog(QDialog):
     def _on_check_done(self, status: str, latest_version: str) -> None:
         self._check_btn.setEnabled(True)
         if status == STATUS_AVAILABLE:
-            self._update_status_lbl.setText(f"Disponibile la versione {latest_version}.")
+            self._update_status_lbl.setText(
+                t("about.update_available", version=latest_version)
+            )
         elif status == STATUS_UP_TO_DATE:
-            self._update_status_lbl.setText("Sei aggiornato all'ultima versione.")
+            self._update_status_lbl.setText(t("about.up_to_date"))
         else:
-            self._update_status_lbl.setText("Impossibile determinare se ci sono aggiornamenti.")
+            self._update_status_lbl.setText(t("about.check_failed"))
 
     def closeEvent(self, event) -> None:  # noqa: N802
         if self._worker is not None and self._worker.isRunning():

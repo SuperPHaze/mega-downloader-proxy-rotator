@@ -64,7 +64,7 @@ src/
     │                      #   _delete_folder_job_file elimina il SINGOLO file di un job-cartella
     │                      #   (+ .part + sidecar) e pota le cartelle vuote, mai l'albero condiviso; ripristino sessione all'avvio (prompt "Riprendi sessione precedente?" da session_store, differito con QTimer.singleShot); propaga la cartella download scelta a orchestrator.start(output_root=...) e la usa per il delete cartella; _on_language_changed fa il fan-out della ritraduzione (gemello di _on_theme_toggle)
     ├── link_panel.py      # gestore lista link (nascosto nell'UI, API get_links/set_links/open_paste_dialog)
-    ├── paste_links_dialog.py # dialog modale incolla/edita lista link; contatori Validi/Non validi/Duplicati/Cartelle
+    ├── paste_links_dialog.py # dialog modale incolla/edita lista link; contatori Validi/Non validi/Duplicati/Cartelle (i18n: t("paste.*"), conteggi come parametro {n})
     ├── jobs_model.py      # JobsModel (QAbstractTableModel) + Job (throughput/file_name/output_path)
     ├── jobs_panel.py      # lista job a righe-card (QScrollArea + _JobCard widget per riga); filtri a pulsanti esclusivi (QButtonGroup), senza etichetta; ogni pulsante mostra il conteggio file per categoria ("In corso (N)"/"Completati (N)"/"Non completati (N)"), aggiornato da _update_filter_counts su aggregates_changed
     ├── job_detail_dialog.py # dialog non-modale dettaglio job (doppio clic)
@@ -78,7 +78,7 @@ src/
     ├── proxy_bar.py       # ProxyBar: zona proxy in stile "conservativo" — griglia 2x4 di card compatte su due righe (vivi/validazione/scartati/ricariche/ultimo refill/banda/banda proxy; min width 112px = etichetta più lunga non tagliata al resize) + colonna verticale di pulsanti "↻ Banda" (speed test linea diretta), "↻ Banda proxy" (speed test attraverso il pool live, abilitato solo con proxy vivi) e "Reset cache"; popolata da pool_size_changed/setup_progress/proxy_stats dell'orchestrator. Card "Banda" verde (accent_ok) vs "Banda proxy" blu (accent_info) per differenziare le due misure
     ├── speedtest_worker.py # SpeedTestWorker (banda linea diretta, senza proxy) + ProxySpeedTestWorker (banda aggregata del pool live, uno stream per proxy campionato, resiliente ai proxy lenti/caduti); entrambi QThread, emettono finished_test(mbit, ok)
     ├── controls.py        # barra comandi: Avvia/Pausa/Annulla/Paralleli/Incolla/Tema/Info; menu Impostazioni con Paralleli/Limite/Pezzo/"Cartella download:" (QFileDialog, getter get_download_dir, segnale download_dir_changed) + "Lingua:" (QComboBox Automatica/Italiano/English → TR.set_preference); PRIMO pannello migrato a i18n: testi via t("controls.*") e retranslate() per il cambio a caldo
-    ├── experimental_dialog.py # ExperimentalFeaturesDialog: 3 controlli con descrizione breve inline e icona "i" (QToolButton) → QMessageBox estesa: "Connessioni per file" (spinbox), "Budget per pezzo (s)" (spinbox), "Selezione per velocità" (checkbox + spinbox soglia KB/s); tutti persistono in preferences.json
+    ├── experimental_dialog.py # ExperimentalFeaturesDialog: 3 controlli con descrizione breve inline e icona "i" (QToolButton) → QMessageBox estesa: "Connessioni per file" (spinbox), "Budget per pezzo (s)" (spinbox), "Selezione per velocità" (checkbox + spinbox soglia KB/s); tutti persistono in preferences.json; i18n: t("experimental.*"), le descrizioni brevi/estese stanno nei dizionari
     ├── folder_expand_worker.py # FolderExpandWorker(QThread): espande i link cartella prima dell'avvio
     │                      #   (rete fuori dal thread GUI); i link non-cartella passano invariati e
     │                      #   nell'ordine originale
@@ -86,9 +86,9 @@ src/
     ├── i18n.py            # motore di traduzione GUI: Translator(QObject) con language_changed(str), singleton di modulo TR (come CURRENT_PALETTE), t(key, **params) e tn(key, n, **params); risolve "auto" dal locale (QLocale → prefisso → it, altrimenti en), persiste via preferences, installa qtbase_<lang>.qm via QLibraryInfo. Chiave mancante in EN → testo IT + WARNING una volta sola; mai eccezione
     ├── strings_it.py      # dizionario piatto IT — è la FONTE del testo utente
     ├── strings_en.py      # dizionario piatto EN — traduzione: stesse chiavi e stessi {parametri} (test di parità in tests/test_i18n.py)
-    ├── about_dialog.py    # AboutDialog: nome/acronimo/autore/nick/link/logo (da branding) + licenza + controllo aggiornamenti manuale
+    ├── about_dialog.py    # AboutDialog: nome/acronimo/autore/nick/link/logo (da branding) + licenza + controllo aggiornamenti manuale (i18n: t("about.*"))
     ├── update_check.py    # UpdateCheckWorker(QThread): GET releases/latest GitHub, fuori dal thread GUI
-    ├── update_banner.py   # UpdateBanner: barra sottile richiudibile ("nuova versione disponibile")
+    ├── update_banner.py   # UpdateBanner: barra sottile richiudibile ("nuova versione disponibile"); superficie PERSISTENTE: ha retranslate() e tiene la versione annunciata in _version per riscrivere l'etichetta al cambio lingua
     ├── branding_fetch.py  # BrandingFetchWorker(QThread): GET manifest.json + logo remoti, size-limited, fuori dal thread GUI
     └── style.py           # PALETTE_LIGHT/DARK, CURRENT_PALETTE, build_qss(), apply_theme()
 
@@ -130,7 +130,9 @@ package.ps1                # packaging: crea dist/MegaProxyRotator-X.Y.Z.zip
   **L'italiano è la fonte** (`gui/strings_it.py`), l'inglese la traduzione (`gui/strings_en.py`).
   Nessuna stringa utente hard-coded nei pannelli già migrati: si passa da `t()`/`tn()` di `gui/i18n.py`
   e si espone `retranslate()` per il cambio a caldo. **Migrazione in corso**: F1 ha convertito
-  `ControlsBar` + titolo finestra, gli altri pannelli sono ancora in italiano hard-coded (F2).
+  `ControlsBar` + titolo finestra, F2a `UpdateBanner` + i dialoghi Info/Sperimentali/Incolla;
+  restano in italiano hard-coded elenco job, statistiche e zona proxy (F2b) e i testi legati
+  agli errori (`jobs_model`, `job_detail_dialog`), rimandati alla fase «Errori & Cronologia».
   I **log restano in italiano** e non si traducono mai (sono diagnostici e devono restare stabili).
 - Downloader: pattern `.part` + rename atomico. Si scarica SEMPRE su `<nome>.part` (sidecar `.progress.json` riferito al `.part`, include `chunk_size` per validare compatibilità del resume); `os.replace` sul nome finale solo a download completo e verificato. L'esistenza del nome finale è l'UNICO marker di completamento usato dal check di resume del worker. I `.part` non vanno mai cancellati al cleanup (servono al resume: i chunk completati restano scritti e vengono skippati al retry).
 - Pool scoring: i call-site devono registrare anche i successi (`record_success` su segmento completato / IP check ok) e usare `penalize(hard=True)` solo per 503 dal CDN; errori transitori (timeout, throughput basso, connection error) → `penalize(hard=False)`. Mai usare `mark_dead` (alias deprecato).

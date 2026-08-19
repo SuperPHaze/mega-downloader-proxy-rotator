@@ -1,5 +1,9 @@
 # Dialog modale per incollare/editare la lista di link Mega.
 # Pattern dialog-as-pure-input: ritorna i link al chiamante, non muta stato esterno.
+#
+# i18n: dialogo creato su richiesta, legge i testi con t("paste.*") alla
+# costruzione: nessun retranslate() necessario. I conteggi sono parametri
+# nominati ({n}), non plurali: il testo non cambia forma.
 from __future__ import annotations
 
 from PyQt6.QtCore import Qt
@@ -15,6 +19,7 @@ from PyQt6.QtWidgets import (
 )
 
 from src.core.mega_links import is_folder_link
+from src.gui.i18n import t
 from src.gui.style import PALETTE
 
 
@@ -40,7 +45,7 @@ class PasteLinksDialog(QDialog):
         prefill: list[str] | None = None,
     ) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Incolla link Mega")
+        self.setWindowTitle(t("paste.title"))
         self.setModal(True)
         self.resize(560, 360)
 
@@ -52,7 +57,7 @@ class PasteLinksDialog(QDialog):
         layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(6)
 
-        layout.addWidget(QLabel("Incolla link Mega (uno per riga):"))
+        layout.addWidget(QLabel(t("paste.instructions")))
 
         self.edit = _NoEnterTextEdit()
         self.edit.setPlaceholderText("https://mega.nz/...")
@@ -65,15 +70,13 @@ class PasteLinksDialog(QDialog):
         # Riga statistiche live.
         stats_row = QHBoxLayout()
         stats_row.setSpacing(14)
-        self.lbl_valid = QLabel("Validi: 0")
-        self.lbl_folders = QLabel("Cartelle: 0")
-        self.lbl_invalid = QLabel("Non validi: 0")
-        self.lbl_dups = QLabel("Duplicati: 0")
+        self.lbl_valid = QLabel(t("paste.valid", n=0))
+        self.lbl_folders = QLabel(t("paste.folders", n=0))
+        self.lbl_invalid = QLabel(t("paste.invalid", n=0))
+        self.lbl_dups = QLabel(t("paste.duplicates", n=0))
         # La cartella conta come UN link qui: quanti file contenga si sa solo
         # dopo l'espansione (che fa rete e avviene all'Avvia).
-        self.lbl_folders.setToolTip(
-            "Link a cartella Mega: all'avvio vengono espansi nei file contenuti."
-        )
+        self.lbl_folders.setToolTip(t("paste.folders_tooltip"))
         for lbl, color in (
             (self.lbl_valid, PALETTE["accent_ok"]),
             (self.lbl_folders, PALETTE["accent_info"]),
@@ -88,10 +91,10 @@ class PasteLinksDialog(QDialog):
         # Bottoni: Annulla / Aggiungi N.
         self.buttons = QDialogButtonBox()
         self.cancel_btn = self.buttons.addButton(
-            "Annulla", QDialogButtonBox.ButtonRole.RejectRole
+            t("paste.cancel"), QDialogButtonBox.ButtonRole.RejectRole
         )
         self.add_btn = self.buttons.addButton(
-            "Aggiungi 0", QDialogButtonBox.ButtonRole.AcceptRole
+            t("paste.add_button", n=0), QDialogButtonBox.ButtonRole.AcceptRole
         )
         # Marca il bottone primario per il selettore QSS dedicato.
         self.add_btn.setProperty("primary", "true")
@@ -138,15 +141,15 @@ class PasteLinksDialog(QDialog):
     def _recompute_stats(self) -> None:
         valid_new, invalid, dups = self._parse_current()
         n_folders = sum(1 for u in valid_new if is_folder_link(u))
-        self.lbl_folders.setText(f"Cartelle: {n_folders}")
+        self.lbl_folders.setText(t("paste.folders", n=n_folders))
         # "Validi" totale = righe che matchano il prefisso, indipendentemente
         # dai duplicati (per dare all'utente il colpo d'occhio).
         valid_total = len(valid_new) + (dups if not self._allow_duplicates else 0)
-        self.lbl_valid.setText(f"Validi: {valid_total}")
-        self.lbl_invalid.setText(f"Non validi: {invalid}")
-        self.lbl_dups.setText(f"Duplicati: {dups}")
+        self.lbl_valid.setText(t("paste.valid", n=valid_total))
+        self.lbl_invalid.setText(t("paste.invalid", n=invalid))
+        self.lbl_dups.setText(t("paste.duplicates", n=dups))
         n_to_add = len(valid_new)
-        self.add_btn.setText(f"Aggiungi {n_to_add}")
+        self.add_btn.setText(t("paste.add_button", n=n_to_add))
         self.add_btn.setEnabled(n_to_add > 0)
 
     # ---- accept -----------------------------------------------------------

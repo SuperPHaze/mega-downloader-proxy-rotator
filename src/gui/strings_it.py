@@ -82,4 +82,88 @@ STRINGS: dict[str, str | dict[str, str]] = {
         "Lingua dell'interfaccia.\n"
         "Automatica: segue la lingua del sistema."
     ),
+
+    # ---- banner "nuova versione disponibile" -------------------------------
+    "update_banner.available": "Disponibile la versione {version}.",
+    "update_banner.download": "Scarica",
+
+    # ---- finestra Info -----------------------------------------------------
+    "about.title": "Info",
+    "about.name_line": "<b>{name}</b> ({acronym}) — v{version}",
+    "about.author": "Autore: {author}",
+    "about.license": "Licenza: {license}",
+    "about.check_button": "Controlla aggiornamenti",
+    "about.check_on_startup": "Controlla aggiornamenti all'avvio",
+    "about.update_not_checked": "Controllo aggiornamenti non eseguito.",
+    "about.updates_not_configured": "Controllo aggiornamenti non configurato.",
+    "about.checking": "Controllo in corso…",
+    "about.update_available": "Disponibile la versione {version}.",
+    "about.up_to_date": "Sei aggiornato all'ultima versione.",
+    "about.check_failed": "Impossibile determinare se ci sono aggiornamenti.",
+    "about.close": "Chiudi",
+
+    # ---- finestra Funzioni Sperimentali ------------------------------------
+    "experimental.title": "Funzioni Sperimentali",
+    "experimental.info_tooltip": "Mostra la spiegazione estesa",
+    "experimental.speed_selection": "Selezione per velocità",
+    "experimental.speed_selection_desc_short": (
+        "Testa la velocità reale dei proxy: solo quelli abbastanza veloci vengono preferiti. "
+        "I lenti restano come riserva."
+    ),
+    "experimental.speed_selection_desc_long": (
+        "Attiva un profilo di download alternativo ottimizzato per la qualità dei proxy. "
+        "Cambia diversi parametri della sessione:\n\n"
+        "• Candidati alla validazione: 5000 (anziché 12000)\n"
+        "• Terzo stadio di validazione: ogni proxy scarica un file di prova da 1 MB e viene "
+        "misurato in velocità reale\n"
+        "• Soglia preferenza (configurabile): i proxy sopra questa soglia vengono serviti per "
+        "primi; quelli più lenti restano come riserva\n"
+        "• Soglia ammissione (fissa, 100 KB/s): i proxy sotto questa velocità vengono scartati\n"
+        "• Connessioni per file: ridotte a 5 (meno pressione sul pool, i proxy durano di più)\n\n"
+        "Il pool risultante è ordinato per velocità: il download usa prima i proxy veloci, e "
+        "degrada ai lenti solo se necessario — senza fermarsi per ricostruire il pool.\n\n"
+        "Default: disattivato, soglia preferenza 500 KB/s."
+    ),
+    "experimental.connections_label": "Connessioni per file:",
+    "experimental.connections_title": "Connessioni per file",
+    "experimental.connections_desc_short": (
+        "Parti del file scaricate in parallelo, una per proxy. Default 10."
+    ),
+    "experimental.connections_desc_long": (
+        "Quante parti del file vengono scaricate contemporaneamente, ognuna su un "
+        "proxy diverso. Più connessioni aumentano la velocità ma consumano più "
+        "proxy nello stesso istante; con pochi proxy buoni può essere "
+        "controproducente. Intervallo 2–16, default 10."
+    ),
+    "experimental.budget_label": "Budget per pezzo (s):",
+    "experimental.budget_title": "Budget per pezzo",
+    "experimental.budget_desc_short": (
+        "Tempo massimo per scaricare un pezzo da un proxy, poi si cambia. Default 180 s."
+    ),
+    "experimental.budget_desc_long": (
+        "Tempo massimo concesso a un proxy per completare un singolo pezzo. "
+        "Superato il budget il tentativo viene annullato e il pezzo riprovato su "
+        "un altro proxy, anche se la velocità era accettabile. Alzalo se usi "
+        "pezzi grandi (128/256 MB) su proxy non velocissimi, altrimenti "
+        "verrebbero annullati prima di finire. Default 180 s."
+    ),
+    "experimental.feedback": (
+        "Hai un'idea o un problema? Apri una segnalazione su GitHub: "
+        '<a href="{url}">{url}</a>'
+    ),
+    "experimental.close": "Chiudi",
+
+    # ---- finestra "Incolla link Mega" --------------------------------------
+    "paste.title": "Incolla link Mega",
+    "paste.instructions": "Incolla link Mega (uno per riga):",
+    "paste.valid": "Validi: {n}",
+    "paste.folders": "Cartelle: {n}",
+    "paste.invalid": "Non validi: {n}",
+    "paste.duplicates": "Duplicati: {n}",
+    "paste.folders_tooltip": (
+        "Link a cartella Mega: all'avvio vengono espansi nei file contenuti."
+    ),
+    "paste.cancel": "Annulla",
+    # Il numero e' un parametro, non un plurale: il testo non cambia forma.
+    "paste.add_button": "Aggiungi {n}",
 }
