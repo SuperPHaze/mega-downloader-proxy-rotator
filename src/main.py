@@ -10,6 +10,7 @@ from src.core import diagnostics
 from src.core.config import APP_VERSION
 from src.core.icon_loader import build_app_icon
 from src.core.logging_setup import install_qt_message_handler, setup_logging
+from src.gui.i18n import TR
 from src.gui.main_window import MainWindow
 
 
@@ -52,6 +53,11 @@ def main() -> int:
     app = QApplication(sys.argv)
     icon = build_app_icon()
     app.setWindowIcon(icon)
+
+    # Lingua dell'interfaccia PRIMA di costruire la finestra: i pannelli leggono
+    # i testi alla costruzione, quindi l'app deve gia' partire nella lingua
+    # giusta (dopo la QApplication, che serve a installare il .qm di Qt).
+    TR.initialize()
 
     window = MainWindow()
     window.setWindowIcon(icon)

@@ -38,6 +38,7 @@ from src.gui.folder_expand_worker import FolderExpandWorker
 from src.gui.about_dialog import AboutDialog
 from src.gui.controls import ControlsBar
 from src.gui.experimental_dialog import ExperimentalFeaturesDialog
+from src.gui.i18n import TR, t
 from src.gui.job_detail_dialog import JobDetailDialog
 from src.gui.jobs_panel import JobsPanel
 from src.gui.link_panel import LinkPanel, confirm_already_downloaded
@@ -69,7 +70,7 @@ log = logging.getLogger(__name__)
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle(f"{resolve_branding().name} v{APP_VERSION}")
+        self._refresh_window_title()
         self.resize(1100, 820)
         self.setWindowIcon(build_app_icon())
 
@@ -172,6 +173,10 @@ class MainWindow(QMainWindow):
         self.controls.cancel_requested.connect(self._on_cancel)
         self.controls.paste_links_requested.connect(self.link_panel.open_paste_dialog)
         self.controls.theme_toggled.connect(self._on_theme_toggle)
+        # Cambio lingua a caldo: il singleton TR e' l'unica sorgente (il
+        # selettore nel menu Impostazioni chiama TR.set_preference), qui si fa
+        # il fan-out sui pannelli come per il tema.
+        TR.language_changed.connect(self._on_language_changed)
         self.controls.info_requested.connect(self._open_about_dialog)
         self.controls.experimental_requested.connect(self._open_experimental_dialog)
         self.controls.download_dir_changed.connect(self._on_download_dir_changed)
@@ -760,6 +765,25 @@ class MainWindow(QMainWindow):
         self.proxy_bar.refresh_theme()
         self._stats_panel.refresh_theme()
         self._restyle_dashboard_separator()
+
+    # ---- lingua dell'interfaccia ----------------------------------------
+
+    def _refresh_window_title(self) -> None:
+        self.setWindowTitle(
+            t("main_window.title", name=resolve_branding().name, version=APP_VERSION)
+        )
+
+    def _on_language_changed(self, lang: str) -> None:
+        """Ritraduzione a caldo: gemello di `_on_theme_toggle`.
+
+        F1 copre titolo + ControlsBar; gli altri pannelli hanno ancora il testo
+        hard-coded e si aggiungono qui a mano a mano che F2 li migra
+        (link_panel, jobs_panel, stats_bar, proxy_bar, _stats_panel,
+        update_banner). I dialoghi non servono: nascono all'apertura e leggono
+        i testi alla costruzione."""
+        log.info("Ritraduzione interfaccia in corso: %s", lang)
+        self._refresh_window_title()
+        self.controls.retranslate()
 
     def _restyle_dashboard_separator(self) -> None:
         p = _style.CURRENT_PALETTE

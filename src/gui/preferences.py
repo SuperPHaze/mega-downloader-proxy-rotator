@@ -1,4 +1,5 @@
-# Preferenze utente persistenti (tema chiaro/scuro, controllo aggiornamenti).
+# Preferenze utente persistenti (tema chiaro/scuro, lingua dell'interfaccia,
+# controllo aggiornamenti, leve sperimentali, cartella di download).
 # File JSON accanto a proxy_cache.json nella root del progetto.
 from __future__ import annotations
 
@@ -112,3 +113,16 @@ def load_download_dir() -> str:
 
 def save_download_dir(path: str) -> None:
     _save_pref("download_dir", str(path or ""))
+
+
+def load_language() -> str:
+    """Lingua dell'interfaccia: "auto" (segue il locale di sistema), "it", "en".
+
+    Retro-compatibile: un preferences.json che non ha la chiave (o che ne ha
+    una scritta a mano con un valore ignoto) si comporta come "auto"."""
+    val = str(_load_prefs().get("language", "auto") or "auto").strip().lower()
+    return val if val in ("auto", "it", "en") else "auto"
+
+
+def save_language(lang: str) -> None:
+    _save_pref("language", str(lang or "auto"))

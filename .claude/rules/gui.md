@@ -9,7 +9,28 @@ paths: ["src/gui/**/*.py"]
 - Importare i widget da `PyQt6.QtWidgets`, i tipi core da `PyQt6.QtCore`.
 
 ## Lingua
-- TUTTE le stringhe visibili all'utente (label, placeholder, titoli finestra, messaggi di errore, status bar) devono essere in italiano.
+- **GUI bilingue IT/EN.** Nessuna stringa visibile all'utente (label, placeholder, titoli finestra,
+  messaggi di errore, tooltip, status bar) va scritta hard-coded: si passa SEMPRE da
+  `t("<superficie>.<elemento>")` / `tn(...)` di `gui/i18n.py`, con la voce aggiunta in
+  **entrambi** i dizionari `gui/strings_it.py` (fonte) e `gui/strings_en.py` (traduzione).
+- **Chiavi**: slug stabile `"<superficie>.<elemento>"`, mai la stringa italiana come chiave
+  (cambiare il testo IT non deve invalidare la traduzione EN). **Parametri sempre nominati**
+  (`{name}`, `{path}`): in inglese l'ordine delle parti della frase cambia.
+- **Cambio a caldo**: ogni superficie persistente espone `retranslate()` — l'elenco dei
+  `setText`/`setToolTip` che il costruttore già esegue, richiamato anche da
+  `MainWindow._on_language_changed`. È il gemello di `refresh_theme()` per il tema; chi aggiunge
+  un widget con testo lo aggiunge in **tutti e due** i punti. I dialoghi creati su richiesta
+  (`AboutDialog`, `ExperimentalFeaturesDialog`, `JobDetailDialog`, `PasteLinksDialog`) non ne
+  hanno bisogno: leggono i testi alla costruzione.
+- Non si traducono: unità di misura (`"32 MB"`, `"MB/s"`), emoji/icone e la spaziatura di
+  impaginazione (resta nel codice, non nei dizionari), e i nomi delle lingue nel selettore
+  (`Italiano`/`English` sono uguali nei due dizionari).
+- **I log restano in italiano**: sono diagnostici e devono restare stabili nel tempo. Non passare
+  mai un testo tradotto a `log.*`, e non "completare il lavoro" traducendoli.
+- **Migrazione in corso** (piano: `MyDocs/i18n-gui-2.0.0-design.md`): F1 ha convertito
+  `ControlsBar` e il titolo della finestra. Gli altri pannelli hanno ancora il testo italiano
+  hard-coded e vengono convertiti in F2 — se ne tocchi uno, convertilo invece di aggiungere
+  altre stringhe fisse.
 - Nomi di variabili, funzioni, classi, file e segnali in inglese.
 - I commenti del codice sono in italiano.
 

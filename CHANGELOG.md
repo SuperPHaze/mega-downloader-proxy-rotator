@@ -4,6 +4,17 @@
 
 All notable changes to this project. Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning follows [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **Interface in Italian and English — first phase.** On startup the program follows the system
+  language (Italian if the system is in Italian, English in every other case) and the **Settings**
+  menu gains a **Language** row with "Automatic / Italiano / English". The choice applies
+  **immediately**, with no restart, and is remembered next time. In this first phase the
+  **command bar** and the **window title** are translated; the other panels stay in Italian for
+  now and will be translated in the following phases. Messages in the log files stay in Italian:
+  they are diagnostic and must remain stable.
+
 ## [1.21.0] — 2026-08-18
 
 ### Added
