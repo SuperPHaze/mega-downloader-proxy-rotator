@@ -521,7 +521,11 @@ class DownloadWorker(QThread):
                 # Non marcare morto, non ciclare: terminare il worker.
                 log.error("[file %d] ciclo %d tentativo %d: errore di configurazione: %s",
                           self.file_id, cycle, attempt, exc)
-                params = {"error": str(exc)}
+                # `cause` accanto a `error`: il testo e' la frase italiana
+                # (invariata, e' quella dei log), il payload e' la stessa cosa
+                # in forma traducibile. Senza, la GUI in inglese mostrerebbe
+                # una cornice inglese attorno a un errore NOSTRO in italiano.
+                params = {"error": str(exc), "cause": error_payload(exc)}
                 msg = format_it("config_error", params)
                 self.failed.emit(self.file_id, cycle, msg)
                 self.failed_detail.emit(self.file_id, cycle, "config_error", params)
@@ -534,7 +538,7 @@ class DownloadWorker(QThread):
                 # tentativi; il proxy è innocente, niente penalità.
                 log.error("[file %d] ciclo %d tentativo %d: %s",
                           self.file_id, cycle, attempt, exc)
-                params = {"error": str(exc)}
+                params = {"error": str(exc), "cause": error_payload(exc)}
                 msg = format_it("disk_full_short", params)
                 self._last_error_msg = msg
                 telemetry.event(

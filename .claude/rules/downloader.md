@@ -17,6 +17,15 @@ paths: ["src/downloader/**/*.py"]
   `code` + `params` **accanto** ai segnali di sempre, che continuano a portare la stringa
   italiana. Chi aggiunge un percorso d'errore emette entrambi, altrimenti la GUI ricasca sul
   testo grezzo e quell'errore non sara' traducibile.
+- **Un'eccezione NOSTRA incorporata in una cornice viaggia come PAYLOAD, non come frase.**
+  Dove i parametri di una cornice contengono `str(exc)` e `exc` e' una `UserFacingError`, va
+  passato anche `"cause": error_payload(exc)` (cosi' fanno `download_failed_paren`,
+  `config_error`, `disk_full_short`). Il testo resta identico — `format_it` ignora il parametro
+  in piu' — ma senza il payload la GUI in inglese mostra una cornice inglese attorno a un
+  errore italiano, e il controllo di fedelta' NON se ne accorge (in italiano il testo coincide
+  comunque). Stessa cosa per una LISTA di cause: `chunks_failed` porta `children`.
+  Se `exc` viene da una libreria (`requests`, `OSError`), il payload non serve: il suo testo e'
+  gia' inglese e resta tale in tutte e due le lingue.
 
 ## Mega API e proxy (post-vendoring)
 - `mega.py` NON è più una dipendenza. Le primitive crypto (`mega_crypto.py`) e l'API pubblica (`mega_api.py`) sono vendorizzate localmente.

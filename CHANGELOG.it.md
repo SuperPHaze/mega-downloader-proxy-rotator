@@ -18,9 +18,15 @@ Tutte le modifiche rilevanti del progetto. Formato basato su [Keep a Changelog](
   **finestra principale**: avvisi di avvio, ripristino della sessione precedente, conferme di
   eliminazione dal disco e riga di stato in basso. Singolare e plurale sono corretti in
   entrambe le lingue («1 link pronto» / «2 link pronti», «1 subfolder» / «3 subfolders»).
-  Restano per ora in italiano la finestra di dettaglio di un download e i **messaggi d'errore**
-  dei singoli file, che verranno tradotti insieme in una fase dedicata. I messaggi nei file di
-  log restano in italiano: servono alla diagnosi e devono restare stabili.
+  Sono tradotti anche la **finestra di dettaglio di un download** (riepilogo, cronologia degli
+  IP, log dei tentativi) e i **messaggi d'errore** dei singoli file, comprese le righe di stato
+  della raccolta dei proxy: se si cambia lingua con una finestra di dettaglio aperta, anche il
+  log già scritto viene riscritto nella lingua nuova. I messaggi nei file di log restano in
+  italiano: servono alla diagnosi e devono restare stabili.
+
+### Corretto
+- Nella cronologia di un download la riga di un tentativo fallito ripeteva due volte
+  «Tentativo N:» («Tentativo 1: Tentativo 1: download fallito…»). Ora compare una volta sola.
 
 ## [1.21.0] — 2026-08-18
 

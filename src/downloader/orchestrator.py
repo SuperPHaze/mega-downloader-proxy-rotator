@@ -120,6 +120,38 @@ def _scrape_and_validate(
     return breakdown["stage2_alive"]
 
 
+# Testo ITALIANO delle righe di stato del setup, in un posto solo.
+#
+# Perche' vive qui e non nei dizionari della GUI: come per gli errori, questo
+# testo serve anche a chi NON e' l'interfaccia — la CLI di
+# `tools/cli_download.py` lo stampa a video e i log lo conservano, e ne' l'una
+# ne' gli altri si traducono. La GUI ne ha il gemello sotto le chiavi
+# `setup.*`, e un test di fedelta' verifica che le due copie coincidano parola
+# per parola.
+SETUP_TEXTS_IT = {
+    "cache_candidates": "Cache proxy: {n} candidati...",
+    "hot_start": "Hot-start: {n} proxy pronti dalla cache",
+    "collecting": "Raccolta proxy dalle fonti pubbliche...",
+    "validating": "Validazione di {n} proxy contro Mega...",
+    "no_proxy_collected": "Nessun proxy raccolto dalle fonti",
+    "no_valid_proxy": "Nessun proxy valido per Mega",
+    # Ripiego per le eccezioni impreviste: il testo originale come parametro.
+    "unexpected": "{error}",
+}
+
+
+def setup_text_it(code: str, params: dict) -> str:
+    """Riga di stato del setup in italiano. Non solleva mai: e' testo di
+    servizio, un refuso nei parametri non deve fermare una sessione."""
+    template = SETUP_TEXTS_IT.get(code)
+    if template is None:
+        return str(code)
+    try:
+        return template.format(**params)
+    except Exception:      # noqa: BLE001 - vedi docstring
+        return template
+
+
 class _SetupThread(QThread):
     finished_ok = pyqtSignal(list)
     # Emesso (insieme a finished_ok) quando il setup e' partito da cache:
@@ -129,6 +161,13 @@ class _SetupThread(QThread):
     failed = pyqtSignal(str)
     setup_progress = pyqtSignal(int, int, int)
     setup_status = pyqtSignal(str)
+    # Gemelli TIPATI di `setup_status`/`failed`: stesso evento, ma codice +
+    # parametri invece della frase gia' composta. I segnali-stringa restano
+    # per i log e per la CLI (italiano, stabile); la GUI usa questi per
+    # rendere il testo nella lingua scelta. Stessa forma dei `_detail` del
+    # worker.
+    setup_status_t = pyqtSignal(str, dict)
+    failed_t = pyqtSignal(str, dict)
 
     def __init__(
         self,
@@ -144,11 +183,21 @@ class _SetupThread(QThread):
         self._speed_admission_bps = speed_admission_bps
         self._speed_preference_bps = speed_preference_bps
 
+    def _status(self, code: str, **params: object) -> None:
+        """La stessa riga di stato sui due canali: frase italiana per log e
+        CLI, codice + parametri per la GUI."""
+        self.setup_status.emit(setup_text_it(code, params))
+        self.setup_status_t.emit(code, params)
+
+    def _fail(self, code: str, **params: object) -> None:
+        self.failed.emit(setup_text_it(code, params))
+        self.failed_t.emit(code, params)
+
     def run(self) -> None:
         try:
             # === Fase 0: tenta hot-start da cache. ===
             cached = proxy_cache.load()
-            self.setup_status.emit(f"Cache proxy: {len(cached)} candidati...")
+            self._status("cache_candidates", n=len(cached))
             hot_alive: list[dict] = []
             if cached:
                 validator = ProxyValidator()
@@ -166,20 +215,18 @@ class _SetupThread(QThread):
                 )
 
             if len(hot_alive) >= _HOT_START_MIN_ALIVE:
-                self.setup_status.emit(
-                    f"Hot-start: {len(hot_alive)} proxy pronti dalla cache"
-                )
+                self._status("hot_start", n=len(hot_alive))
                 self.finished_ok.emit(hot_alive)
                 self.hot_started.emit()
                 return
 
             # === Flusso classico: scrape completo + validazione 2-stage (o 3). ===
-            self.setup_status.emit("Raccolta proxy dalle fonti pubbliche...")
+            self._status("collecting")
             scraper = ProxyScraper()
             candidates = scraper.fetch_all()
             log.info("Setup: %d candidati totali", len(candidates))
             if not candidates and not hot_alive:
-                self.failed.emit("Nessun proxy raccolto dalle fonti")
+                self._fail("no_proxy_collected")
                 return
             if len(candidates) > self._max_candidates:
                 log.info("Setup: cap a %d (su %d)", self._max_candidates, len(candidates))
@@ -199,7 +246,7 @@ class _SetupThread(QThread):
                 log.info(
                     "Setup: %d candidati totali dopo merge cache+scrape", len(candidates),
                 )
-            self.setup_status.emit(f"Validazione di {len(candidates)} proxy contro Mega...")
+            self._status("validating", n=len(candidates))
             validator = ProxyValidator()
             breakdown = validator.validate_against_mega(
                 candidates,
@@ -221,7 +268,7 @@ class _SetupThread(QThread):
             self.finished_ok.emit(alive)
         except Exception as exc:
             log.exception("Setup proxy fallito")
-            self.failed.emit(str(exc))
+            self._fail("unexpected", error=str(exc))
 
 
 class DownloadOrchestrator(QObject):
@@ -231,11 +278,19 @@ class DownloadOrchestrator(QObject):
     failed = pyqtSignal(int, int, str)
     fatal_error = pyqtSignal(int, str)
     all_done = pyqtSignal(int)
+    # Relay dei canali TIPATI del worker (codice + parametri). Viaggiano
+    # ACCANTO ai segnali-stringa, che restano invariati per log e telemetria:
+    # e' la GUI a preferire questi, perche' sono gli unici traducibili.
+    failed_detail = pyqtSignal(int, int, str, dict)      # file_id, ciclo, code, params
+    fatal_detail = pyqtSignal(int, str, dict)            # file_id, code, params
+    abandoned_detail = pyqtSignal(int, str, int, str, dict)  # + url, attempts
 
     pool_ready = pyqtSignal(int)
     pool_failed = pyqtSignal(str)
+    pool_failed_t = pyqtSignal(str, dict)
     setup_progress = pyqtSignal(int, int, int)
     setup_status = pyqtSignal(str)
+    setup_status_t = pyqtSignal(str, dict)
 
     # Cancellazione per singolo job: la GUI lo usa per aggiornare il modello.
     job_cancelled = pyqtSignal(int)
@@ -486,10 +541,12 @@ class DownloadOrchestrator(QObject):
         )
         self._hot_started = False
         self._setup.setup_status.connect(self.setup_status)
+        self._setup.setup_status_t.connect(self.setup_status_t)
         self._setup.setup_progress.connect(self.setup_progress)
         self._setup.finished_ok.connect(self._on_setup_ok)
         self._setup.hot_started.connect(self._on_hot_started)
         self._setup.failed.connect(self._on_setup_failed)
+        self._setup.failed_t.connect(self.pool_failed_t)
         self._setup.start()
 
     def stop_background_tasks(self) -> None:
@@ -559,7 +616,8 @@ class DownloadOrchestrator(QObject):
             log.info("Orchestrator: setup completato su sessione morta, ignoro")
             return
         if not alive:
-            self.pool_failed.emit("Nessun proxy valido per Mega")
+            self.pool_failed.emit(setup_text_it("no_valid_proxy", {}))
+            self.pool_failed_t.emit("no_valid_proxy", {})
             return
         self.pool.add_many(alive)
         self.pool_ready.emit(len(alive))
@@ -650,7 +708,9 @@ class DownloadOrchestrator(QObject):
         worker.ip_logged.connect(self.ip_logged)
         worker.cycle_completed.connect(self.cycle_completed)
         worker.failed.connect(self.failed)
+        worker.failed_detail.connect(self.failed_detail)
         worker.fatal_error.connect(self.fatal_error)
+        worker.fatal_detail.connect(self.fatal_detail)
         worker.all_done.connect(self.all_done)
         worker.throughput.connect(self.throughput)
         worker.file_resolved.connect(self.file_resolved)
@@ -662,6 +722,7 @@ class DownloadOrchestrator(QObject):
         worker.fatal_error.connect(lambda _fid, _msg: self._on_slot_freed(_fid))
         worker.cancelled.connect(self._on_worker_cancelled)
         worker.abandoned.connect(self._on_worker_abandoned)
+        worker.abandoned_detail.connect(self.abandoned_detail)
         self._workers.append(worker)
         self._active_count += 1
         if self.speed_selection_enabled:

@@ -38,6 +38,7 @@ from src.gui.folder_expand_worker import FolderExpandWorker
 from src.gui.about_dialog import AboutDialog
 from src.gui.controls import ControlsBar
 from src.gui.experimental_dialog import ExperimentalFeaturesDialog
+from src.gui.error_render import ABANDON_ALIASES, render_error, resolve_payloads
 from src.gui.i18n import TR, t, tn
 from src.gui.job_detail_dialog import JobDetailDialog
 from src.gui.jobs_panel import JobsPanel
@@ -290,31 +291,35 @@ class MainWindow(QMainWindow):
 
     # ---- stato status bar ------------------------------------------------
 
-    def _set_status(self, msg: str) -> None:
-        """Testo gia' formattato: e' la forma usata dai segnali
-        dell'orchestrator, che nasce fuori dalla GUI e non e' traducibile qui.
-        """
-        self._status_source = None
-        self._status_lbl.setText(msg)
+    # Non esiste piu' un `_set_status()` grezzo: con E2 anche le righe che
+    # nascono nell'orchestrator arrivano come codice + parametri, quindi ogni
+    # testo della riga di stato ha una chiave e si ritraduce da se'. Chi ne
+    # aggiunge uno usa `_set_status_t` / `_set_status_tn`.
 
     def _set_status_t(self, key: str, **params: object) -> None:
         """Come `_set_status`, ma ricorda chiave e parametri: al cambio
         lingua la riga di stato si riscrive invece di restare indietro.
+
+        Un parametro puo' essere il PAYLOAD di un errore (codice + parametri)
+        invece di un testo: viene reso al momento del disegno, cosi' anche la
+        parte d'errore della riga cambia lingua insieme alla cornice. Se si
+        memorizzasse gia' resa, la cornice si tradurrebbe e l'errore no.
         """
         self._status_source = (key, None, params)
-        self._status_lbl.setText(t(key, **params))
+        self._status_lbl.setText(t(key, **resolve_payloads(params)))
 
     def _set_status_tn(self, key: str, n: int, **params: object) -> None:
         """Variante plurale di `_set_status_t`."""
         self._status_source = (key, n, params)
-        self._status_lbl.setText(tn(key, n, **params))
+        self._status_lbl.setText(tn(key, n, **resolve_payloads(params)))
 
     def _refresh_status(self) -> None:
         if self._status_source is None:
             return
         key, n, params = self._status_source
+        rendered = resolve_payloads(params)
         self._status_lbl.setText(
-            t(key, **params) if n is None else tn(key, n, **params)
+            t(key, **rendered) if n is None else tn(key, n, **rendered)
         )
 
     # ---- avvio sessione --------------------------------------------------
@@ -495,12 +500,15 @@ class MainWindow(QMainWindow):
         qc = Qt.ConnectionType.QueuedConnection
         self.orchestrator.progress.connect(self.jobs_panel.on_progress, qc)
         self.orchestrator.ip_logged.connect(self.jobs_panel.on_ip, qc)
-        self.orchestrator.failed.connect(self.jobs_panel.on_failed, qc)
+        # La GUI ascolta i canali TIPATI (codice + parametri): sono gli unici
+        # traducibili. I gemelli che portano la frase italiana restano cablati
+        # dove serve l'italiano — log, `failed_links.log`, telemetria, CLI.
+        self.orchestrator.failed_detail.connect(self.jobs_panel.on_failed, qc)
         self.orchestrator.cycle_completed.connect(self.jobs_panel.on_cycle_completed, qc)
         self.orchestrator.all_done.connect(self._on_file_done, qc)
-        self.orchestrator.fatal_error.connect(self._on_fatal_error, qc)
+        self.orchestrator.fatal_detail.connect(self._on_fatal_error, qc)
         self.orchestrator.job_cancelled.connect(self._on_job_cancelled, qc)
-        self.orchestrator.abandoned.connect(self._on_abandoned, qc)
+        self.orchestrator.abandoned_detail.connect(self._on_abandoned, qc)
         self.orchestrator.throughput.connect(self.jobs_panel.on_throughput, qc)
         self.orchestrator.file_resolved.connect(self.jobs_panel.on_file_resolved, qc)
         self.orchestrator.completed_info.connect(self.jobs_panel.on_completed_info, qc)
@@ -511,13 +519,17 @@ class MainWindow(QMainWindow):
             ),
             qc,
         )
-        self.orchestrator.pool_failed.connect(
-            lambda msg: self._set_status_t(
-                "main_window.pool_failed", error=msg
+        self.orchestrator.pool_failed_t.connect(
+            lambda code, params: self._set_status_t(
+                "main_window.pool_failed",
+                error={"code": f"setup.{code}", "params": params},
             ),
             qc,
         )
-        self.orchestrator.setup_status.connect(self._set_status, qc)
+        self.orchestrator.setup_status_t.connect(
+            lambda code, params: self._set_status_t(f"setup.{code}", **params),
+            qc,
+        )
         self.orchestrator.setup_progress.connect(
             lambda d, tot, a: (
                 self._set_status_t(
@@ -618,15 +630,20 @@ class MainWindow(QMainWindow):
             self.controls.reset()
             self._restore_session_ui()
 
-    def _on_fatal_error(self, file_id: int, msg: str) -> None:
-        self.jobs_panel.on_fatal(file_id, msg)
+    def _on_fatal_error(self, file_id: int, code: str, params: dict) -> None:
+        self.jobs_panel.on_fatal(file_id, code, params)
         QMessageBox.critical(
             self,
             t("main_window.fatal_title"),
-            t("main_window.fatal_body", file=file_id + 1, error=msg),
+            t(
+                "main_window.fatal_body",
+                file=file_id + 1, error=render_error(code, params),
+            ),
         )
         self._set_status_t(
-            "main_window.fatal_status", file=file_id + 1, error=msg
+            "main_window.fatal_status",
+            file=file_id + 1,
+            error={"code": code, "params": params},
         )
         self._session_mark_finished(file_id)
         self._completed_files += 1
@@ -634,15 +651,20 @@ class MainWindow(QMainWindow):
             self.controls.reset()
             self._restore_session_ui()
 
-    def _on_abandoned(self, file_id: int, url: str, attempts: int, last_error: str) -> None:
-        self.jobs_panel.on_abandoned(file_id, url, attempts, last_error)
+    def _on_abandoned(
+        self, file_id: int, url: str, attempts: int, code: str, params: dict,
+    ) -> None:
+        self.jobs_panel.on_abandoned(file_id, url, attempts, code, params)
         self._session_mark_finished(file_id)
         self._completed_files += 1
+        # Stesso alias applicato dal pannello: il canale porta il codice del
+        # tentativo fallito (con le parentesi), l'abbandono si legge coi due
+        # punti. Vedi `error_render.ABANDON_ALIASES`.
         self._set_status_tn(
             "main_window.abandoned_status",
             attempts,
             file=file_id + 1,
-            error=last_error,
+            error={"code": ABANDON_ALIASES.get(code, code), "params": params},
         )
         if self._completed_files >= self._expected_files:
             self._set_status_t("main_window.all_terminated")
@@ -827,11 +849,11 @@ class MainWindow(QMainWindow):
 
         Copre TUTTE le superfici persistenti della finestra: titolo,
         barra comandi, banner, cruscotto (StatsBar/ProxyBar/StatsPanel),
-        elenco job, pannello link e riga di stato. I dialoghi non servono:
-        nascono all'apertura e leggono i testi alla costruzione.
-
-        Restano in italiano i testi che nascono dagli errori di
-        `core`/`downloader` (fase Errori & Cronologia)."""
+        elenco job, pannello link e riga di stato. I dialoghi creati su
+        richiesta non servono (leggono i testi alla costruzione), con
+        UN'eccezione: `JobDetailDialog` non e' modale e resta aperto mentre il
+        download prosegue, quindi e' una superficie persistente a tutti gli
+        effetti e va ritradotto come i pannelli."""
         log.info("Ritraduzione interfaccia in corso: %s", lang)
         self._refresh_window_title()
         self.controls.retranslate()
@@ -841,7 +863,17 @@ class MainWindow(QMainWindow):
         self._stats_panel.retranslate()
         self.jobs_panel.retranslate()
         self.link_panel.retranslate()
+        self._retranslate_open_details()
         self._refresh_status()
+
+    def _retranslate_open_details(self) -> None:
+        """Ritraduce i dettagli job aperti. Il dizionario li conserva anche
+        dopo la chiusura: ritradurne uno nascosto non costa nulla ed evita di
+        trovarlo nella lingua vecchia se viene riaperto."""
+        for dlg in list(self._open_dialogs.values()):
+            if dlg is None:
+                continue
+            dlg.retranslate()
 
     def _restyle_dashboard_separator(self) -> None:
         p = _style.CURRENT_PALETTE
@@ -860,15 +892,19 @@ class MainWindow(QMainWindow):
             return
         if not self.jobs_panel.model.restart_job(file_id):
             return  # job non riavviabile (già in coda o running)
-        # I due testi passati a mark_failed_fatal restano in italiano di
-        # proposito: non sono cromo della finestra ma messaggi d'errore che
-        # finiscono nel modello, insieme a quelli di core/downloader. Si
-        # traducono tutti insieme nella fase Errori & Cronologia, con i codici.
+        # I due errori qui sotto nascono nella GUI ma finiscono nel MODELLO
+        # come errore del job: viaggiano quindi come CODICE — qui una chiave
+        # i18n intera, riconoscibile dal punto — e non come testo gia' reso,
+        # cosi' seguono la lingua esattamente come quelli del motore.
         if self.orchestrator is None:
-            self.jobs_panel.model.mark_failed_fatal(file_id, "Nessun orchestrator attivo")
+            self.jobs_panel.model.mark_failed_fatal(
+                file_id, "main_window.restart_no_orchestrator",
+            )
             return
         if not self.orchestrator.restart_job(file_id, url):
-            self.jobs_panel.model.mark_failed_fatal(file_id, "Riavvio rifiutato dall'orchestrator")
+            self.jobs_panel.model.mark_failed_fatal(
+                file_id, "main_window.restart_refused",
+            )
             self._set_status_t(
                 "main_window.restart_failed", file=file_id + 1
             )

@@ -1,23 +1,25 @@
-# Modello per la tabella dei job di download.
+# Modello dei job di download.
 # Un job = un link. Lo stato (in_coda/in_corso/completato/fallito/annullato)
-# e le metriche (progress, tentativi, IP corrente, ecc.) sono tenute qui;
-# la View li legge tramite data(role=DisplayRole) e i delegate li dipingono.
+# e le metriche (progress, tentativi, IP corrente, ecc.) sono tenute qui; a
+# disegnarle e' `JobsPanel`, che legge il modello con `get_job()`.
 #
-# Performance: dataChanged emesso col range minimo (solo le colonne effettivamente
-# modificate). Niente layoutChanged/reset durante gli update — usati solo a reset
-# totale a inizio sessione.
+# i18n: questo modulo NON formatta testo. La cronologia e l'ultimo errore
+# vivono come CHIAVE + parametri (`job_log.*` e il payload codice/parametri di
+# E1) e vengono resi da chi disegna, nella lingua del momento. E' il motivo per
+# cui non ha (ne' deve avere) un `retranslate()`: non c'e' niente di gia'
+# formattato da riscrivere.
+#
+# Non e' piu' un QAbstractTableModel: la view a tabella e' sparita col
+# restyling 1.3.0 e da allora `data()`/`headerData()`/`HEADERS` non avevano
+# piu' un chiamante — erano testo utente solo all'apparenza. Restano i due
+# segnali che la GUI usa davvero, `job_updated` e `aggregates_changed`.
 from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
 from typing import Iterator
 
-from PyQt6.QtCore import (
-    QAbstractTableModel,
-    QModelIndex,
-    Qt,
-    pyqtSignal,
-)
+from PyQt6.QtCore import QObject, pyqtSignal
 
 
 # Stati possibili (stringhe per facilita' di display e serializzazione).
@@ -27,19 +29,6 @@ STATUS_COMPLETED = "completato"
 STATUS_FAILED = "fallito"
 STATUS_CANCELLED = "annullato"
 STATUS_ABANDONED = "abbandonato"
-
-# Colonne.
-COL_ACTION = 0
-COL_NUM = 1
-COL_STATUS = 2
-COL_URL = 3
-COL_PROGRESS = 4
-COL_IP = 5
-COL_ATTEMPTS = 6
-COL_DURATION = 7
-N_COLUMNS = 8
-
-HEADERS = ["", "#", "Stato", "Link", "Avanzamento", "IP corrente", "Tentativi", "Durata"]
 
 
 @dataclass
@@ -53,11 +42,15 @@ class Job:
     errors_count: int = 0
     started_at: float | None = None
     completed_at: float | None = None
-    last_error: str = ""
+    # Ultimo errore come PAYLOAD (codice, parametri), non come frase: e' quello
+    # che permette di renderlo in italiano o in inglese al momento del disegno.
+    # None finche' non c'e' stato un errore.
+    last_error: tuple[str, dict] | None = None
     ips_history: list[tuple[float, str]] = field(default_factory=list)
-    # Log dettagliato dei tentativi (timestamp, livello, msg). Capped a 500
-    # entries per job per evitare crescita illimitata su sessioni lunghe.
-    all_attempts_log: list[tuple[float, str, str]] = field(default_factory=list)
+    # Log dettagliato dei tentativi (timestamp, livello, chiave, parametri).
+    # Capped a 500 entries per job per evitare crescita illimitata su sessioni
+    # lunghe. Il livello (INFO/WARN/ERROR) NON si traduce: e' diagnostico.
+    all_attempts_log: list[tuple[float, str, str, dict]] = field(default_factory=list)
     # Dati throughput per il cruscotto KPI.
     downloaded_bytes: int = 0
     total_bytes: int = 0
@@ -76,19 +69,14 @@ class Job:
         end = self.completed_at if self.completed_at is not None else time.time()
         return max(0.0, end - self.started_at)
 
-    def append_log(self, level: str, msg: str) -> None:
-        self.all_attempts_log.append((time.time(), level, msg))
+    def append_log(self, level: str, key: str, **params: object) -> None:
+        self.all_attempts_log.append((time.time(), level, key, params))
         if len(self.all_attempts_log) > 500:
             # Trim mantenendo le piu' recenti.
             del self.all_attempts_log[:-500]
 
 
-def _fmt_mmss(seconds: float) -> str:
-    s = int(seconds)
-    return f"{s // 60:02d}:{s % 60:02d}"
-
-
-class JobsModel(QAbstractTableModel):
+class JobsModel(QObject):
     # Segnale ad alto livello: un job specifico e' cambiato. I dialog di
     # dettaglio si registrano qui per refresh in real-time.
     job_updated = pyqtSignal(int)  # file_id
@@ -100,93 +88,15 @@ class JobsModel(QAbstractTableModel):
         self._jobs: list[Job] = []
         self._by_id: dict[int, int] = {}  # file_id -> row index
 
-    # ----- API Qt obbligatoria -----
-    def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:  # noqa: N802
-        if parent.isValid():
-            return 0
-        return len(self._jobs)
-
-    def columnCount(self, parent: QModelIndex = QModelIndex()) -> int:  # noqa: N802
-        if parent.isValid():
-            return 0
-        return N_COLUMNS
-
-    def headerData(self, section, orientation, role=Qt.ItemDataRole.DisplayRole):  # noqa: N802
-        if role != Qt.ItemDataRole.DisplayRole:
-            return None
-        if orientation == Qt.Orientation.Horizontal and 0 <= section < N_COLUMNS:
-            return HEADERS[section]
-        return None
-
-    def data(self, index: QModelIndex, role: int = Qt.ItemDataRole.DisplayRole):
-        if not index.isValid():
-            return None
-        row = index.row()
-        col = index.column()
-        if row < 0 or row >= len(self._jobs):
-            return None
-        job = self._jobs[row]
-        if role == Qt.ItemDataRole.DisplayRole:
-            if col == COL_ACTION:
-                # Il delegate disegna la X; il valore qui serve solo per
-                # selezione / filtro (non usato).
-                return ""
-            if col == COL_NUM:
-                return job.file_id + 1
-            if col == COL_STATUS:
-                return job.status
-            if col == COL_URL:
-                # Per i link abbandonati mostriamo SEMPRE l'URL completo:
-                # l'utente deve poterlo copiare e riprovare manualmente.
-                if job.status == STATUS_ABANDONED:
-                    return job.url
-                return job.url if len(job.url) <= 70 else job.url[:67] + "..."
-            if col == COL_PROGRESS:
-                return job.progress
-            if col == COL_IP:
-                return job.current_ip or "-"
-            if col == COL_ATTEMPTS:
-                return job.attempts
-            if col == COL_DURATION:
-                return _fmt_mmss(job.duration_s()) if job.started_at else "-"
-        elif role == Qt.ItemDataRole.ToolTipRole:
-            if col == COL_URL:
-                return job.url
-            if col == COL_STATUS and job.last_error:
-                return f"Ultimo errore: {job.last_error}"
-            if col == COL_ACTION:
-                if job.status in (STATUS_QUEUED, STATUS_RUNNING):
-                    return "Annulla download ed elimina cartella"
-                return "Elimina cartella su disco"
-        elif role == Qt.ItemDataRole.TextAlignmentRole:
-            if col in (COL_ACTION, COL_NUM, COL_ATTEMPTS, COL_DURATION):
-                return int(Qt.AlignmentFlag.AlignCenter)
-        elif role == Qt.ItemDataRole.UserRole:
-            # Accesso diretto al Job (utile a delegate e dialog).
-            return job
-        return None
-
     # ----- API pubblica per gli slot della GUI -----
     def reset(self, links: list[str]) -> None:
-        self.beginResetModel()
         self._jobs = [Job(file_id=i, url=u) for i, u in enumerate(links)]
         self._by_id = {j.file_id: i for i, j in enumerate(self._jobs)}
-        self.endResetModel()
         self.aggregates_changed.emit()
 
-    def _emit_changed(self, file_id: int, cols: list[int]) -> None:
-        row = self._by_id.get(file_id)
-        if row is None:
+    def _notify(self, file_id: int) -> None:
+        if file_id not in self._by_id:
             return
-        if not cols:
-            return
-        top = min(cols)
-        bot = max(cols)
-        self.dataChanged.emit(
-            self.index(row, top),
-            self.index(row, bot),
-            [Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.ToolTipRole],
-        )
         self.job_updated.emit(file_id)
 
     def _job(self, file_id: int) -> Job | None:
@@ -205,11 +115,11 @@ class JobsModel(QAbstractTableModel):
         if job.status == STATUS_QUEUED:
             job.status = STATUS_RUNNING
             job.started_at = time.time()
-            job.append_log("INFO", "Download avviato")
-            self._emit_changed(file_id, [COL_STATUS, COL_PROGRESS, COL_DURATION])
+            job.append_log("INFO", "job_log.started")
+            self._notify(file_id)
             self.aggregates_changed.emit()
         job.progress = new_pct
-        self._emit_changed(file_id, [COL_PROGRESS, COL_DURATION])
+        self._notify(file_id)
 
     def set_ip(self, file_id: int, ip: str) -> None:
         job = self._job(file_id)
@@ -221,18 +131,31 @@ class JobsModel(QAbstractTableModel):
             self.aggregates_changed.emit()
         job.current_ip = ip
         job.ips_history.append((time.time(), ip))
-        job.append_log("INFO", f"IP uscente: {ip}")
-        self._emit_changed(file_id, [COL_STATUS, COL_IP])
+        job.append_log("INFO", "job_log.ip", ip=ip)
+        self._notify(file_id)
 
-    def add_failure(self, file_id: int, reason: str) -> None:
+    def add_failure(self, file_id: int, code: str, params: dict | None = None) -> None:
+        """Un TENTATIVO fallito. `code`/`params` sono il payload di E1.
+
+        `last_error` conserva la cornice «Tentativo N: » perche' e' cosi' che
+        la card la mostrava prima della traduzione: il payload della cornice
+        (`attempt_frame`) porta dentro di se' quello del motivo vero.
+
+        Il numero e' `job.attempts`, cumulativo sul job. Il canale tipato non
+        trasporta il contatore per-ciclo del worker (che riparte da 1 a ogni
+        ciclo), quindi con `DOWNLOAD_CYCLES > 1` la numerazione diventerebbe
+        quella cumulativa. Con `DOWNLOAD_CYCLES = 1`, che e' la configurazione
+        in uso, i due contatori coincidono sempre.
+        """
         job = self._job(file_id)
         if job is None:
             return
         job.attempts += 1
         job.errors_count += 1
-        job.last_error = reason
-        job.append_log("WARN", f"Tentativo {job.attempts}: {reason}")
-        self._emit_changed(file_id, [COL_STATUS, COL_ATTEMPTS])
+        payload = {"code": code, "params": dict(params or {})}
+        job.last_error = ("attempt_frame", {"n": job.attempts, "reason": payload})
+        job.append_log("WARN", "job_log.attempt", attempt=job.attempts, error=payload)
+        self._notify(file_id)
 
     def _freeze_average(self, job: Job) -> None:
         dur = job.duration_s()
@@ -248,34 +171,45 @@ class JobsModel(QAbstractTableModel):
         job.status = STATUS_COMPLETED
         job.progress = 100
         job.completed_at = time.time()
-        job.append_log("INFO", "Download completato")
+        job.append_log("INFO", "job_log.completed")
         self._freeze_average(job)
-        self._emit_changed(file_id, [COL_STATUS, COL_PROGRESS, COL_DURATION])
+        self._notify(file_id)
         self.aggregates_changed.emit()
 
-    def mark_failed_fatal(self, file_id: int, reason: str) -> None:
+    def mark_failed_fatal(
+        self, file_id: int, code: str, params: dict | None = None,
+    ) -> None:
         job = self._job(file_id)
         if job is None:
             return
+        payload = {"code": code, "params": dict(params or {})}
         job.status = STATUS_FAILED
-        job.last_error = reason
+        job.last_error = (code, payload["params"])
         job.completed_at = time.time()
-        job.append_log("ERROR", f"Errore fatale: {reason}")
+        job.append_log("ERROR", "job_log.fatal", error=payload)
         self._freeze_average(job)
-        self._emit_changed(file_id, [COL_STATUS, COL_DURATION])
+        self._notify(file_id)
         self.aggregates_changed.emit()
 
-    def mark_abandoned(self, file_id: int, attempts: int, last_error: str) -> None:
+    def mark_abandoned(
+        self, file_id: int, attempts: int, code: str, params: dict | None = None,
+    ) -> None:
+        """Link abbandonato. `code` e' gia' quello dell'ABBANDONO (la
+        formulazione coi due punti): l'alias lo applica `JobsPanel` al confine
+        col segnale, che e' l'unico punto che sa da quale canale arriva."""
         job = self._job(file_id)
         if job is None:
             return
+        payload = {"code": code, "params": dict(params or {})}
         job.status = STATUS_ABANDONED
         job.attempts = max(job.attempts, attempts)
-        job.last_error = last_error
+        job.last_error = (code, payload["params"])
         job.completed_at = time.time()
-        job.append_log("ERROR", f"Link abbandonato dopo {attempts} tentativi: {last_error}")
+        job.append_log(
+            "ERROR", "job_log.abandoned", n=attempts, error=payload,
+        )
         self._freeze_average(job)
-        self._emit_changed(file_id, [COL_STATUS, COL_ATTEMPTS, COL_DURATION])
+        self._notify(file_id)
         self.aggregates_changed.emit()
 
     def mark_cancelled(self, file_id: int) -> None:
@@ -288,9 +222,9 @@ class JobsModel(QAbstractTableModel):
             return
         job.status = STATUS_CANCELLED
         job.completed_at = time.time()
-        job.append_log("WARN", "Cancellato dall'utente")
+        job.append_log("WARN", "job_log.cancelled")
         self._freeze_average(job)
-        self._emit_changed(file_id, [COL_STATUS, COL_DURATION])
+        self._notify(file_id)
         self.aggregates_changed.emit()
 
     def set_throughput(self, file_id: int, bps: float, downloaded: int, total: int) -> None:
@@ -321,7 +255,7 @@ class JobsModel(QAbstractTableModel):
                 job.status = STATUS_CANCELLED
                 job.completed_at = time.time()
                 self._freeze_average(job)
-                self._emit_changed(job.file_id, [COL_STATUS, COL_DURATION])
+                self._notify(job.file_id)
                 changed = True
         if changed:
             self.aggregates_changed.emit()
@@ -346,18 +280,15 @@ class JobsModel(QAbstractTableModel):
         job.progress = 0
         job.attempts = 0
         job.errors_count = 0
-        job.last_error = ""
+        job.last_error = None
         job.started_at = None
         job.completed_at = None
         job.speed = 0.0
         job.downloaded_bytes = 0
         job.total_bytes = 0
         job.average_bps_final = None
-        job.append_log("INFO", "----- Riavvio richiesto -----")
-        self._emit_changed(
-            file_id,
-            [COL_STATUS, COL_PROGRESS, COL_ATTEMPTS, COL_DURATION],
-        )
+        job.append_log("INFO", "job_log.restart")
+        self._notify(file_id)
         self.aggregates_changed.emit()
         return True
 

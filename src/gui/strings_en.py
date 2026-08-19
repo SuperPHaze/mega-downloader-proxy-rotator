@@ -5,7 +5,9 @@
 # Nota: "controls.language_it"/"controls.language_en" NON si traducono — ogni
 # lingua compare nel proprio nome anche in inglese.
 #
-# Stato migrazione: F1 copre ControlsBar + titolo finestra (F2 aggiunge il resto).
+# Stato: traduzione COMPLETA. Le chiavi `err.*` sono l'inglese del catalogo
+# degli errori del motore (`src/core/error_catalog.py`), che in italiano viene
+# innestato in `strings_it.py` invece di essere ricopiato.
 from __future__ import annotations
 
 STRINGS: dict[str, str | dict[str, str]] = {
@@ -517,4 +519,150 @@ STRINGS: dict[str, str | dict[str, str]] = {
         "Proxy speed: no proxy available in the pool."
     ),
 
+    # ---- main window: restart refused ---------------------------------------
+    "main_window.restart_no_orchestrator": "No active orchestrator",
+    "main_window.restart_refused": "Restart refused by the orchestrator",
+
+    # ---- proxy pool setup ---------------------------------------------------
+    "setup.cache_candidates": "Proxy cache: {n} candidates...",
+    "setup.hot_start": "Hot start: {n} proxies ready from the cache",
+    "setup.collecting": "Collecting proxies from public sources...",
+    "setup.validating": "Validating {n} proxies against Mega...",
+    "setup.no_proxy_collected": "No proxies collected from the sources",
+    "setup.no_valid_proxy": "No proxies valid for Mega",
+    "setup.unexpected": "{error}",
+
+    # ---- job history --------------------------------------------------------
+    "job_log.started": "Download started",
+    "job_log.ip": "Egress IP: {ip}",
+    "job_log.attempt": "Attempt {attempt}: {error}",
+    "job_log.completed": "Download completed",
+    "job_log.fatal": "Fatal error: {error}",
+    "job_log.abandoned": {
+        "one": "Link abandoned after {n} attempt: {error}",
+        "other": "Link abandoned after {n} attempts: {error}",
+    },
+    "job_log.cancelled": "Cancelled by the user",
+    "job_log.restart": "----- Restart requested -----",
+
+    # ---- job detail window --------------------------------------------------
+    "job_detail.title": "Job detail #{file}",
+    "job_detail.abandoned_title": "Link abandoned",
+    "job_detail.copy": "Copy",
+    "job_detail.abandoned_info": (
+        "Failed attempts: {attempts}  •  Last error: {error}"
+    ),
+    "job_detail.not_available": "n/a",
+    "job_detail.url_label": "URL:",
+    "job_detail.summary": (
+        "Status: <b>{status}</b>  •  Progress: {progress}%  •  "
+        "Attempts: {attempts}  •  Errors: {errors}  •  "
+        "Duration: {duration}"
+    ),
+    "job_detail.summary_last_error": "  •  Last error: {error}",
+    "job_detail.ip_history": "IP history:",
+    "job_detail.col_timestamp": "Timestamp",
+    "job_detail.col_ip": "IP",
+    "job_detail.attempts_log": "Attempts log:",
+    "job_detail.close": "Close",
+
+    # ---- errors: English of the engine catalog ------------------------------
+    # Italian source: `src/core/error_catalog.py`, grafted into `strings_it.py`
+    # as `err.*`. Same keys, same {named} parameters (and the same format
+    # specifiers: `{required:,}`, `{kbps:.1f}` are part of the text).
+    "err.unexpected": "{error}",
+    "err.disk_full": (
+        "not enough free space in '{path}': "
+        "{required:,} B needed (file {needed_bytes:,} + margin {margin_bytes:,}), "
+        "{free:,} B free"
+    ),
+    "err.resolve_cancelled": "resolve cancelled during backoff",
+    "err.api_error_code": "Mega API replied with code {api_code}",
+    "err.api_unexpected_response": "Mega API: unexpected response {response}",
+    "err.api_retries_exhausted": "Mega API: ran out of retries after 5 attempts ({error})",
+    "err.folder_link_not_downloadable": (
+        "Mega folder link: expand it into single files before "
+        "downloading it ({url})"
+    ),
+    "err.url_not_parsable": "Mega URL not parsable: {url}",
+    "err.file_not_accessible": "File not accessible (API without 'g'): {response}",
+    "err.size_missing": "size missing or invalid: {error}",
+    "err.node_key_too_short": {
+        "one": "node key too short ({words} word): {node}",
+        "other": "node key too short ({words} words): {node}",
+    },
+    "err.folder_file_not_accessible": (
+        "File not accessible inside the folder (API without 'g'): {response}"
+    ),
+    "err.folder_listing_unavailable": (
+        "folder listing not available (response: {response})"
+    ),
+    "err.download_incomplete": "incomplete download: {downloaded}/{expected} bytes",
+    "err.crypto_not_importable": (
+        "pycryptodome could not be imported ({error}). "
+        "Check the dependencies (pip install -r requirements.txt)."
+    ),
+    "err.crypto_missing": "pycryptodome missing ({error})",
+    "err.crypto_bad_key_length": {
+        "one": "encrypted key of invalid length: {words} word",
+        "other": "encrypted key of invalid length: {words} words",
+    },
+    "err.crypto_bad_master_key": "folder master key is not 4 words: {words}",
+    "err.crypto_file_key_short": {
+        "one": "file_key too short: {words} word",
+        "other": "file_key too short: {words} words",
+    },
+    "err.folder_key_invalid": {
+        "one": "invalid folder key ({words} word instead of 4)",
+        "other": "invalid folder key ({words} words instead of 4)",
+    },
+    "err.folder_no_nodes": "the folder returned no nodes",
+    "err.folder_root_not_found": "folder root node could not be identified",
+    "err.folder_node_not_in_folder": (
+        "the node selected by the link ({node}) is not in the folder"
+    ),
+    "err.not_a_folder_link": "not a Mega folder link: {url}",
+    "err.folder_key_unreadable": "folder key unreadable: {error}",
+    "err.folder_key_too_short": {
+        "one": "folder key too short ({words} word)",
+        "other": "folder key too short ({words} words)",
+    },
+    "err.chunks_failed": "{failed}/{total} chunks failed: {detail}",
+    "err.chunk_local_abort": (
+        "chunk {chunk}: local abort (other chunks ran out of retries)"
+    ),
+    "err.chunk_cancelled": "chunk {chunk}: cancelled by the user",
+    "err.chunk_abort_pool_wait": "chunk {chunk}: abort while waiting for the pool",
+    "err.chunk_abort_backoff": "chunk {chunk}: abort during backoff",
+    "err.chunk_abort_backoff_429": "chunk {chunk}: abort during 429 backoff",
+    "err.chunk_range_ignored": "chunk {chunk}: server ignores Range (status={status})",
+    "err.chunk_local_abort_mid": "chunk {chunk}: local abort mid-download",
+    "err.chunk_cancelled_mid": "chunk {chunk}: cancelled mid-download",
+    "err.chunk_time_budget": (
+        "chunk {chunk}: time budget of {budget_s}s exceeded "
+        "(downloaded {downloaded}/{expected} B)"
+    ),
+    "err.chunk_too_slow": (
+        "chunk {chunk}: proxy too slow "
+        "({kbps:.1f} KB/s < {min_kbps:.0f} KB/s for {window_s:.0f}s)"
+    ),
+    "err.chunk_short_read": "chunk {chunk}: received {received}B out of the {expected}B expected",
+    "err.chunk_retries_exhausted": {
+        "one": "chunk {chunk}: ran out of retries after {attempts} attempt ({error})",
+        "other": "chunk {chunk}: ran out of retries after {attempts} attempts ({error})",
+    },
+    "err.attempt_frame": "Attempt {n}: {reason}",
+    "err.pool_empty_short": "pool empty, waiting for refill",
+    "err.pool_empty": "proxy pool empty, refill pending",
+    "err.ip_check_failed_paren": "IP check failed ({error})",
+    "err.ip_check_failed": "IP check failed: {error}",
+    "err.download_failed_paren": "download failed ({error})",
+    "err.download_failed": "download failed: {error}",
+    "err.config_error": "Configuration error: {error}",
+    "err.disk_full_short": "not enough free space ({error})",
+    "err.time_limit_exceeded": {
+        "one": "time limit of {minutes} minute exceeded",
+        "other": "time limit of {minutes} minutes exceeded",
+    },
+    "err.unknown_reason": "unknown reason",
 }

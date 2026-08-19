@@ -59,7 +59,7 @@ src/
 │   ├── worker.py          # DownloadWorker(QThread) — 1 link, N cicli; ramo job-cartella (_folder_job):
 │   │                     #   destinazione ad albero senza `ciclo_N` (_cycle_dir), niente rinomina,
 │   │                     #   resume sul NOME ESATTO del file (la cartella è condivisa con gli altri job); cartella base rinominata da hash a nome file al primo resolve (_current_base_dir aggiornato da _resolved_cb); riceve output_root (cartella download scelta dall'utente); InsufficientDiskSpaceError = abbandono immediato (non retry)
-│   └── orchestrator.py    # DownloadOrchestrator(QObject) — coordina tutto; segnale proxy_stats(discarded, refill_count, seconds_since_last_refill) emesso insieme a pool_size_changed nel poll periodico; propaga output_root ai worker (start(output_root=...))
+│   └── orchestrator.py    # DownloadOrchestrator(QObject) — coordina tutto; segnale proxy_stats(discarded, refill_count, seconds_since_last_refill) emesso insieme a pool_size_changed nel poll periodico; propaga output_root ai worker (start(output_root=...)); relay dei canali TIPATI del worker (failed_detail/fatal_detail/abandoned_detail) accanto ai segnali-stringa; `SETUP_TEXTS_IT` + `setup_text_it()` = testo ITALIANO delle 6 righe di stato del setup (serve a log e CLI), emesse su due canali: `setup_status`/`pool_failed` (stringa italiana) e `setup_status_t`/`pool_failed_t` (codice + parametri, per la GUI)
 └── gui/
     ├── main_window.py     # MainWindow (QMainWindow); _on_start fa da gate: se ci sono link cartella
     │                      #   avvia FolderExpandWorker e il flusso riprende in _start_with_links;
@@ -67,9 +67,23 @@ src/
     │                      #   (+ .part + sidecar) e pota le cartelle vuote, mai l'albero condiviso; ripristino sessione all'avvio (prompt "Riprendi sessione precedente?" da session_store, differito con QTimer.singleShot); propaga la cartella download scelta a orchestrator.start(output_root=...) e la usa per il delete cartella; _on_language_changed fa il fan-out della ritraduzione su TUTTE le superfici persistenti (gemello di _on_theme_toggle), riga di stato compresa: _set_status_t/_set_status_tn ricordano chiave+parametri in _status_source e _refresh_status la riscrive, mentre _set_status (grezzo) azzera la memoria
     ├── link_panel.py      # gestore lista link (nascosto nell'UI, API get_links/set_links/open_paste_dialog); i suoi widget non si vedono, ma i dialoghi che apre sì (import da file, avviso «già scaricati»); i18n: t()/tn() + retranslate(), contatore link al singolare/plurale
     ├── paste_links_dialog.py # dialog modale incolla/edita lista link; contatori Validi/Non validi/Duplicati/Cartelle (i18n: t("paste.*"), conteggi come parametro {n})
-    ├── jobs_model.py      # JobsModel (QAbstractTableModel) + Job (throughput/file_name/output_path)
-    ├── jobs_panel.py      # lista job a righe-card (QScrollArea + _JobCard widget per riga); filtri a pulsanti esclusivi (QButtonGroup), senza etichetta; ogni pulsante mostra il conteggio file per categoria ("In corso (N)"/"Completati (N)"/"Non completati (N)"), aggiornato da _update_filter_counts su aggregates_changed; i18n: retranslate() ricasca su _EmptyState e su ogni _JobCard — si traduce il CROMO, non i testi che arrivano da jobs_model
-    ├── job_detail_dialog.py # dialog non-modale dettaglio job (doppio clic)
+    ├── jobs_model.py      # JobsModel (QObject) + Job (throughput/file_name/output_path); NON formatta testo:
+    │                      #   la cronologia e' (ts, livello, CHIAVE `job_log.*`, parametri) e `Job.last_error` e'
+    │                      #   il payload (codice, parametri) di E1 — rende chi disegna, quindi niente `retranslate()`.
+    │                      #   Non e' piu' un QAbstractTableModel: senza view a tabella, `HEADERS`/`data()`/`headerData()`
+    │                      #   e le costanti `COL_*` erano superficie morta (testo utente solo all'apparenza) e sono state rimosse
+    ├── jobs_panel.py      # lista job a righe-card (QScrollArea + _JobCard widget per riga); filtri a pulsanti esclusivi (QButtonGroup), senza etichetta; ogni pulsante mostra il conteggio file per categoria ("In corso (N)"/"Completati (N)"/"Non completati (N)"), aggiornato da _update_filter_counts su aggregates_changed; i18n: retranslate() ricasca su _EmptyState e su ogni _JobCard; le card rendono l'ultimo errore dal PAYLOAD del modello con error_render.render_error(), e on_abandoned applica ABANDON_ALIASES al confine col segnale
+    ├── job_detail_dialog.py # dialog non-modale dettaglio job (doppio clic); UNICO dialogo PERSISTENTE del progetto:
+    │                      #   ha `retranslate()` ed e' nel fan-out di `_on_language_changed`. `_refresh(force=True)` e'
+    │                      #   obbligatorio al cambio lingua: il ridisegno normale salta log e tabella IP quando il NUMERO
+    │                      #   di voci non cambia, e cambiando lingua cambia il testo, non il conteggio
+    ├── error_render.py    # resa degli errori a video: `render_error(code, params)` da codice+parametri al testo nella
+    │                      #   lingua corrente (chiave `err.<codice>`; un codice CON il punto e' gia' una chiave i18n
+    │                      #   intera, forma usata dagli errori che nascono nella GUI). Rende in profondita' i payload
+    │                      #   annidati di E1 (`cause` -> {error}, `children` -> {detail}), con tetto di ricorsione.
+    │                      #   `ABANDON_ALIASES`: il canale `abandoned_detail` porta il codice del canale `failed`
+    │                      #   (con le PARENTESI) mentre l'abbandono si legge coi DUE PUNTI — l'alias rimette la
+    │                      #   formulazione giusta al confine. `resolve_payloads()` per la riga di stato
     ├── radial_gauge.py    # RadialGauge: anello/donut riusabile (velocita' come % del picco); matematica pura in gauge_fraction() (no Qt, testabile)
     ├── segment_bar.py     # SegmentBar: barra orizzontale a segmenti proporzionali riusabile; matematica pura in segment_widths() (no Qt, testabile)
     ├── format_helpers.py  # helper di formattazione condivisi: fmt_speed/fmt_bytes/fmt_mmss/fmt_hhmmss (puro, no Qt); build_header_summary passa da t() → dipende dalla lingua (le unità di misura no)
@@ -86,7 +100,9 @@ src/
     │                      #   nell'ordine originale
     ├── preferences.py     # carica/salva preferenze utente (tema, lingua GUI ("auto"/"it"/"en"), check aggiornamenti all'avvio, selezione per velocità abilitata + soglia KB/s, stats_panel_expanded, download_dir) in preferences.json
     ├── i18n.py            # motore di traduzione GUI: Translator(QObject) con language_changed(str), singleton di modulo TR (come CURRENT_PALETTE), t(key, **params) e tn(key, n, **params); risolve "auto" dal locale (QLocale → prefisso → it, altrimenti en), persiste via preferences, installa qtbase_<lang>.qm via QLibraryInfo. Chiave mancante in EN → testo IT + WARNING una volta sola; mai eccezione
-    ├── strings_it.py      # dizionario piatto IT — è la FONTE del testo utente
+    ├── strings_it.py      # dizionario piatto IT — è la FONTE del testo utente; INNESTA `ERROR_TEXTS_IT` di
+    │                      #   `core/error_catalog.py` come chiavi `err.*` (una sola fonte per l'italiano degli errori,
+    │                      #   che serve anche ai log). Direzione `gui -> core`, permessa
     ├── strings_en.py      # dizionario piatto EN — traduzione: stesse chiavi e stessi {parametri} (test di parità in tests/test_i18n.py)
     ├── about_dialog.py    # AboutDialog: nome/acronimo/autore/nick/link/logo (da branding) + licenza + controllo aggiornamenti manuale (i18n: t("about.*"))
     ├── update_check.py    # UpdateCheckWorker(QThread): GET releases/latest GitHub, fuori dal thread GUI
@@ -130,15 +146,24 @@ package.ps1                # packaging: crea dist/MegaProxyRotator-X.Y.Z.zip
 ## Convenzioni
 - GUI bilingue IT/EN; codice (variabili/funzioni/classi) e commenti in inglese/italiano come già in uso.
   **L'italiano è la fonte** (`gui/strings_it.py`), l'inglese la traduzione (`gui/strings_en.py`).
-  Nessuna stringa utente hard-coded nei pannelli già migrati: si passa da `t()`/`tn()` di `gui/i18n.py`
-  e si espone `retranslate()` per il cambio a caldo. **Migrazione della GUI completata**
+  Nessuna stringa utente hard-coded: si passa da `t()`/`tn()` di `gui/i18n.py` e si espone
+  `retranslate()` per il cambio a caldo. **Traduzione dell'interfaccia COMPLETA**
   (F1 `ControlsBar` + titolo, F2a `UpdateBanner` + dialoghi Info/Sperimentali/Incolla,
   F2b cruscotto con le cascate su `_MetricCard` e `_JobCard`, F2c `link_panel`,
-  `folder_expand_worker` e `main_window` con i plurali via `tn()`): l'unico testo utente
-  ancora hard-coded in italiano è quello che nasce dagli ERRORI (`jobs_model`,
-  `job_detail_dialog`, e i due messaggi passati a `mark_failed_fatal` da `main_window`),
-  rimandato alla fase «Errori & Cronologia».
+  `folder_expand_worker` e `main_window` con i plurali via `tn()`, E1+E2 errori, cronologia
+  del job, dettaglio del job e righe di stato del setup).
   I **log restano in italiano** e non si traducono mai (sono diagnostici e devono restare stabili).
+- **Testo utente che nasce fuori dalla GUI**: non viaggia mai come frase già composta, ma come
+  **codice + parametri nominati** su un segnale parallelo a quello di sempre. Gli errori usano i
+  codici del catalogo (`core/error_catalog.py`, resi con `gui/error_render.render_error`); le
+  righe di stato del setup usano i codici `setup.*` di `orchestrator.SETUP_TEXTS_IT`. Il segnale
+  gemello che porta la stringa **italiana** resta, ed è quello che alimentano log, telemetria,
+  `failed_links.log` e la CLI: chi aggiunge un percorso li emette **entrambi**, altrimenti o la
+  GUI mostra testo non traducibile o i log perdono la loro frase.
+  Quando una cornice **incorpora un'altra eccezione nostra**, questa viaggia come payload
+  (`cause=error_payload(exc)`, o `children=[...]` per una lista) accanto al suo `str(exc)`:
+  senza, la GUI in inglese incastona una frase italiana dentro una cornice inglese — e il
+  controllo di fedeltà non lo vede, perché in italiano il testo coincide comunque.
 - Downloader: pattern `.part` + rename atomico. Si scarica SEMPRE su `<nome>.part` (sidecar `.progress.json` riferito al `.part`, include `chunk_size` per validare compatibilità del resume); `os.replace` sul nome finale solo a download completo e verificato. L'esistenza del nome finale è l'UNICO marker di completamento usato dal check di resume del worker. I `.part` non vanno mai cancellati al cleanup (servono al resume: i chunk completati restano scritti e vengono skippati al retry).
 - Pool scoring: i call-site devono registrare anche i successi (`record_success` su segmento completato / IP check ok) e usare `penalize(hard=True)` solo per 503 dal CDN; errori transitori (timeout, throughput basso, connection error) → `penalize(hard=False)`. Mai usare `mark_dead` (alias deprecato).
 - Pool cooldown vs penalize: il rate-limit 403/509 dal CDN Mega chiama `pool.cooldown(proxy)`, NON `penalize(hard=True)` — lo score non viene toccato (la reputazione resta intatta) ma il proxy è escluso sia da `get_next()` sia dal conteggio `size()`/`_count_alive_unlocked()` per `PROXY_COOLDOWN_SECONDS` (90s), poi torna selezionabile e contato. Se contasse come vivo mentre è a riposo, `size() > 0` farebbe saltare `refill_blocking(force=False)` anche quando il pool è di fatto inutilizzabile (starvation osservata con quasi tutti i proxy in cooldown insieme).

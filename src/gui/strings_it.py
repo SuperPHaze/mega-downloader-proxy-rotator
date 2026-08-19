@@ -7,9 +7,13 @@
 # l'ordine delle parti della frase cambia e con {} non si potrebbe riordinare.
 # Plurali: il valore diventa un dict {"one": ..., "other": ...}, letto da `tn()`.
 #
-# Stato migrazione: F1 copre ControlsBar + titolo finestra. Gli altri pannelli
-# hanno ancora il testo hard-coded e vengono migrati in F2.
+# Stato: traduzione COMPLETA (F1-F2c per l'interfaccia, E1+E2 per errori e
+# cronologia). Le chiavi `err.*` non si scrivono qui: sono innestate in fondo
+# dal catalogo di `core/error_catalog.py`, che e' la loro unica fonte perche'
+# lo stesso testo serve ai log.
 from __future__ import annotations
+
+from src.core.error_catalog import ERROR_TEXTS_IT
 
 STRINGS: dict[str, str | dict[str, str]] = {
     # ---- finestra principale ----------------------------------------------
@@ -266,9 +270,9 @@ STRINGS: dict[str, str | dict[str, str]] = {
     "stats_panel.copied_body": "Riepilogo copiato negli appunti.",
 
     # ---- elenco job (JobsPanel) --------------------------------------------
-    # Solo il CROMO del pannello: i testi che arrivano dal modello (stato grezzo
-    # di fallback, ultimo errore, nome file) NON si traducono qui — nascono in
-    # jobs_model/core/downloader e sono materia della fase «Errori & Cronologia».
+    # Il CROMO del pannello. Dal modello arrivano DATI, non frasi: l'ultimo
+    # errore è un payload (codice + parametri) che la card rende con
+    # `error_render`, lo stato grezzo di fallback e il nome file restano tali.
     "jobs_panel.status_queued": "In coda",
     "jobs_panel.status_running": "In corso",
     "jobs_panel.status_completed": "Completato",
@@ -554,4 +558,90 @@ STRINGS: dict[str, str | dict[str, str]] = {
         "Banda proxy: nessun proxy disponibile nel pool."
     ),
 
+    # ---- finestra principale: riavvio rifiutato -----------------------------
+    # Nascono nella GUI ma finiscono nel MODELLO come errore del job: viaggiano
+    # quindi come codice (chiave intera, col punto) e non come testo gia' reso.
+    "main_window.restart_no_orchestrator": "Nessun orchestrator attivo",
+    "main_window.restart_refused": "Riavvio rifiutato dall'orchestrator",
+
+    # ---- setup del pool proxy ----------------------------------------------
+    # Le righe di stato nascono nell'orchestrator, fuori dalla GUI: viaggiano
+    # come codice + parametri (`setup_status_t`/`pool_failed_t`) e si rendono
+    # qui. Il segnale gemello che porta la stringa italiana resta per i log e
+    # per la CLI, che non si traducono.
+    "setup.cache_candidates": "Cache proxy: {n} candidati...",
+    "setup.hot_start": "Hot-start: {n} proxy pronti dalla cache",
+    "setup.collecting": "Raccolta proxy dalle fonti pubbliche...",
+    "setup.validating": "Validazione di {n} proxy contro Mega...",
+    "setup.no_proxy_collected": "Nessun proxy raccolto dalle fonti",
+    "setup.no_valid_proxy": "Nessun proxy valido per Mega",
+    # Ripiego per le eccezioni impreviste del setup: il testo originale
+    # (spesso inglese, di una libreria) viaggia come parametro.
+    "setup.unexpected": "{error}",
+
+    # ---- cronologia di un job ----------------------------------------------
+    # `jobs_model` non formatta piu' testo: memorizza CHIAVE + parametri e
+    # lascia rendere a chi disegna. Le tre voci con un errore dentro ricevono
+    # il payload di E1, gia' reso, nel parametro {error}.
+    "job_log.started": "Download avviato",
+    "job_log.ip": "IP uscente: {ip}",
+    "job_log.attempt": "Tentativo {attempt}: {error}",
+    "job_log.completed": "Download completato",
+    "job_log.fatal": "Errore fatale: {error}",
+    "job_log.abandoned": {
+        "one": "Link abbandonato dopo {n} tentativi: {error}",
+        "other": "Link abbandonato dopo {n} tentativi: {error}",
+    },
+    "job_log.cancelled": "Cancellato dall'utente",
+    "job_log.restart": "----- Riavvio richiesto -----",
+
+    # ---- finestra di dettaglio di un job ------------------------------------
+    "job_detail.title": "Dettaglio job #{file}",
+    "job_detail.abandoned_title": "Link abbandonato",
+    "job_detail.copy": "Copia",
+    "job_detail.abandoned_info": (
+        "Tentativi falliti: {attempts}  •  Ultimo errore: {error}"
+    ),
+    "job_detail.not_available": "n/d",
+    "job_detail.url_label": "URL:",
+    "job_detail.summary": (
+        "Stato: <b>{status}</b>  •  Avanzamento: {progress}%  •  "
+        "Tentativi: {attempts}  •  Errori: {errors}  •  "
+        "Durata: {duration}"
+    ),
+    "job_detail.summary_last_error": "  •  Ultimo errore: {error}",
+    "job_detail.ip_history": "Cronologia IP usati:",
+    "job_detail.col_timestamp": "Timestamp",
+    "job_detail.col_ip": "IP",
+    "job_detail.attempts_log": "Log dei tentativi:",
+    "job_detail.close": "Chiudi",
+
+    # ---- errori: il catalogo del motore, innestato ---------------------------
+    # L'italiano degli errori ha UNA sola fonte, `core/error_catalog.py`: serve
+    # anche ai LOG, che restano italiani con l'interfaccia in inglese. Qui
+    # entra come chiavi `err.*` senza essere ricopiato, cosi' i test di parita'
+    # IT<->EN lo coprono senza sapere che e' speciale.
+    **{f"err.{code}": text for code, text in ERROR_TEXTS_IT.items()},
+
+    # Le voci che l'INGLESE declina al singolare e al plurale («1 minute» /
+    # «2 minutes»). L'italiano non cambia — e' lo stesso testo del catalogo in
+    # entrambe le forme, com'era prima della traduzione — ma la coppia deve
+    # esserci anche qui perche' `tn()` possa scegliere. Il testo si PRENDE dal
+    # catalogo, non si ricopia. L'elenco dei codici sta in
+    # `gui/error_render._COUNT_PARAM`, ed e' li' che si aggiunge una voce.
+    **{
+        f"err.{code}": {
+            "one": ERROR_TEXTS_IT[code],
+            "other": ERROR_TEXTS_IT[code],
+        }
+        for code in (
+            "time_limit_exceeded",
+            "node_key_too_short",
+            "crypto_bad_key_length",
+            "crypto_file_key_short",
+            "folder_key_invalid",
+            "folder_key_too_short",
+            "chunk_retries_exhausted",
+        )
+    },
 }

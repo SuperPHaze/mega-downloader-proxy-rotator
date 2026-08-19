@@ -19,9 +19,16 @@ paths: ["src/gui/**/*.py"]
 - **Cambio a caldo**: ogni superficie persistente espone `retranslate()` — l'elenco dei
   `setText`/`setToolTip` che il costruttore già esegue, richiamato anche da
   `MainWindow._on_language_changed`. È il gemello di `refresh_theme()` per il tema; chi aggiunge
-  un widget con testo lo aggiunge in **tutti e due** i punti. I dialoghi creati su richiesta
-  (`AboutDialog`, `ExperimentalFeaturesDialog`, `JobDetailDialog`, `PasteLinksDialog`) non ne
-  hanno bisogno: leggono i testi alla costruzione.
+  un widget con testo lo aggiunge in **tutti e due** i punti. I dialoghi **modali** creati su
+  richiesta (`AboutDialog`, `ExperimentalFeaturesDialog`, `PasteLinksDialog`) non ne hanno
+  bisogno: nascono, si leggono e si chiudono. **`JobDetailDialog` sì**: non è modale e resta
+  aperto mentre il download prosegue, quindi è una superficie persistente a tutti gli effetti
+  (`MainWindow._retranslate_open_details` lo ricasca su tutti i dettagli aperti).
+- **Ridisegno «solo se cambia il conteggio» e cambio lingua**: dove `_refresh()` salta la
+  ricostruzione quando il numero di elementi non è cambiato (log e tabella IP di
+  `JobDetailDialog`, corpo di `StatsPanel`), il `retranslate()` deve chiamarlo con `force=True`.
+  Al cambio lingua cambia il **testo**, non il conteggio: senza il `force` la superficie resta
+  nella lingua vecchia fino al prossimo evento, ed è un difetto che a video non si nota subito.
 - Non si traducono: unità di misura (`"32 MB"`, `"MB/s"`), emoji/icone e la spaziatura di
   impaginazione (resta nel codice, non nei dizionari), e i nomi delle lingue nel selettore
   (`Italiano`/`English` sono uguali nei due dizionari).
@@ -43,9 +50,23 @@ paths: ["src/gui/**/*.py"]
   report in `folder_expand_worker`): l'alternativa sarebbe una chiave per ogni combinazione.
 - **Riga di stato della finestra**: `MainWindow._set_status_t()` / `_set_status_tn()` memorizzano
   chiave e parametri in `_status_source`, così `_refresh_status()` la riscrive al cambio lingua.
-  `_set_status()` grezzo resta per i messaggi che arrivano già formattati dall'orchestrator e
-  AZZERA la memoria: quel testo nasce fuori dalla GUI e non è traducibile qui.
-- **Migrazione della GUI completata** (piano: `MyDocs/i18n-gui-2.0.0-design.md`): F1
+  Un parametro può essere il **payload** di un errore (`{"code": ..., "params": ...}`) invece di
+  un testo: `resolve_payloads()` lo rende al disegno, così cornice e contenuto cambiano lingua
+  insieme — memorizzando il testo già reso, la cornice si tradurrebbe e l'errore no.
+  Non esiste più un `_set_status()` grezzo: con E2 anche le righe che nascono nell'orchestrator
+  arrivano come codice + parametri, quindi ogni testo della riga di stato ha una chiave.
+- **Errori e cronologia dei job**: `jobs_model` è un **modello di dati e non formatta testo** —
+  la cronologia è `(ts, livello, chiave `job_log.*`, parametri)` e `Job.last_error` è il payload
+  `(codice, parametri)`. Chi disegna rende con `t()`/`gui/error_render.render_error()`; per
+  questo `JobsModel` non ha (e non deve avere) un `retranslate()`. Chi aggiunge una voce di
+  cronologia aggiunge una **chiave**, mai una frase.
+- **Codici d'errore che nascono nella GUI** (es. i due messaggi che `main_window` passa a
+  `mark_failed_fatal`): si passa la **chiave i18n intera**, col punto
+  (`"main_window.restart_refused"`). `render_error` distingue dal punto: senza punto è uno slug
+  del catalogo del motore e diventa `err.<slug>`, con il punto è già una chiave. Così anche
+  questi errori seguono la lingua invece di restare congelati al momento in cui sono nati.
+- **Traduzione dell'interfaccia COMPLETA** (piani: `MyDocs/i18n-gui-2.0.0-design.md` e
+  `MyDocs/errori-cronologia-2.0.0-design.md`): F1
   `ControlsBar` e titolo della finestra; F2a `UpdateBanner` (persistente, con `retranslate()`) e
   i dialoghi `about_dialog`/`experimental_dialog`/`paste_links_dialog` (creati su richiesta,
   nessun `retranslate()`); F2b `proxy_bar`, `stats_bar`, `stats_panel`, `jobs_panel` e
@@ -53,11 +74,10 @@ paths: ["src/gui/**/*.py"]
   `_MetricCard` e quello di `JobsPanel` su `_EmptyState` e su ogni `_JobCard`, esattamente dove
   ricasca `refresh_theme()`; F2c `link_panel` (persistente), `folder_expand_worker` (testi
   transienti del report) e `main_window` (dialoghi + riga di stato).
-  **`jobs_model` e `job_detail_dialog` sono fuori dal percorso F2**: i loro testi sono cronologia
-  e messaggi d'errore che nascono in `core/`/`downloader/`, e vanno affrontati insieme nella fase
-  «Errori & Cronologia» (con codici d'errore). Nella stessa fase rientrano i due messaggi che
-  `main_window` passa a `mark_failed_fatal`: partono da qui ma finiscono nel modello, quindi
-  restano in italiano finché non si traduce quella superficie.
+  Fase «Errori & Cronologia»: **E1** ha messo i codici sotto agli errori nel motore, **E2** li
+  rende nella GUI — `jobs_model` (cronologia come chiavi), `jobs_panel` (la card rende il
+  payload), `job_detail_dialog` (l'unico dialogo persistente), i due messaggi che `main_window`
+  passa a `mark_failed_fatal` e le 6 righe di stato del setup proxy.
 - Nomi di variabili, funzioni, classi, file e segnali in inglese.
 - I commenti del codice sono in italiano.
 
@@ -79,8 +99,11 @@ paths: ["src/gui/**/*.py"]
   layout: è un gestore senza superficie propria (API `get_links`/`set_links`/`open_paste_dialog`),
   pilotato dal pulsante Incolla della `ControlsBar`.
 - `JobsPanel` è una **lista a righe-card**: `QScrollArea` con un widget `_JobCard` per job (ha
-  sostituito la vecchia `QTableView`). `JobsModel` resta la fonte dati e le sue colonne sono
-  definite in `jobs_model.py` come costanti `COL_*`; **non usare indici letterali**.
+  sostituito la vecchia `QTableView`). `JobsModel` resta la fonte dati e si legge con
+  `get_job()`/`jobs_iter()`/`aggregates()`: **non è più un `QAbstractTableModel`** (niente
+  colonne, niente `data()`, niente `dataChanged`) perché senza view a tabella quell'API non
+  aveva più un chiamante. Gli aggiornamenti passano da `job_updated(file_id)` e
+  `aggregates_changed()`.
 - Ogni card porta i propri comandi (annulla, apri cartella, riavvia, copia URL): non ci sono piu'
   delegate di cella. Click sull'annullo → `JobsPanel.cancel_job_requested(file_id, True)` se il job
   è attivo, `delete_folder_requested(file_id)` se è terminato.

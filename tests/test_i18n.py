@@ -4,6 +4,7 @@
 # locale, precedenza della preferenza, chiave mancante, ritraduzione a caldo.
 # Da F2c il dizionario ha voci plurali vere: i test sotto le esercitano
 # tutte, a n=1 e n=2, in entrambe le lingue.
+import inspect
 import os
 import re
 
@@ -32,7 +33,11 @@ from src.gui.strings_en import STRINGS as STRINGS_EN
 from src.gui.strings_it import STRINGS as STRINGS_IT
 from src.gui.update_banner import UpdateBanner
 
-_PARAM_RE = re.compile(r"\{(\w+)\}")
+# Anche gli specificatori di formato contano: `{required:,}` e `{kbps:.1f}`
+# arrivano dal catalogo degli errori e un refuso li' renderebbe illeggibili
+# solo in una delle due lingue.
+_PARAM_RE = re.compile(r"\{(\w+)(?::[^{}]*)?\}")
+_SPEC_RE = re.compile(r"\{\w+:([^{}]*)\}")
 
 
 @pytest.fixture(scope="module")
@@ -104,6 +109,18 @@ def test_param_parity_it_en():
     runtime: qui si vede subito."""
     for key, it_value in STRINGS_IT.items():
         assert _params(it_value) == _params(STRINGS_EN[key]), key
+
+
+def test_format_spec_parity_it_en():
+    """Gli specificatori (`:,`, `:.1f`) fanno parte del testo: se l'inglese ne
+    perde uno, il numero esce formattato in modo diverso dai log."""
+    for key, it_value in STRINGS_IT.items():
+        forms_it = it_value.values() if isinstance(it_value, dict) else [it_value]
+        en_value = STRINGS_EN[key]
+        forms_en = en_value.values() if isinstance(en_value, dict) else [en_value]
+        specs_it = {s for f in forms_it for s in _SPEC_RE.findall(str(f))}
+        specs_en = {s for f in forms_en for s in _SPEC_RE.findall(str(f))}
+        assert specs_it == specs_en, key
 
 
 def test_no_positional_placeholders():
@@ -339,6 +356,9 @@ MIGRATED_SURFACES = (
     "main_window", "controls", "update_banner", "about", "experimental", "paste",
     "format", "stats_bar", "proxy_bar", "stats_panel", "jobs_panel",
     "link_panel", "folder_expand",
+    # E2: errori del motore, righe di stato del setup, cronologia e dettaglio
+    # del job. Con queste la traduzione dell'interfaccia e' completa.
+    "err", "setup", "job_log", "job_detail",
 )
 
 
@@ -545,20 +565,50 @@ def test_empty_state_button_matches_controls_key(qapp, isolated_prefs, monkeypat
     assert t("controls.paste_links") in panel._empty._sub.text()
 
 
-def test_jobs_panel_does_not_translate_model_text(qapp, isolated_prefs, monkeypatch):
-    """Confine di F2b: i testi che arrivano dal MODELLO (ultimo errore, nome
-    file) restano come sono anche in inglese — sono materia della fase
-    «Errori & Cronologia»."""
+def test_job_card_renders_the_error_in_both_languages(qapp, isolated_prefs, monkeypatch):
+    """Con E2 il confine di F2b si sposta: l'errore arriva dal modello come
+    PAYLOAD e la card lo rende nella lingua corrente. La cascata di F2b
+    (JobsPanel.retranslate -> ogni card) basta gia': niente cablaggio nuovo."""
     _in_italian(monkeypatch)
     panel = JobsPanel()
     panel.reset(["https://mega.nz/file/AAA#k"])
-    panel.on_abandoned(0, "https://mega.nz/file/AAA#k", 3, "errore che viene dal modello")
+    panel.on_abandoned(
+        0, "https://mega.nz/file/AAA#k", 3, "ip_check_failed", {"error": "timeout"},
+    )
+    testo = panel._cards[0]._attempts_lbl.text()
+    assert testo.startswith("Tentativi: 3")
+    assert testo.endswith("Ultimo errore: IP check fallito: timeout")
 
     TR.set_preference("en")
     panel.retranslate()
     testo = panel._cards[0]._attempts_lbl.text()
-    assert testo.startswith("Attempts: 3")           # cromo: tradotto
-    assert "errore che viene dal modello" in testo   # dato del modello: intatto
+    assert testo.startswith("Attempts: 3")
+    assert testo.endswith("Last error: IP check failed: timeout")
+
+
+def test_job_card_applies_the_abandon_alias(qapp, isolated_prefs, monkeypatch):
+    """Il canale porta il codice del tentativo fallito (con le parentesi):
+    l'abbandono deve comunque leggersi coi due punti, come prima di E2."""
+    _in_italian(monkeypatch)
+    panel = JobsPanel()
+    panel.reset(["https://mega.nz/file/AAA#k"])
+    panel.on_abandoned(
+        0, "https://mega.nz/file/AAA#k", 3,
+        "ip_check_failed_paren", {"error": "timeout"},
+    )
+    testo = panel._cards[0]._attempts_lbl.text()
+    assert testo.endswith("Ultimo errore: IP check fallito: timeout")
+
+
+def test_job_card_frames_the_failed_attempt(qapp, isolated_prefs, monkeypatch):
+    """Il tentativo fallito conserva la cornice «Tentativo N: » nell'ultimo
+    errore, esattamente com'era prima di E2."""
+    _in_italian(monkeypatch)
+    panel = JobsPanel()
+    panel.reset(["https://mega.nz/file/AAA#k"])
+    panel.on_failed(0, 1, "download_failed_paren", {"error": "boom"})
+    testo = panel._cards[0]._attempts_lbl.text()
+    assert testo.endswith("Ultimo errore: Tentativo 1: download fallito (boom)")
 
 
 def test_header_summary_follows_language(isolated_prefs, monkeypatch):
@@ -638,6 +688,9 @@ def test_italian_plurals_kept_as_they_were():
     assert "folder_expand.subfolders_suffix" in identiche
     assert "folder_expand.duplicates_removed" in identiche
     assert "main_window.expand_ready" in identiche
+    # Aggiunta da E2: il worker scriveva «dopo {n} tentativi» senza distinguere,
+    # e il testo italiano non doveva cambiare. L'inglese invece declina.
+    assert "job_log.abandoned" in identiche
     # Le voci che gia' distinguevano le due forme devono continuare a farlo.
     assert STRINGS_IT["link_panel.counter"]["one"] != STRINGS_IT["link_panel.counter"]["other"]
     assert STRINGS_IT["main_window.expand_status"]["one"] != STRINGS_IT["main_window.expand_status"]["other"]
@@ -736,7 +789,6 @@ class _FinestraFinta:
     costruire la finestra intera aprirebbe thread di rete (aggiornamenti,
     speed test), che i test non devono fare."""
 
-    _set_status = MainWindow._set_status
     _set_status_t = MainWindow._set_status_t
     _set_status_tn = MainWindow._set_status_tn
     _refresh_status = MainWindow._refresh_status
@@ -774,20 +826,13 @@ def test_status_line_retranslates_plural(qapp, isolated_prefs, monkeypatch):
     assert win._status_lbl.text() == "Expanding 1 Mega folder…"
 
 
-def test_raw_status_is_not_retranslated(qapp, isolated_prefs, monkeypatch):
-    """I messaggi che arrivano gia' formattati dall'orchestrator non hanno una
-    chiave: non devono essere toccati (ne' persi) dal cambio lingua."""
-    from PyQt6.QtWidgets import QLabel
-
-    _in_italian(monkeypatch)
-    win = _FinestraFinta(QLabel())
-    win._set_status_t("main_window.paused")
-    win._set_status("Raccolta proxy: 42 fonti")     # testo grezzo: azzera la memoria
-    assert win._status_source is None
-
-    TR.set_preference("en")
-    win._refresh_status()
-    assert win._status_lbl.text() == "Raccolta proxy: 42 fonti"
+def test_no_raw_status_setter_left(qapp, isolated_prefs, monkeypatch):
+    """Con E2 anche le righe dell'orchestrator hanno una chiave: il
+    `_set_status()` grezzo non serve piu' e non deve tornare. Se qualcuno lo
+    reintroduce, quel testo smette di ritradursi senza che nulla protesti."""
+    assert not hasattr(MainWindow, "_set_status")
+    sorgente = inspect.getsource(MainWindow)
+    assert "self._set_status(" not in sorgente
 
 
 def test_language_fanout_covers_every_persistent_surface():
@@ -806,6 +851,116 @@ def test_language_fanout_covers_every_persistent_surface():
         "self._stats_panel.retranslate",
         "self.jobs_panel.retranslate",
         "self.link_panel.retranslate",
+        "self._retranslate_open_details",
         "self._refresh_status",
     ):
         assert atteso in corpo, atteso
+
+
+# ---- E2: dettaglio job, l'unico dialogo persistente ------------------------
+
+def _job_con_storia(monkeypatch):
+    """Un job con log e cronologia IP gia' popolati."""
+    from src.gui.jobs_model import JobsModel
+
+    model = JobsModel()
+    model.reset(["https://mega.nz/file/AAA#k"])
+    model.set_progress(0, 10)
+    model.set_ip(0, "1.2.3.4")
+    model.add_failure(0, "ip_check_failed_paren", {"error": "timeout"})
+    model.mark_abandoned(0, 25, "ip_check_failed", {"error": "timeout"})
+    return model
+
+
+def test_job_detail_built_in_current_language(qapp, isolated_prefs, monkeypatch):
+    from src.gui.job_detail_dialog import JobDetailDialog
+
+    _in_italian(monkeypatch)
+    TR.set_preference("en")
+    dlg = JobDetailDialog(_job_con_storia(monkeypatch), 0)
+    assert dlg.windowTitle() == "Job detail #1"
+    assert dlg.close_btn.text() == "Close"
+    assert dlg.log_label.text() == "Attempts log:"
+    assert "Link abandoned after 25 attempts" in dlg.log_view.toPlainText()
+
+
+def test_job_detail_retranslates_with_a_populated_log(qapp, isolated_prefs, monkeypatch):
+    """IL caso che smaschera il difetto del conteggio: al cambio lingua il
+    NUMERO di righe del log non cambia, quindi senza `force=True` il log
+    resterebbe nella lingua vecchia."""
+    from src.gui.job_detail_dialog import JobDetailDialog
+
+    _in_italian(monkeypatch)
+    dlg = JobDetailDialog(_job_con_storia(monkeypatch), 0)
+    prima = dlg.log_view.toPlainText()
+    assert "Download avviato" in prima
+    assert "Link abbandonato dopo 25 tentativi" in prima
+    n_righe = len(prima.splitlines())
+
+    TR.set_preference("en")
+    dlg.retranslate()
+    dopo = dlg.log_view.toPlainText()
+    assert len(dopo.splitlines()) == n_righe      # stesso numero di voci...
+    assert "Download started" in dopo             # ...ma testo ritradotto
+    assert "Link abandoned after 25 attempts" in dopo
+    assert "Download avviato" not in dopo
+    assert dlg.windowTitle() == "Job detail #1"
+    assert dlg.ip_history_label.text() == "IP history:"
+    assert dlg.abandoned_title.text() == "Link abandoned"
+    assert "Last error: IP check failed: timeout" in dlg.summary_label.text()
+
+
+def test_job_detail_ip_table_survives_retranslation(qapp, isolated_prefs, monkeypatch):
+    from src.gui.job_detail_dialog import JobDetailDialog
+
+    _in_italian(monkeypatch)
+    dlg = JobDetailDialog(_job_con_storia(monkeypatch), 0)
+    assert dlg.ip_table.rowCount() == 1
+    assert dlg.ip_table.item(0, 1).text() == "1.2.3.4"
+
+    TR.set_preference("en")
+    dlg.retranslate()
+    assert dlg.ip_table.rowCount() == 1
+    assert dlg.ip_table.item(0, 1).text() == "1.2.3.4"
+    assert dlg.ip_table.horizontalHeaderItem(1).text() == "IP"
+
+
+# ---- E2: riga di stato con un errore dentro --------------------------------
+
+def test_status_line_error_payload_follows_language(qapp, isolated_prefs, monkeypatch):
+    """La riga di stato ricorda il PAYLOAD dell'errore, non il testo gia' reso:
+    al cambio lingua cambiano insieme cornice e contenuto."""
+    from PyQt6.QtWidgets import QLabel
+
+    _in_italian(monkeypatch)
+    win = _FinestraFinta(QLabel())
+    win._set_status_tn(
+        "main_window.abandoned_status",
+        25,
+        file=1,
+        error={"code": "ip_check_failed", "params": {"error": "timeout"}},
+    )
+    assert win._status_lbl.text() == (
+        "File 1 abbandonato dopo 25 tentativi: IP check fallito: timeout"
+    )
+
+    TR.set_preference("en")
+    win._refresh_status()
+    assert win._status_lbl.text() == (
+        "File 1 abandoned after 25 attempts: IP check failed: timeout"
+    )
+
+
+def test_setup_status_line_follows_language(qapp, isolated_prefs, monkeypatch):
+    """Le righe di stato dell'orchestrator ora hanno una chiave: `_set_status()`
+    grezzo non serve piu' per loro."""
+    from PyQt6.QtWidgets import QLabel
+
+    _in_italian(monkeypatch)
+    win = _FinestraFinta(QLabel())
+    win._set_status_t("setup.validating", n=1200)
+    assert win._status_lbl.text() == "Validazione di 1200 proxy contro Mega..."
+
+    TR.set_preference("en")
+    win._refresh_status()
+    assert win._status_lbl.text() == "Validating 1200 proxies against Mega..."

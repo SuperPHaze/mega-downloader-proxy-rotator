@@ -6,9 +6,9 @@
 # tramite model.job_updated (segnale con file_id).
 #
 # i18n: superficie PERSISTENTE con cascata. retranslate() ricasca su _EmptyState
-# e su OGNI _JobCard, come gia' fa refresh_theme(). Si traduce solo il CROMO del
-# pannello: i testi che arrivano dal modello (nome file, ultimo errore, stato
-# grezzo di fallback) restano intatti — sono materia della fase Errori&Cronologia.
+# e su OGNI _JobCard, come gia' fa refresh_theme(). Dal modello arrivano DATI, non
+# frasi: l'ultimo errore e' un payload (codice + parametri) che la card rende con
+# error_render, quindi il semplice _refresh() basta anche al cambio lingua.
 from __future__ import annotations
 
 import os
@@ -39,6 +39,7 @@ from PyQt6.QtWidgets import (
 from src.core.failed_log import failed_log_path
 from src.gui import style as _style
 from src.gui.i18n import t
+from src.gui.error_render import ABANDON_ALIASES, render_error
 from src.core.mega_links import parse_folder_job_url
 from src.gui.format_helpers import fmt_bytes as _fmt_bytes, fmt_speed as _fmt_speed_stat
 from src.gui.jobs_model import (
@@ -453,8 +454,9 @@ class _JobCard(QFrame):
         )
         self._ip_lbl.setStyleSheet(f"color: {p['text_dim']}; border: none;")
         # Le tre parti restano chiavi distinte perche' sono condizionali: ognuna
-        # e' una frase compiuta, non un mezzo periodo. Il TESTO dell'errore
-        # arriva dal modello e non si traduce qui.
+        # e' una frase compiuta, non un mezzo periodo. L'errore arriva dal
+        # modello come PAYLOAD e si rende qui, nella lingua del momento: e' per
+        # questo che `retranslate()` non ha bisogno di altro che di `_refresh()`.
         self._attempts_lbl.setText(
             t("jobs_panel.attempts", n=job.attempts)
             + (
@@ -462,7 +464,10 @@ class _JobCard(QFrame):
                 if job.errors_count else ""
             )
             + (
-                t("jobs_panel.last_error_suffix", error=job.last_error)
+                t(
+                    "jobs_panel.last_error_suffix",
+                    error=render_error(*job.last_error),
+                )
                 if job.last_error else ""
             )
         )
@@ -719,8 +724,8 @@ class JobsPanel(QWidget):
     def on_ip(self, file_id: int, _cycle: int, ip: str) -> None:
         self.model.set_ip(file_id, ip)
 
-    def on_failed(self, file_id: int, _cycle: int, reason: str) -> None:
-        self.model.add_failure(file_id, reason)
+    def on_failed(self, file_id: int, _cycle: int, code: str, params: dict) -> None:
+        self.model.add_failure(file_id, code, params)
 
     def on_cycle_completed(self, file_id: int, _cycle: int) -> None:
         self.model.set_progress(file_id, 100)
@@ -728,11 +733,18 @@ class JobsPanel(QWidget):
     def on_all_done(self, file_id: int) -> None:
         self.model.mark_completed(file_id)
 
-    def on_fatal(self, file_id: int, reason: str) -> None:
-        self.model.mark_failed_fatal(file_id, reason)
+    def on_fatal(self, file_id: int, code: str, params: dict) -> None:
+        self.model.mark_failed_fatal(file_id, code, params)
 
-    def on_abandoned(self, file_id: int, _url: str, attempts: int, last_error: str) -> None:
-        self.model.mark_abandoned(file_id, attempts, last_error)
+    def on_abandoned(
+        self, file_id: int, _url: str, attempts: int, code: str, params: dict,
+    ) -> None:
+        # Qui, e solo qui, il codice del canale `failed` diventa quello
+        # dell'ABBANDONO: e' l'unico punto che sa da quale segnale arriva.
+        # Senza, la frase passerebbe dai due punti alle parentesi.
+        self.model.mark_abandoned(
+            file_id, attempts, ABANDON_ALIASES.get(code, code), params,
+        )
 
     def on_cancel_all(self) -> None:
         self.model.mark_cancelled_all()
