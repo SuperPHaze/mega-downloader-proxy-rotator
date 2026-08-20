@@ -19,6 +19,11 @@ paths: ["README*.md", "CHANGELOG*.md", "Docs/**/*.md", "index*.html", "install.p
   `Docs/OPERATING_GUIDE.md`; `CHANGELOG.it.md`→`CHANGELOG.md`; `index.it.html`→`index.html`.
   Per gli script `install.ps1`/`package.ps1` la fonte è il 2° argomento di `L` (italiano), l'inglese
   (1° arg) è generato.
+- **Etichette della GUI**: in ogni lingua si scrive l'etichetta che l'utente vede a schermo. I
+  documenti inglesi usano quindi quella inglese (`**Settings → "Download folder:"**`), senza
+  glossa. Fino alla 2.0.0 tenevano l'etichetta italiana con la traduzione fra parentesi, perché
+  la GUI era solo italiana: con la GUI bilingue quella ragione è venuta meno. Le voci **già
+  rilasciate** del CHANGELOG non si riscrivono — sono un archivio storico.
 - CLAUDE.md, i file in `.claude/rules/` e la documentazione interna di sviluppo restano in
   **italiano** e NON si traducono.
 
