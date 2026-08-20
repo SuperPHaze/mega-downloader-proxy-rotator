@@ -24,6 +24,12 @@ Tutte le modifiche rilevanti del progetto. Formato basato su [Keep a Changelog](
   log già scritto viene riscritto nella lingua nuova. I messaggi nei file di log restano in
   italiano: servono alla diagnosi e devono restare stabili.
 
+### Modificato
+- **Ritocchi ai testi inglesi dell'interfaccia**: «Selection by speed» è diventato
+  «Speed-based selection» (lo stesso termine che usa la guida), «Limit min/file:» è diventato
+  «Time limit (min/file):», e il pulsante che apre la finestra delle informazioni si chiama
+  «About», come la finestra stessa.
+
 ### Corretto
 - Nella cronologia di un download la riga di un tentativo fallito ripeteva due volte
   «Tentativo N:» («Tentativo 1: Tentativo 1: download fallito…»). Ora compare una volta sola.

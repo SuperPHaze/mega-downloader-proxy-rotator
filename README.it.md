@@ -32,7 +32,7 @@
 
 ## 🚀 Panoramica
 
-App **desktop per Windows** (Python + PyQt6) che scarica file **e intere cartelle** da Mega.nz instradando il traffico su proxy HTTP pubblici e gratuiti. Il file viene diviso in una **coda di chunk a dimensione fissa**, scaricati in parallelo ognuno su un proxy diverso, decifrati al volo e riassemblati. Nata come test tecnico di rotazione IP, oggi è un downloader a uso reale, single-user e single-process.
+App **desktop per Windows** (Python + PyQt6) che scarica file **e intere cartelle** da Mega.nz instradando il traffico su proxy HTTP pubblici e gratuiti. Il file viene diviso in una **coda di chunk a dimensione fissa**, scaricati in parallelo ognuno su un proxy diverso, decifrati al volo e riassemblati. Nata come test tecnico di rotazione IP, oggi è un downloader a uso reale, single-user e single-process. L'interfaccia è **bilingue, italiano e inglese**.
 
 ## ✨ Perché è diversa
 
@@ -53,6 +53,7 @@ App **desktop per Windows** (Python + PyQt6) che scarica file **e intere cartell
 - **Pannello "Funzioni sperimentali"** con connessioni per file, budget per pezzo e selezione per velocità con soglia configurabile (test di velocità reale + selezione proxy per throughput).
 - **Diagnostica crash passiva** sempre attiva (heartbeat di memoria, traceback multi-thread), log strutturato universale (`logs/events.jsonl`) e un generatore di report HTML (`tools/report.py`).
 - **Interfaccia** a schede con cruscotto compatto a 3 zone (velocità, download, proxy) — gauge radiale di velocità (% del picco di sessione), barra segmentata per lo stato dei download, card compatte per lo stato del pool proxy — filtri job a pulsanti con conteggio dei file per stato (in corso/completati/non completati), tema chiaro/scuro, pausa/ripresa/annullo globali e per singolo job.
+- **Interfaccia bilingue italiano/inglese**: al primo avvio segue la lingua del sistema, poi si sceglie dal menu Impostazioni (Automatica / Italiano / English) e il cambio è immediato, senza riavviare. È tradotta tutta l'interfaccia, messaggi d'errore compresi; i messaggi nei file di log restano in italiano perché servono alla diagnosi.
 - **Modalità CLI** per macchine headless.
 
 ## ⚡ Installazione rapida (Windows 10/11)

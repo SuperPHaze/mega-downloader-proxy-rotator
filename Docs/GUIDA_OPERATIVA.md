@@ -149,11 +149,25 @@ La zona proxy mostra anche due misure di banda affiancate, distinte per colore. 
 
 Durante una sessione i controlli disponibili sono pausa/ripresa e annullo, sia globali sia per singolo file dalla tabella. La pausa non comporta la perdita dei proxy: alla ripresa il lavoro riparte dal punto in cui era stato sospeso. La pausa agisce **al confine del pezzo in corso**: un chunk già in trasferimento viene portato a termine e solo dopo il lavoro si sospende (sospendere un pezzo a metà farebbe scadere i timeout di lettura). L'annullo di un singolo file può, a scelta, rimuoverne anche i dati già scaricati dal disco.
 
-Se il programma viene chiuso (o va in crash) con dei download non ancora completati, alla riapertura propone di **ricaricare i link rimasti** («Riprendi sessione precedente?»). Accettando, i link tornano nella lista e — grazie al resume descritto sotto — ripartono dai pezzi già scaricati: basta premere Avvia.
+Se il programma viene chiuso (o va in crash) con dei download non ancora completati, alla riapertura propone di **ricaricare i link rimasti** con una richiesta intitolata «Ripristina sessione» («La sessione precedente si è chiusa con N link non completati. Vuoi ricaricarli nella lista?»). Accettando, i link tornano nella lista e — grazie al resume descritto sotto — ripartono dai pezzi già scaricati: basta premere Avvia.
 
 La lista dei download può essere filtrata con tre pulsanti a selezione esclusiva — **In corso**, **Completati** e **Non completati** — che insieme coprono tutti gli stati possibili (i job in coda e in corso ricadono in «In corso»; falliti, annullati e abbandonati in «Non completati»). Ogni pulsante riporta tra parentesi il numero di file nella sua categoria, aggiornato in tempo reale: così la composizione della sessione è leggibile a colpo d'occhio senza cambiare filtro.
 
 Il resume copre anche le interruzioni non volontarie (chiusura del programma, blackout, errore). Grazie allo schema `.part` + sidecar, alla ripresa vengono riscaricati solo i chunk mancanti; un ciclo è considerato completo unicamente quando esiste il file finale rinominato, quindi un file interrotto non viene mai scambiato per completo.
+
+---
+
+## 9-bis. Lingua dell'interfaccia
+
+L'interfaccia è **bilingue: italiano e inglese**. Al primo avvio il programma segue la **lingua di sistema** — italiano se il sistema è in italiano, inglese in tutti gli altri casi — e da lì in poi la scelta passa all'utente.
+
+Si cambia dal menu **Impostazioni → «Lingua:»**, che offre tre voci: **Automatica**, **Italiano**, **English**. «Automatica» non è una lingua ma una regola: continua a seguire il sistema, e mostra fra parentesi quale lingua sta scegliendo in quel momento («Automatica (Italiano)»). Scegliendo esplicitamente Italiano o English si esce dalla regola; per tornarci basta rimettere «Automatica». La scelta viene **ricordata** e ritrovata al lancio successivo.
+
+Il cambio è **immediato e non richiede il riavvio**: pannelli, menu, pulsanti, finestre di dialogo e riga di stato si riscrivono sul posto, comprese le finestre già aperte — se è aperto il dettaglio di un download, viene ritradotta anche la cronologia dei tentativi già scritta.
+
+La traduzione copre **tutta** l'interfaccia, inclusi i **messaggi d'errore** dei singoli file, che sono la parte che di solito resta indietro: gli errori del motore viaggiano fino alla finestra come codice più parametri, non come frase già composta, ed è per questo che si possono rendere in una lingua o nell'altra al momento del disegno.
+
+**I messaggi nei file di log restano invece in italiano**, qualunque sia la lingua dell'interfaccia. È voluto: sono materiale diagnostico e devono restare stabili nel tempo, altrimenti confrontare due sessioni o cercare un errore in un log vecchio diventerebbe un esercizio di traduzione. Vale per `logs/app.log`, `logs/events.jsonl`, `logs/failed_links.log` e per i messaggi della modalità CLI.
 
 ---
 
