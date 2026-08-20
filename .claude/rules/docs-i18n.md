@@ -9,11 +9,14 @@ paths: ["README*.md", "CHANGELOG*.md", "Docs/**/*.md", "index*.html", "install.p
   il pubblico) + **italiano affiancato**.
 - **L'italiano è la fonte di verità.** Si modifica SEMPRE e SOLO la versione italiana di un
   documento; la versione inglese è una **copia generata**, mai scritta o corretta a mano.
-- Dopo ogni modifica a un documento italiano, **rigenerare la controparte inglese** eseguendo il
-  prompt riusabile interno `Docs/prompts/sync-translations.md` (non pubblicato, gitignorato) con Claude Code, e rivedere il diff prima
-  del commit. Questo evita discordanze tra le due lingue.
+- Dopo ogni modifica a un documento italiano, **rigenerare la controparte inglese** lanciando
+  `sync-docs.bat`, che esegue il prompt riusabile interno `MyDocs/prompts/sync-translations.md`
+  con Claude Code; poi rivedere il diff prima del commit. Questo evita discordanze fra le due
+  lingue. **Entrambi i file sono gitignorati**: sono strumenti locali (`MyDocs/` è privata), e su
+  una macchina nuova vanno ricreati — il `.bat` se ne accorge e lo dice invece di fallire a metà.
+  Il prompt mostra i diff e applica **solo dopo conferma**; non committa e non pusha mai.
 - Coppie fonte→generato: `README.it.md`→`README.md`; `Docs/GUIDA_OPERATIVA.md`→
-  `Docs/OPERATING_GUIDE.md`; `CHANGELOG.it.md`→`CHANGELOG.md`; (futuro) `index.it.html`→`index.html`.
+  `Docs/OPERATING_GUIDE.md`; `CHANGELOG.it.md`→`CHANGELOG.md`; `index.it.html`→`index.html`.
   Per gli script `install.ps1`/`package.ps1` la fonte è il 2° argomento di `L` (italiano), l'inglese
   (1° arg) è generato.
 - CLAUDE.md, i file in `.claude/rules/` e la documentazione interna di sviluppo restano in
@@ -33,7 +36,9 @@ paths: ["README*.md", "CHANGELOG*.md", "Docs/**/*.md", "index*.html", "install.p
 - Cambiare SOLO le stringhe utente: mai la logica o il control flow.
 
 ## Sito
-- `index.html` (EN default) + versione IT con toggle di lingua. [Da fare]
+- `index.html` (EN default) + `index.it.html` (IT), con toggle di lingua reciproco nella barra di
+  navigazione (`<a class="navlang">`). Si traducono testo visibile, `<meta name="description">` e
+  `<html lang>`; non si toccano CSS, JavaScript, id/class e percorsi degli asset.
 
 ## Navigazione per ancora (DOC_MAP)
 - Prima di modificare la documentazione, consulta `MyDocs/DOC_MAP.md` (se presente) e
