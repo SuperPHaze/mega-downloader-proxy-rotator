@@ -679,21 +679,72 @@ def test_english_plurals_are_distinct(key, isolated_prefs, monkeypatch):
     assert forms["one"] != forms["other"], key
 
 
-def test_italian_plurals_kept_as_they_were():
-    """Alcune forme singolari italiane ripetono il plurale («1 sottocartelle»):
-    e' quanto l'app mostra da prima della traduzione e la migrazione non doveva
-    cambiarlo. Questo test blocca il testo italiano attuale; il giorno in cui si
-    decide di correggere la grammatica, va aggiornato di proposito."""
-    identiche = {k for k in PLURAL_KEYS if STRINGS_IT[k]["one"] == STRINGS_IT[k]["other"]}
-    assert "folder_expand.subfolders_suffix" in identiche
-    assert "folder_expand.duplicates_removed" in identiche
-    assert "main_window.expand_ready" in identiche
-    # Aggiunta da E2: il worker scriveva «dopo {n} tentativi» senza distinguere,
-    # e il testo italiano non doveva cambiare. L'inglese invece declina.
-    assert "job_log.abandoned" in identiche
-    # Le voci che gia' distinguevano le due forme devono continuare a farlo.
-    assert STRINGS_IT["link_panel.counter"]["one"] != STRINGS_IT["link_panel.counter"]["other"]
-    assert STRINGS_IT["main_window.expand_status"]["one"] != STRINGS_IT["main_window.expand_status"]["other"]
+# Le 8 frasi italiane il cui singolare ripeteva il plurale («1 sottocartelle»),
+# corrette in F3. Difetto PREESISTENTE alla traduzione: le fasi precedenti lo
+# avevano tenuto identico di proposito, per non cambiare il testo IT mentre si
+# migrava. Qui si blocca il testo CORRETTO, così una regressione si vede.
+SINGOLARI_CORRETTI = {
+    "folder_expand.subfolders_suffix": ", 1 sottocartella",
+    "folder_expand.duplicates_removed":
+        "• 1 file duplicato (stesso file incollato più volte) è stato rimosso.",
+    "main_window.expand_ready": "1 file pronto al download.",
+    "main_window.restart_all_done": "Riavviato 1 download.",
+    "main_window.restored_status":
+        "Ripristinato 1 link dalla sessione precedente. Premi Avvia per riprendere.",
+}
+
+
+@pytest.mark.parametrize("key", sorted(SINGOLARI_CORRETTI))
+def test_italian_singulars_are_grammatical(key, isolated_prefs, monkeypatch):
+    _in_italian(monkeypatch)
+    assert tn(key, 1) == SINGOLARI_CORRETTI[key]
+
+
+def test_italian_singulars_with_extra_params(isolated_prefs, monkeypatch):
+    """Le tre frasi che portano anche un altro parametro oltre al conteggio."""
+    _in_italian(monkeypatch)
+    assert tn("main_window.abandoned_status", 1, file=2, error="X") == (
+        "File 2 abbandonato dopo 1 tentativo: X"
+    )
+    assert tn("job_log.abandoned", 1, error="X") == (
+        "Link abbandonato dopo 1 tentativo: X"
+    )
+    assert "1 file NON verrà scaricato" in tn(
+        "main_window.expand_truncated_body", 1, kept=9
+    )
+    assert "1 link non completato" in tn("main_window.restore_body", 1)
+    assert "Vuoi ricaricarlo" in tn("main_window.restore_body", 1)
+
+
+def test_italian_plurals_still_plural(isolated_prefs, monkeypatch):
+    """Correggere il singolare non deve aver toccato il plurale, che e' il
+    testo che l'app mostra nel caso normale (n > 1)."""
+    _in_italian(monkeypatch)
+    assert tn("folder_expand.subfolders_suffix", 3) == ", 3 sottocartelle"
+    assert tn("main_window.expand_ready", 3) == "3 file pronti al download."
+    assert tn("main_window.restart_all_done", 3) == "Riavviati 3 download."
+    assert tn("main_window.abandoned_status", 3, file=2, error="X") == (
+        "File 2 abbandonato dopo 3 tentativi: X"
+    )
+
+
+def test_no_italian_plural_entry_repeats_itself():
+    """Guardia generale: nessuna voce plurale italiana deve piu' avere le due
+    forme identiche — tranne le `err.*`, il cui testo viene dal catalogo del
+    motore (`core/error_catalog.py`) e li' e' anche il testo dei LOG, che non
+    si tocca."""
+    identiche = sorted(
+        k for k in PLURAL_KEYS
+        if not k.startswith("err.")
+        and STRINGS_IT[k]["one"] == STRINGS_IT[k]["other"]
+    )
+    # Restano solo le voci in cui la parola italiana e' davvero invariabile
+    # («1 file», «1 link»): li' il singolare corretto COINCIDE col plurale.
+    assert identiche == [
+        "folder_expand.ok_line",
+        "link_panel.history_more",
+        "link_panel.import_done_body",
+    ], identiche
 
 
 # ---- F2c: pannello link ----------------------------------------------------
@@ -771,7 +822,7 @@ def test_folder_expand_report_follows_language(qapp, isolated_prefs, monkeypatch
     catturato = []
     worker.finished_ok.connect(lambda links, report, tr: catturato.append(report))
     worker.run()
-    assert catturato and "1 sottocartelle" in catturato[0][0]
+    assert catturato and "1 sottocartella" in catturato[0][0]
 
     TR.set_preference("en")
     worker2 = few.FolderExpandWorker(["https://mega.nz/folder/AAA#chiave"])
@@ -908,6 +959,64 @@ def test_job_detail_retranslates_with_a_populated_log(qapp, isolated_prefs, monk
     assert dlg.ip_history_label.text() == "IP history:"
     assert dlg.abandoned_title.text() == "Link abandoned"
     assert "Last error: IP check failed: timeout" in dlg.summary_label.text()
+
+
+def test_job_status_is_translated_everywhere(qapp, isolated_prefs, monkeypatch):
+    """Lo stato del job non deve piu' comparire grezzo ("in_corso") da nessuna
+    parte: badge della card e riepilogo del dettaglio usano la STESSA mappa."""
+    from src.gui.job_detail_dialog import JobDetailDialog
+    from src.gui.jobs_model import STATUS_ABANDONED, STATUS_RUNNING
+    from src.gui.jobs_panel import status_label
+
+    _in_italian(monkeypatch)
+    panel = JobsPanel()
+    panel.reset(["https://mega.nz/file/AAA#k"])
+    job = panel.model.get_job(0)
+    dlg = JobDetailDialog(panel.model, 0)
+
+    for stato, atteso_it, atteso_en in (
+        (STATUS_RUNNING, "In corso", "Running"),
+        (STATUS_ABANDONED, "Abbandonato", "Abandoned"),
+    ):
+        job.status = stato
+        for lang, atteso in (("it", atteso_it), ("en", atteso_en)):
+            TR.set_preference(lang)
+            panel.retranslate()
+            dlg.retranslate()
+            assert status_label(stato) == atteso
+            assert atteso in panel._cards[0]._badge.text()
+            assert atteso in dlg.summary_label.text()
+            assert stato not in dlg.summary_label.text()   # niente slug grezzo
+
+
+def test_status_badge_fits_the_longest_label(qapp, isolated_prefs, monkeypatch):
+    """Il badge ha larghezza fissa: l'etichetta piu' lunga (l'italiano
+    "Abbandonato") ci deve stare, altrimenti viene tagliata a meta' parola.
+
+    Due avvertenze, entrambe verificate e non dedotte:
+      - si misura a **10pt**, non agli 8pt che il codice chiede con `setFont`:
+        il QSS d'applicazione (`QWidget { font-size: 10pt }`) sovrascrive il
+        font impostato a mano, quindi 10pt e' cio' che l'utente vede davvero;
+      - senza Segoe UI (piattaforma offscreen, Linux, CI) le metriche vengono
+        da un font sostitutivo piu' largo e il numero non direbbe nulla sul
+        prodotto reale: li' il test si salta invece di fallire a vuoto.
+    """
+    from PyQt6.QtGui import QFont, QFontDatabase, QFontMetrics
+    from src.gui.jobs_panel import _STATUS_LABEL_KEY
+
+    if "Segoe UI" not in QFontDatabase.families():
+        pytest.skip("Segoe UI non disponibile: le metriche non sarebbero quelle rese")
+
+    panel = JobsPanel()
+    panel.reset(["https://mega.nz/file/AAA#k"])
+    utile = panel._cards[0]._badge.width() - 14   # padding 2px 6px + bordo 1px
+    reso = QFont("Segoe UI", 10)
+    reso.setBold(True)
+    fm = QFontMetrics(reso)
+    for lang in ("it", "en"):
+        TR.set_preference(lang)
+        for key in _STATUS_LABEL_KEY.values():
+            assert fm.horizontalAdvance(t(key)) <= utile, (lang, key, t(key))
 
 
 def test_job_detail_ip_table_survives_retranslation(qapp, isolated_prefs, monkeypatch):

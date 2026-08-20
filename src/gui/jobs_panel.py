@@ -82,9 +82,10 @@ _STATUS_BG_KEY = {
     STATUS_CANCELLED: "status_bg_cancelled",
     STATUS_ABANDONED: "status_bg_abandoned",
 }
-# Lo stato del modello -> chiave i18n. La MAPPA e' di jobs_panel, quindi il
-# testo del badge si traduce; lo stato grezzo (chiave) appartiene a jobs_model
-# e resta com'e', anche nel fallback quando non e' mappato.
+# Lo stato del modello -> chiave i18n. La MAPPA vive qui perche' e' qui che il
+# badge la usa, ma non e' privata del pannello: `status_label()` la espone a chi
+# deve rendere lo stesso stato altrove (il dialogo di dettaglio). Una seconda
+# mappa vorrebbe dire due elenchi da tenere allineati a mano.
 _STATUS_LABEL_KEY = {
     STATUS_QUEUED: "jobs_panel.status_queued",
     STATUS_RUNNING: "jobs_panel.status_running",
@@ -93,6 +94,19 @@ _STATUS_LABEL_KEY = {
     STATUS_CANCELLED: "jobs_panel.status_cancelled",
     STATUS_ABANDONED: "jobs_panel.status_abandoned",
 }
+
+
+def status_label(status: str) -> str:
+    """Etichetta tradotta di uno stato del modello ("in_corso" -> "In corso").
+
+    Lo stato grezzo resta il valore del modello: qui si traduce solo cio' che
+    si mostra. Uno stato non mappato ricade sul valore grezzo, che e' comunque
+    diagnosticabile.
+    """
+    key = _STATUS_LABEL_KEY.get(status)
+    return t(key) if key else status
+
+
 _PROGRESS_COLOR_KEY = {
     STATUS_RUNNING: "accent_active",
     STATUS_COMPLETED: "accent_ok",
@@ -233,7 +247,11 @@ class _JobCard(QFrame):
         bf.setBold(True)
         self._badge.setFont(bf)
         self._badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._badge.setFixedWidth(88)
+        # 104px: l'etichetta piu' larga e' l'italiano "Abbandonato" (84px a
+        # video, misurato con QFontMetrics sul font reso) piu' padding e bordo.
+        # A 88px veniva tagliata — l'unico troncamento vero rimasto nella
+        # finestra, in italiano.
+        self._badge.setFixedWidth(104)
         top.addWidget(self._badge)
 
         # Pulsante azione contestuale — dimensioni aumentate per bersaglio più comodo.
@@ -366,9 +384,7 @@ class _JobCard(QFrame):
         # Badge stato.
         fg = p.get(_STATUS_FG_KEY.get(job.status, "text_dim"), p["text"])
         bg = p.get(_STATUS_BG_KEY.get(job.status, "panel_alt"), p["panel_alt"])
-        label_key = _STATUS_LABEL_KEY.get(job.status)
-        label = t(label_key) if label_key else job.status
-        self._badge.setText(label)
+        self._badge.setText(status_label(job.status))
         self._badge.setStyleSheet(
             f"color: {fg}; background-color: {bg}; border-radius: 4px; "
             f"padding: 2px 6px; border: 1px solid {fg}40;"

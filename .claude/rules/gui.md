@@ -39,10 +39,12 @@ paths: ["src/gui/**/*.py"]
   se': la chiave lo scrive come `{n}` senza che il chiamante lo ripeta. Se nella frase compare
   anche un altro numero (il progressivo del file), quello si chiama `{file}`: `{n}` è riservato
   al conteggio che sceglie la forma, altrimenti i due si sovrascrivono.
-  Diverse voci italiane hanno `one` **identico** a `other` («1 sottocartelle», «1 file pronti»):
-  non è una svista ma il testo che l'app mostrava già prima della traduzione, tenuto invariato
-  dalla migrazione. La coppia serve all'inglese, che lì distingue davvero. Chi corregge quella
-  grammatica lo fa di proposito e aggiorna `test_italian_plurals_kept_as_they_were`.
+  I singolari italiani sono stati corretti in **F3** («1 sottocartella», «1 file pronto»): fino
+  ad allora ripetevano il plurale, difetto preesistente che le fasi di traduzione avevano tenuto
+  invariato di proposito per non cambiare il testo IT mentre si migrava. Restano con `one`
+  identico a `other` solo le voci in cui la parola italiana è davvero invariabile («1 file»,
+  «1 link») e le `err.*`, il cui testo viene dal catalogo del motore ed è anche il testo dei LOG:
+  `test_no_italian_plural_entry_repeats_itself` blocca l'elenco delle eccezioni ammesse.
 - **Testo composto per concatenazione**: non si traduce a pezzi. Una frase costruita con `+` o
   con f-string spezzate diventa **una chiave sola con parametri nominati** (un frammento come
   « dalla cartella scaricata?» non ha senso da solo). Fanno eccezione le clausole opzionali
@@ -98,6 +100,10 @@ paths: ["src/gui/**/*.py"]
   (`StatsBar` | separatore verticale | `ProxyBar`), `StatsPanel`, `JobsPanel`. `LinkPanel` NON è nel
   layout: è un gestore senza superficie propria (API `get_links`/`set_links`/`open_paste_dialog`),
   pilotato dal pulsante Incolla della `ControlsBar`.
+- **Lo stato di un job si rende con `jobs_panel.status_label()`**, mai col valore grezzo del
+  modello (`job.status` vale `"in_corso"`, non «In corso»). La mappa stato→chiave è una sola e
+  vive in `jobs_panel`: la usano il badge della card e il riepilogo di `JobDetailDialog`. Una
+  seconda mappa sarebbero due elenchi da tenere allineati a mano.
 - `JobsPanel` è una **lista a righe-card**: `QScrollArea` con un widget `_JobCard` per job (ha
   sostituito la vecchia `QTableView`). `JobsModel` resta la fonte dati e si legge con
   `get_job()`/`jobs_iter()`/`aggregates()`: **non è più un `QAbstractTableModel`** (niente

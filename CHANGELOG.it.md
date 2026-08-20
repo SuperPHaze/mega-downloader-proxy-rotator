@@ -27,6 +27,15 @@ Tutte le modifiche rilevanti del progetto. Formato basato su [Keep a Changelog](
 ### Corretto
 - Nella cronologia di un download la riga di un tentativo fallito ripeteva due volte
   «Tentativo N:» («Tentativo 1: Tentativo 1: download fallito…»). Ora compare una volta sola.
+- **Singolari italiani sgrammaticati.** Quando il conteggio era 1 alcuni messaggi restavano al
+  plurale: «1 sottocartelle», «1 file pronti al download», «1 file duplicati … sono stati
+  rimossi», «1 file NON verranno scaricati», «dopo 1 tentativi», «chiusa con 1 link non
+  completati», «Ripristinati 1 link», «Riavviati 1 download». Ora la frase è al singolare.
+- **Lo stato di un download non compare più in forma grezza.** Nella finestra di dettaglio si
+  leggeva «in_corso», «abbandonato» — il valore interno del programma — invece di «In corso»,
+  «Abbandonato». Ora usa le stesse etichette della lista dei download, in entrambe le lingue.
+- **L'etichetta di stato non viene più tagliata**: la più lunga («Abbandonato») non entrava nel
+  riquadro e si leggeva a metà.
 
 ## [1.21.0] — 2026-08-18
 

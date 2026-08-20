@@ -22,7 +22,7 @@ STRINGS: dict[str, str | dict[str, str]] = {
     "controls.settings": "Settings",
     "controls.experimental": "Experimental",
     "controls.paste_links": "Add links",
-    "controls.info": "Info",
+    "controls.info": "About",
 
     # ---- controls bar: tooltips --------------------------------------------
     "controls.concurrency_tooltip": (
@@ -64,7 +64,7 @@ STRINGS: dict[str, str | dict[str, str]] = {
 
     # ---- controls bar: Settings menu rows ------------------------------------
     "controls.row_concurrency": "Parallel files:",
-    "controls.row_time_limit": "Limit min/file:",
+    "controls.row_time_limit": "Time limit (min/file):",
     "controls.row_chunk": "Chunk:",
     "controls.row_download_dir": "Download folder:",
     "controls.row_language": "Language:",
@@ -101,9 +101,9 @@ STRINGS: dict[str, str | dict[str, str]] = {
     # ---- Experimental Features window ------------------------------------------
     "experimental.title": "Experimental Features",
     "experimental.info_tooltip": "Show the extended explanation",
-    "experimental.speed_selection": "Selection by speed",
+    "experimental.speed_selection": "Speed-based selection",
     "experimental.speed_selection_desc_short": (
-        "Tests the real speed of the proxies: only the fast enough ones are preferred. "
+        "Tests the real speed of the proxies: only the ones fast enough are preferred. "
         "The slow ones stay in reserve."
     ),
     "experimental.speed_selection_desc_long": (
@@ -361,7 +361,7 @@ STRINGS: dict[str, str | dict[str, str]] = {
         "other": ", {n} subfolders",
     },
     "folder_expand.truncated_suffix": (
-        " \u2014 WARNING: {n} more files left out by the limit of {max}"
+        " \u2014 WARNING: {n} more files excluded by the limit of {max}"
     ),
     "folder_expand.skipped_suffix": " \u2014 {n} unreadable nodes skipped",
     "folder_expand.duplicates_removed": {

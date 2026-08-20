@@ -34,6 +34,7 @@ from PyQt6.QtWidgets import (
 from src.gui.error_render import render_error
 from src.gui.i18n import TR, t, tn
 from src.gui.jobs_model import JobsModel, STATUS_ABANDONED
+from src.gui.jobs_panel import status_label
 
 
 def _ts(moment: float) -> str:
@@ -197,14 +198,14 @@ class JobDetailDialog(QDialog):
         # URL.
         if self.url_edit.toPlainText() != job.url:
             self.url_edit.setPlainText(job.url)
-        # Summary. Lo STATO resta il valore grezzo del modello ("in_corso"):
-        # tradurlo qui cambierebbe anche il testo italiano di oggi, quindi va
-        # con la passata sui badge di stato, rimandata a F3.
+        # Summary. Lo stato si rende con la stessa mappa del badge
+        # (`jobs_panel.status_label`): qui compariva il valore grezzo del
+        # modello — "in_corso" — in tutte e due le lingue.
         dur = int(job.duration_s())
         self.summary_label.setText(
             t(
                 "job_detail.summary",
-                status=job.status,
+                status=status_label(job.status),
                 progress=job.progress,
                 attempts=job.attempts,
                 errors=job.errors_count,

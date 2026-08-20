@@ -384,23 +384,21 @@ STRINGS: dict[str, str | dict[str, str]] = {
         "one": "\u2713 \u00ab{folder}\u00bb: {n} file",
         "other": "\u2713 \u00ab{folder}\u00bb: {n} file",
     },
-    # NOTA: la forma "one" ripete di proposito il plurale ("1 sottocartelle"),
-    # che e' quanto l'app mostra oggi. Non e' un refuso di traduzione ma un
-    # difetto italiano PREESISTENTE, tenuto identico per non cambiare il testo
-    # IT durante la migrazione. L'inglese, che nasce qui, e' invece corretto.
+    # Le forme "one" italiane sono state corrette in F3: fino ad allora
+    # ripetevano il plurale ("1 sottocartelle"), difetto PREESISTENTE che le
+    # fasi di traduzione avevano tenuto identico per non cambiare il testo IT.
     "folder_expand.subfolders_suffix": {
-        "one": ", {n} sottocartelle",
+        "one": ", {n} sottocartella",
         "other": ", {n} sottocartelle",
     },
     "folder_expand.truncated_suffix": (
         " \u2014 ATTENZIONE: altri {n} file esclusi dal limite di {max}"
     ),
     "folder_expand.skipped_suffix": " \u2014 {n} nodi illeggibili saltati",
-    # Stessa nota di subfolders_suffix: forma singolare identica al plurale.
     "folder_expand.duplicates_removed": {
         "one": (
-            "\u2022 {n} file duplicati (stesso file incollato più volte) "
-            "sono stati rimossi."
+            "\u2022 {n} file duplicato (stesso file incollato più volte) "
+            "è stato rimosso."
         ),
         "other": (
             "\u2022 {n} file duplicati (stesso file incollato più volte) "
@@ -457,7 +455,7 @@ STRINGS: dict[str, str | dict[str, str]] = {
     "main_window.expand_truncated_body": {
         "one": (
             "La cartella contiene più file del limite dell'app: "
-            "{n} file NON verranno scaricati.\n\n"
+            "{n} file NON verrà scaricato.\n\n"
             "Vuoi procedere con i primi {kept}?"
         ),
         "other": (
@@ -468,7 +466,7 @@ STRINGS: dict[str, str | dict[str, str]] = {
     },
     "main_window.expand_report_title": "Cartelle Mega espanse",
     "main_window.expand_ready": {
-        "one": "{n} file pronti al download.",
+        "one": "{n} file pronto al download.",
         "other": "{n} file pronti al download.",
     },
     "main_window.start_cancelled": "Avvio annullato.",
@@ -483,7 +481,7 @@ STRINGS: dict[str, str | dict[str, str]] = {
     "main_window.restore_body": {
         "one": (
             "La sessione precedente si è chiusa con {n} link non "
-            "completati.\nVuoi ricaricarli nella lista?\n\n"
+            "completato.\nVuoi ricaricarlo nella lista?\n\n"
             "I pezzi già scaricati verranno ripresi automaticamente."
         ),
         "other": (
@@ -494,7 +492,7 @@ STRINGS: dict[str, str | dict[str, str]] = {
     },
     "main_window.restored_status": {
         "one": (
-            "Ripristinati {n} link dalla sessione precedente. "
+            "Ripristinato {n} link dalla sessione precedente. "
             "Premi Avvia per riprendere."
         ),
         "other": (
@@ -513,7 +511,7 @@ STRINGS: dict[str, str | dict[str, str]] = {
     "main_window.fatal_body": "File {file}: {error}\n\nIl worker è terminato.",
     "main_window.fatal_status": "Errore bloccante file {file}: {error}",
     "main_window.abandoned_status": {
-        "one": "File {file} abbandonato dopo {n} tentativi: {error}",
+        "one": "File {file} abbandonato dopo {n} tentativo: {error}",
         "other": "File {file} abbandonato dopo {n} tentativi: {error}",
     },
 
@@ -548,7 +546,7 @@ STRINGS: dict[str, str | dict[str, str]] = {
     "main_window.restart_failed": "File {file}: riavvio non riuscito.",
     "main_window.restart_queued": "File {file}: riavvio in coda.",
     "main_window.restart_all_done": {
-        "one": "Riavviati {n} download.",
+        "one": "Riavviato {n} download.",
         "other": "Riavviati {n} download.",
     },
 
@@ -589,7 +587,7 @@ STRINGS: dict[str, str | dict[str, str]] = {
     "job_log.completed": "Download completato",
     "job_log.fatal": "Errore fatale: {error}",
     "job_log.abandoned": {
-        "one": "Link abbandonato dopo {n} tentativi: {error}",
+        "one": "Link abbandonato dopo {n} tentativo: {error}",
         "other": "Link abbandonato dopo {n} tentativi: {error}",
     },
     "job_log.cancelled": "Cancellato dall'utente",
