@@ -23,6 +23,11 @@ All notable changes to this project. Format based on [Keep a Changelog](https://
   written is rewritten in the new language too. Messages in the log files stay in Italian:
   they are diagnostic and must remain stable.
 
+### Changed
+- **English interface wording polished**: "Selection by speed" became "Speed-based selection"
+  (the same term the guide uses), "Limit min/file:" became "Time limit (min/file):", and the
+  button that opens the information window is now called "About", like the window itself.
+
 ### Fixed
 - In a download's history the line for a failed attempt repeated "Attempt N:" twice
   ("Attempt 1: Attempt 1: download failed…"). It now appears once.

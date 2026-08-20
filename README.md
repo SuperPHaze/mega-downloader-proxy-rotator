@@ -36,7 +36,7 @@ https://github.com/user-attachments/assets/bb04b245-43e9-430d-8cf6-6c240761c588
 
 ## 🚀 Overview
 
-A **Windows desktop app** (Python + PyQt6) that downloads files **and entire folders** from Mega.nz by routing traffic through public, free HTTP proxies. The file is split into a **queue of fixed-size fragments**, downloaded in parallel — each through a different proxy — decrypted on the fly and reassembled. It started as a technical IP-rotation experiment and is now a real-world downloader: single-user, single-process.
+A **Windows desktop app** (Python + PyQt6) that downloads files **and entire folders** from Mega.nz by routing traffic through public, free HTTP proxies. The file is split into a **queue of fixed-size fragments**, downloaded in parallel — each through a different proxy — decrypted on the fly and reassembled. It started as a technical IP-rotation experiment and is now a real-world downloader: single-user, single-process. The interface is **bilingual, Italian and English**.
 
 ## ✨ What makes it different
 
@@ -57,6 +57,7 @@ A **Windows desktop app** (Python + PyQt6) that downloads files **and entire fol
 - **"Experimental Features" panel** with connections per file, fragment budget, and speed-based selection with configurable threshold (real speed test + throughput-based proxy selection).
 - **Passive crash diagnostics**, always on (memory heartbeat, multi-thread tracebacks), universal structured logging (`logs/events.jsonl`), and an HTML report generator (`tools/report.py`).
 - **Tabbed interface** with a compact 3-zone dashboard (speed, downloads, proxy) — a radial speed gauge (% of session peak), a segmented bar for download status, compact cards for proxy pool status — button-based job filters showing the file count per state (in progress/completed/not completed), light/dark theme, global and per-job pause/resume/cancel.
+- **Bilingual Italian/English interface**: on first launch it follows the system language, then you choose it from the Settings menu (Automatic / Italiano / English) and the change is immediate, with no restart. The whole interface is translated, error messages included; messages in the log files stay in Italian because they are there for diagnostics.
 - **CLI mode** for headless machines.
 
 ## ⚡ Quick install (Windows 10/11)

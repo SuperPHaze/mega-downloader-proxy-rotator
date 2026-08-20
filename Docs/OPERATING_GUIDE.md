@@ -145,11 +145,25 @@ The proxy zone also shows two side-by-side bandwidth measurements, distinguished
 
 During a session, the available controls are pause/resume and cancel, both globally and per individual file from the table. Pausing does not lose the proxies: on resume, work continues from where it was suspended. Pausing takes effect **at the boundary of the current piece**: a chunk already in transfer is completed and only then does work suspend (suspending a piece mid-transfer would make the read timeouts expire). Canceling a single file can optionally also remove its already-downloaded data from disk.
 
-If the program is closed (or crashes) with downloads not yet completed, on the next launch it offers to **reload the remaining links** ("Restore previous session?"). By accepting, the links return to the list and — thanks to the resume described below — restart from the pieces already downloaded: just press Start.
+If the program is closed (or crashes) with downloads not yet completed, on the next launch it offers to **reload the remaining links** with a prompt titled "Restore session" ("The previous session ended with N unfinished links. Do you want to load them back into the list?"). By accepting, the links return to the list and — thanks to the resume described below — restart from the pieces already downloaded: just press Start.
 
 The download list can be filtered with three mutually exclusive buttons — **In progress**, **Completed** and **Not completed** — which together cover every possible state (queued and running jobs fall under "In progress"; failed, cancelled and abandoned ones under "Not completed"). Each button reports in parentheses the number of files in its category, updated in real time, so the makeup of the session is readable at a glance without switching filters.
 
 Resume also covers involuntary interruptions (program closed, blackout, error). Thanks to the `.part` + sidecar scheme, on resume only the missing chunks are re-downloaded; a cycle is considered complete only when the final renamed file exists, so an interrupted file is never mistaken for complete.
+
+---
+
+## 9-bis. Interface language
+
+The interface is **bilingual: Italian and English**. On first launch the program follows the **system language** — Italian if the system is in Italian, English in every other case — and from then on the choice is the user's.
+
+You change it from the **Settings → "Language:"** menu, which offers three entries: **Automatic**, **Italiano**, **English**. "Automatic" is not a language but a rule: it keeps following the system, and shows in brackets which language it is picking at that moment ("Automatic (Italiano)"). Choosing Italiano or English explicitly steps out of the rule; to go back, just set "Automatic" again. The choice is **remembered** and restored on the next launch.
+
+The change is **immediate and needs no restart**: panels, menus, buttons, dialogs and the status line rewrite themselves in place, including windows that are already open — if a download's detail window is open, the attempts history already written is retranslated too.
+
+The translation covers the **whole** interface, including the **error messages** of individual files, which are the part that usually lags behind: errors from the engine travel to the window as a code plus parameters, not as an already-composed sentence, and that is why they can be rendered in either language at drawing time.
+
+**Messages in the log files stay in Italian instead**, whatever the interface language is. That is deliberate: they are diagnostic material and must stay stable over time, otherwise comparing two sessions or looking up an error in an old log would turn into a translation exercise. It applies to `logs/app.log`, `logs/events.jsonl`, `logs/failed_links.log` and to the messages of the CLI mode.
 
 ---
 
