@@ -17,9 +17,24 @@ All notable changes to this project. Format based on [Keep a Changelog](https://
   reading** and every message of the **main window**: start-up warnings, restoring the previous
   session, delete-from-disk confirmations and the status line at the bottom. Singular and plural
   are correct in both languages ("1 link ready" / "2 links ready", "1 subfolder" /
-  "3 subfolders"). Still in Italian for now: the per-download detail window and the **error
-  messages** of individual files, which will be translated together in a dedicated phase.
-  Messages in the log files stay in Italian: they are diagnostic and must remain stable.
+  "3 subfolders"). Also translated: the **per-download detail window** (summary, IP history,
+  attempts log) and the **error messages** of individual files, including the status lines of
+  proxy collection; if you switch language while a detail window is open, the log already
+  written is rewritten in the new language too. Messages in the log files stay in Italian:
+  they are diagnostic and must remain stable.
+
+### Fixed
+- In a download's history the line for a failed attempt repeated "Attempt N:" twice
+  ("Attempt 1: Attempt 1: download failed…"). It now appears once.
+- **Ungrammatical Italian singulars.** When the count was 1, some Italian messages stayed in
+  the plural: "1 sottocartelle", "1 file pronti al download", "1 file duplicati … sono stati
+  rimossi", "1 file NON verranno scaricati", "dopo 1 tentativi", "chiusa con 1 link non
+  completati", "Ripristinati 1 link", "Riavviati 1 download". The sentence is now singular.
+- **A download's status is no longer shown in raw form.** The detail window read "in_corso",
+  "abbandonato" — the program's internal value — instead of "Running", "Abandoned". It now uses
+  the same labels as the download list, in both languages.
+- **The status label is no longer clipped**: the longest one (the Italian "Abbandonato") did not
+  fit inside the badge and was cut off halfway.
 
 ## [1.21.0] — 2026-08-18
 
