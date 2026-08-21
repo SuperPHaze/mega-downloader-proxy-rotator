@@ -33,14 +33,24 @@ def base64_to_a32(s: str) -> tuple[int, ...]:
 
 
 def decrypt_attr(data: bytes, key: tuple[int, ...]) -> dict | None:
-    """Decifra il blob attributi Mega (AES-CBC, IV=0). Ritorna None su parse fail."""
+    """Decifra il blob attributi Mega (AES-CBC, IV=0). Ritorna None su parse fail.
+
+    Il blob e' zero-paddato all'ultimo blocco AES SOLO alla creazione: un file
+    rinominato lato Mega puo' lasciare residuo di cifratura del nome precedente
+    dopo il terminatore, che decifra a byte non-zero (osservato su un caso
+    reale). `json.loads` sull'intera coda fallirebbe con "Extra data" anche a
+    chiave giusta e nome corretto: si usa `raw_decode` per fermarsi al primo
+    oggetto JSON valido e ignorare cosa segue. La decodifica e' UTF-8 (il blob
+    Mega lo e'): `errors="replace"` copre il residuo non-JSON in coda senza
+    sollevare su nomi con accenti nella parte valida.
+    """
     try:
         aes = AES.new(a32_to_str(key), AES.MODE_CBC, b"\0" * 16)
         plain = aes.decrypt(data)
-        text = plain.decode("latin-1").rstrip("\0")
+        text = plain.decode("utf-8", errors="replace").rstrip("\0")
         if text[:6] != 'MEGA{"':
             return None
-        parsed = json.loads(text[4:])
+        parsed, _ = json.JSONDecoder().raw_decode(text[4:])
         return parsed if isinstance(parsed, dict) else None
     except (ValueError, json.JSONDecodeError, UnicodeDecodeError):
         return None

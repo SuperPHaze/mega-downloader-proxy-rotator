@@ -31,6 +31,12 @@ Tutte le modifiche rilevanti del progetto. Formato basato su [Keep a Changelog](
   «About», come la finestra stessa.
 
 ### Corretto
+- **Nome del file singolo letto correttamente** (`mega_<handle>` invece del nome vero). Alcuni
+  file Mega hanno il blob degli attributi con residuo non-zero dopo il nome (es. file rinominati
+  lato Mega): la lettura pretendeva che l'intera stringa decifrata fosse JSON valido e falliva,
+  facendo ripiegare il nome sul segnaposto pur con chiave e contenuto corretti. Ora si estrae solo
+  l'oggetto JSON valido, ignorando il residuo. Colta l'occasione, la decodifica del blob è passata
+  da latin-1 a UTF-8: i nomi accentati non rischiano più il mojibake.
 - Nella cronologia di un download la riga di un tentativo fallito ripeteva due volte
   «Tentativo N:» («Tentativo 1: Tentativo 1: download fallito…»). Ora compare una volta sola.
 - **Singolari italiani sgrammaticati.** Quando il conteggio era 1 alcuni messaggi restavano al

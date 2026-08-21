@@ -202,6 +202,7 @@ package.ps1                # packaging: crea dist/MegaProxyRotator-X.Y.Z.zip
   `_resolve_root` scende quindi per fallback (tipo 2 → handle == id del link → nodo senza genitore
   nell'elenco, preferendo una cartella e in modo deterministico).
 - L'import di `pycryptodome` (pesante) avviene localmente dentro `MegaClient.download()` e `ParallelMegaDownloader.download()` per non rallentare l'avvio della GUI.
+- **Blob attributi Mega: il padding dell'ultimo blocco AES non è sempre zero.** Un file rinominato lato Mega può lasciare residuo di cifratura del nome precedente dopo il terminatore `}` (byte non-zero, osservato su un caso reale). `decrypt_attr` (`mega_crypto.py`) usa `json.JSONDecoder().raw_decode()` per fermarsi al primo oggetto JSON valido invece di pretendere che l'intera stringa decifrata sia JSON: un `json.loads` sull'intera coda falliva con "Extra data" anche a chiave e nome giusti, facendo ripiegare il nome file su `mega_<handle>` (bug corretto). La decodifica è UTF-8 (non più latin-1): preserva i nomi accentati.
 
 ## Logging
 - Configurato in `core/logging_setup.py`. Tutti i log diagnostici/operativi vivono in `logs/` (vedi `LOGS_DIR`/`REPORTS_DIR` in `core/config.py`); restano in root solo le cache (`proxy_cache.json`, `branding_cache.json`, `branding_logo.*`).

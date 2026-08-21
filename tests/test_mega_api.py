@@ -197,3 +197,29 @@ def test_unparsable_url_still_raises():
     with pytest.raises(MegaApiError, match="non parsabile") as exc:
         client.resolve_public_url("https://example.com/nope")
     assert exc.value.error_code == "url_not_parsable"
+
+
+# ---- resolve di un file singolo: nome vero, non il ripiego -----------------
+
+def test_single_file_resolve_reads_the_real_name_from_attribs():
+    # Caso reale (handle jR0jjSZK): il blob "at" catturato dal vivo ha residuo
+    # non-zero dopo la '}' di chiusura (file rinominato lato Mega). Prima del
+    # fix, resolve_public_url ripiegava su "mega_<handle>" pur con chiave e
+    # contenuto giusti (leggibile in VLC): decrypt_attr falliva su "Extra
+    # data". Qui si passa dall'URL pubblico fino al file_name finale.
+    url = "https://mega.nz/file/jR0jjSZK#DwH38x_DYgk-mVttQloBGEYJ4Xv4DZ5sKhgE3-ae048"
+    at = (
+        "xP7WBM5hdFrJLk9ZIJicefmGITGmNbhJmKXk69KVsVhp-tjW8z0P1e-0Koi6XDBM6"
+        "Uzx8uJvMy31PwU3ZHvKYtrTNLwgBeGa6ju6Wbq8Chwow3RuLp6zZl-QJo6RULEk"
+    )
+    client = MegaPublicClient()
+
+    def fake_post(url_, params=None, data=None, timeout=None):
+        return _FakeResp(json.dumps([{"g": "http://cdn/x", "s": "2481328318", "at": at}]))
+
+    client._session.post = fake_post
+    info = client.resolve_public_url(url)
+    assert info["file_name"] == (
+        "We.Were.Soldiers.Fino.All.Ultimo.Uomo.2002.ITA-ENG.BRRip.720p.x264-P92.mkv"
+    )
+    assert info["file_name"] != "mega_jR0jjSZK"
