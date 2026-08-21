@@ -6,6 +6,8 @@ Tutte le modifiche rilevanti del progetto. Formato basato su [Keep a Changelog](
 
 ## [Non rilasciato]
 
+## [2.0.0] — 2026-08-21
+
 ### Aggiunto
 - **Interfaccia in italiano e inglese.** All'avvio il programma segue la lingua del sistema
   (italiano se il sistema è in italiano, inglese in tutti gli altri casi) e nel menu

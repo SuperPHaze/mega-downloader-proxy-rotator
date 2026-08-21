@@ -6,6 +6,8 @@ All notable changes to this project. Format based on [Keep a Changelog](https://
 
 ## [Unreleased]
 
+## [2.0.0] — 2026-08-21
+
 ### Added
 - **Interface in Italian and English.** On startup the program follows the system
   language (Italian if the system is in Italian, English in every other case) and the **Settings**
@@ -29,6 +31,12 @@ All notable changes to this project. Format based on [Keep a Changelog](https://
   button that opens the information window is now called "About", like the window itself.
 
 ### Fixed
+- **Single-file name now read correctly** (it fell back to `mega_<handle>` instead of the real
+  name). Some Mega files have an attribute blob with non-zero leftover bytes after the name
+  (e.g. files renamed on Mega's side): the reader expected the whole decrypted string to be
+  valid JSON and failed, falling back to the placeholder even with the right key and content.
+  Now only the valid JSON object is extracted, ignoring the leftover bytes. While at it, the
+  blob decoding moved from latin-1 to UTF-8: accented names no longer risk mojibake.
 - In a download's history the line for a failed attempt repeated "Attempt N:" twice
   ("Attempt 1: Attempt 1: download failed…"). It now appears once.
 - **Ungrammatical Italian singulars.** When the count was 1, some Italian messages stayed in
