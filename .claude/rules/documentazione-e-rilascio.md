@@ -26,6 +26,9 @@ IT; l'inglese si rigenera col sync, mai a mano):
 - **`.claude/rules/`**: la regola d'area, se cambia o si aggiunge una convenzione.
 - **`MyDocs/DOC_MAP.md`**: ancore delle sezioni nuove o rinominate, poi `python MyDocs/check_doc_map.py`
   per confermare che tutte le ancore reggano.
+- **Demo runner** (`tools/demo/demo_runner.py`): se cambi qualcosa nel suo
+  "Contratto con MDPR", aggiornalo nello stesso ciclo e verifica con
+  `pytest tests/test_demo_runner_smoke.py`. Vedi `.claude/rules/demo-runner.md`.
 
 `src/core/config.py` resta la **fonte di verità per i numeri** (mai citarli a memoria). Nessuna eccezione e
 nessun "lo aggiorno dopo": se non sai se un documento è impattato, **aprilo e verifica**. La checklist di

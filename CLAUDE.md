@@ -2,7 +2,8 @@
 
 > Regole permanenti (non negoziabili, da leggere prima di toccare GUI o documentazione): GUI
 > bilingue in sync — `.claude/rules/gui.md` · Doc bilingue in sync — `.claude/rules/docs-i18n.md` ·
-> Doc sempre allineata al codice — `.claude/rules/documentazione-e-rilascio.md`.
+> Doc sempre allineata al codice — `.claude/rules/documentazione-e-rilascio.md` ·
+> Demo runner allineato — `.claude/rules/demo-runner.md`.
 
 ## Scopo del progetto
 App desktop Python+PyQt6 che scarica file da Mega.nz attraverso proxy HTTP gratuiti, con una coda di chunk a dimensione fissa (default 32 MB) scaricati da N connessioni parallele (default 10), ciascuna su un proxy diverso, e più file in parallelo (default 1, configurabile fino a 5).
@@ -119,7 +120,18 @@ tools/
 ├── monitor_gui.py         # GUI live monitor velocita' download
 ├── monitor_speed.py       # CLI polling cartella downloads/
 ├── analyze_telemetry.py   # analizzatore offline della telemetria scatola nera (sola lettura): CSV + report HTML/MD + export AI; --link-mbit per la % di linea usata
-└── report.py              # report HTML diagnostico (sola lettura) da logs/events.jsonl + logs/crash.log
+├── report.py              # report HTML diagnostico (sola lettura) da logs/events.jsonl + logs/crash.log
+└── demo/
+    └── demo_runner.py     # genera video demo + galleria bilingue (IT/EN) per il sito e le release:
+                            #   pilota la MainWindow vera via slot Qt reali (nessun mouse simulato),
+                            #   registra con ffmpeg (gdigrab), fa scaricare per davvero due link Mega
+                            #   dati, produce un taglio a velocita' variabile + screenshot agli eventi.
+                            #   `--dry-run` (<5s) valida import/slot/i18n senza eseguire nulla di vero.
+                            #   Cittadino di prima classe: tenuto in sync via
+                            #   `.claude/rules/demo-runner.md` + `pytest tests/test_demo_runner_smoke.py`.
+                            #   La sezione "Contratto con MDPR" in cima al file elenca ESATTAMENTE
+                            #   ogni punto della GUI da cui dipende (imports, slot privati, campi di
+                            #   `Job`, nessun segnale Qt — lo stato dei job si legge per polling).
 
 scripts/
 ├── bench_cache.py         # bench cold vs hot start (cache)

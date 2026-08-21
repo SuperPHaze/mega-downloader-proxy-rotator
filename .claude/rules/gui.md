@@ -97,6 +97,10 @@ paths: ["src/gui/**/*.py"]
 - Nomi di variabili, funzioni, classi, file e segnali in inglese.
 - I commenti del codice sono in italiano.
 
+Nota: il demo runner (`tools/demo/demo_runner.py`) pilota la GUI via slot Qt
+reali (nessun mouse simulato). Vedi `.claude/rules/demo-runner.md` per come
+tenerlo allineato quando cambi slot pubblici o dialoghi.
+
 ## Concorrenza
 - Mai bloccare il thread GUI: nessuna chiamata di rete, scraping, validazione o download dentro slot della GUI.
 - Tutto il lavoro pesante gira in `QThread` (vedi `DownloadWorker`) o nell'orchestrator.
