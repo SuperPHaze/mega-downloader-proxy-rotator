@@ -15,6 +15,9 @@ paths: ["README*.md", "CHANGELOG*.md", "Docs/**/*.md", "index*.html", "install.p
   lingue. **Entrambi i file sono gitignorati**: sono strumenti locali (`MyDocs/` è privata), e su
   una macchina nuova vanno ricreati — il `.bat` se ne accorge e lo dice invece di fallire a metà.
   Il prompt mostra i diff e applica **solo dopo conferma**; non committa e non pusha mai.
+- **Stessa disciplina di parità per TUTTA la doc pubblica** (README, guida, CHANGELOG, sito,
+  script — le coppie sotto): **se una modifica IT non ha fatto il suo giro di sync EN nello stesso
+  ciclo, la modifica non è finita**. Non si scrive mai l'inglese a mano fuori da `sync-docs.bat`.
 - Coppie fonte→generato: `README.it.md`→`README.md`; `Docs/GUIDA_OPERATIVA.md`→
   `Docs/OPERATING_GUIDE.md`; `CHANGELOG.it.md`→`CHANGELOG.md`; `index.it.html`→`index.html`.
   Per gli script `install.ps1`/`package.ps1` la fonte è il 2° argomento di `L` (italiano), l'inglese

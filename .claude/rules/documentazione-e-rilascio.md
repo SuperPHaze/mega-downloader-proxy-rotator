@@ -5,6 +5,11 @@ paths: ["**"]
 # Regola: documentazione allineata e checklist di rilascio
 
 ## Principio (Definition of Done) — NON NEGOZIABILE
+**Perché**: fra un anno vogliamo poter modificare o riprendere in mano questo tool — noi stessi o un LLM
+a cui lo passiamo — leggendo **solo** la sua documentazione. Se la doc è desincronizzata dal codice,
+questa possibilità è persa e il tool diventa incomprensibile a distanza di tempo. La doc **è** la memoria
+del progetto.
+
 La documentazione si aggiorna **insieme** al codice, **nello stesso ciclo di lavoro**. Una modifica NON è
 "finita" finché OGNI documento impattato non è allineato al comportamento reale del tool. **Avere la
 documentazione non aggiornata rispetto al codice NON è accettabile.**
@@ -42,6 +47,8 @@ coincidere con `config.py` e con la tabella §12.
    - `CLAUDE.md` — se cambia architettura/moduli/convenzioni (interno).
 3. **Verificare i numeri** citati contro `config.py`.
 4. **Rigenerare l'inglese** col sync (`sync-docs.bat`) e rivedere il diff.
+5. **Test del "fra un anno"**: chiediti se una persona nuova (o un LLM) che legge SOLO la doc IT
+   aggiornata capisce cosa fa questa modifica e come integrarla. Se no, la doc non è ancora abbastanza.
 Nessun documento deve restare indietro rispetto al codice.
 
 ## A ogni rilascio (bump versione)

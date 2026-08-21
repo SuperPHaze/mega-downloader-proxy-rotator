@@ -1,5 +1,9 @@
 # Mega Downloader Proxy Rotator (MDPR)
 
+> Regole permanenti (non negoziabili, da leggere prima di toccare GUI o documentazione): GUI
+> bilingue in sync — `.claude/rules/gui.md` · Doc bilingue in sync — `.claude/rules/docs-i18n.md` ·
+> Doc sempre allineata al codice — `.claude/rules/documentazione-e-rilascio.md`.
+
 ## Scopo del progetto
 App desktop Python+PyQt6 che scarica file da Mega.nz attraverso proxy HTTP gratuiti, con una coda di chunk a dimensione fissa (default 32 MB) scaricati da N connessioni parallele (default 10), ciascuna su un proxy diverso, e più file in parallelo (default 1, configurabile fino a 5).
 Origine: test tecnico di rotazione IP (DOWNLOAD_CYCLES=3, completato e superato il 2026-05-31). Ora `DOWNLOAD_CYCLES=1`: uso normale come downloader.
@@ -13,7 +17,7 @@ src/
 │   ├── config.py          # costanti globali (timeout, soglie, paths, UA); include SPEED_SELECTION_* e VALIDATOR_SPEED_TEST_* per la selezione per velocità
 │   ├── state.py           # SessionState thread-safe (pausa/annullo)
 │   ├── errors.py          # UserFacingError: le eccezioni che l'utente legge portano `error_code` + `params`; `str(exc)` resta la frase ITALIANA (e' cio' che finisce nei log). `format_it()` non solleva mai (gira dentro la gestione degli errori); `error_payload()` da' codice+parametri anche per le eccezioni non nostre (ripiego `unexpected`). Le basi miste vogliono UserFacingError per PRIMO: con OSError davanti, il suo __new__ intercetta la costruzione
-│   ├── error_catalog.py   # ERROR_TEXTS_IT: i 50 testi italiani degli errori, indicizzati per codice. Vive in core/ e non nei dizionari GUI perche' serve ai LOG, che restano italiani anche con l'interfaccia in inglese; in E2 `strings_it.py` li innestera' come chiavi `err.*`
+│   ├── error_catalog.py   # ERROR_TEXTS_IT: i 50 testi italiani degli errori, indicizzati per codice. Vive in core/ e non nei dizionari GUI perche' serve ai LOG, che restano italiani anche con l'interfaccia in inglese; `strings_it.py` li innesta come chiavi `err.*`
 │   ├── telemetry.py       # telemetria "scatola nera": recorder asincrono (writer daemon) di tentativi-chunk + campioni 1Hz in logs/telemetry/<id>/; no-op se TELEMETRY_ENABLED=False
 │   ├── diagnostics.py     # heartbeat periodico (INFO), RSS via psutil se disponibile / fallback GetProcessMemoryInfo (psapi) su Windows, marcatori di sessione, riga CONFIG a inizio sessione
 │   ├── events.py          # EventBus opzionale (non usato dal flusso)

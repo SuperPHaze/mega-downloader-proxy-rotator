@@ -8,14 +8,28 @@ paths: ["src/gui/**/*.py"]
 - SOLO PyQt6. Niente Tkinter, niente PySide6, niente wxPython.
 - Importare i widget da `PyQt6.QtWidgets`, i tipi core da `PyQt6.QtCore`.
 
-## Lingua
-- **GUI bilingue IT/EN.** Nessuna stringa visibile all'utente (label, placeholder, titoli finestra,
-  messaggi di errore, tooltip, status bar) va scritta hard-coded: si passa SEMPRE da
+## Lingua — i18n della GUI (NON NEGOZIABILE)
+- **GUI bilingue IT/EN.** Nessuna stringa visibile all'utente — `setText`/`setToolTip`/
+  `setWindowTitle`/`setPlaceholderText`/`addButton`/testi di `QMessageBox`, label, titoli
+  finestra, messaggi di errore, status bar — va scritta hard-coded: si passa SEMPRE da
   `t("<superficie>.<elemento>")` / `tn(...)` di `gui/i18n.py`, con la voce aggiunta in
-  **entrambi** i dizionari `gui/strings_it.py` (fonte) e `gui/strings_en.py` (traduzione).
+  **entrambi** i dizionari `gui/strings_it.py` (fonte) e `gui/strings_en.py` (traduzione), nello
+  **stesso commit** che introduce o rinomina la stringa. **Zero eccezioni** (escluse le categorie
+  sotto: log, unità di misura, ecc.).
 - **Chiavi**: slug stabile `"<superficie>.<elemento>"`, mai la stringa italiana come chiave
   (cambiare il testo IT non deve invalidare la traduzione EN). **Parametri sempre nominati**
-  (`{name}`, `{path}`): in inglese l'ordine delle parti della frase cambia.
+  (`{name}`, `{path}`): in inglese l'ordine delle parti della frase cambia. **Chiave mancante**:
+  `t()`/`tn()` rendono il testo **italiano** come ripiego (mai lo slug grezzo a video); solo se la
+  chiave manca anche in italiano (bug, non gap di traduzione) si vede lo slug — è l'ultima risorsa
+  diagnosticabile, coperta dal test di parità.
+- **Parità di dizionari**: ogni chiave presente in `strings_it.py` **e** `strings_en.py` (nessuna
+  orfana in nessuno dei due sensi); per ogni chiave l'insieme dei placeholder `{nome}` e degli
+  **specificatori di formato** (`{required:,}`, `{kbps:.1f}`) coincide fra le due lingue, non solo
+  il nome del parametro — uno specificatore perso in una lingua è un bug reale già capitato una
+  volta senza che un controllo debole se ne accorgesse.
+- **Gli errori si rendono via chiavi** (`error_code` + `params`, resi da `gui/error_render.py`),
+  mai come stringa già composta passata a un segnale: vedi più sotto "Codici d'errore che nascono
+  nella GUI" e la regola gemella in `downloader.md` per gli errori che nascono nel motore.
 - **Cambio a caldo**: ogni superficie persistente espone `retranslate()` — l'elenco dei
   `setText`/`setToolTip` che il costruttore già esegue, richiamato anche da
   `MainWindow._on_language_changed`. È il gemello di `refresh_theme()` per il tema; chi aggiunge
