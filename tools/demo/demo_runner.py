@@ -80,9 +80,11 @@
 #   (_settings_menu/language_combo/theme_btn sono verificati dal dry-run costruendo una
 #   ControlsBar() autonoma — headless, sicura: nessuna rete nel suo __init__)
 # - LinkPanel.open_paste_dialog()                  — apre il dialogo "Incolla link Mega"
-#                                                     (usato DUE volte dal tour: vuoto per
-#                                                     mostrare l'interfaccia pulita, poi
-#                                                     compilato per l'aggiunta reale)
+#                                                     (usato TRE volte dal tour: vuoto per
+#                                                     mostrare l'interfaccia pulita, compilato
+#                                                     per l'aggiunta reale, poi una terza volta
+#                                                     al passo 15 col ri-tentativo degli STESSI
+#                                                     link — vedi POPUP INTENZIONALI sopra)
 # - JobsPanel._on_filter_button_clicked(category)  — applica un filtro (usato per "Completati")
 # - JobsPanel.model                                — attributo, istanza di JobsModel (SOLO
 #                                                     verificabile con un giro vero: JobsPanel
@@ -109,17 +111,27 @@
 # valori possono comunque essere sbagliati): vedi "Verificato SOLO da un giro
 # reale" sotto.
 #
-# Chiavi i18n usate dal watchdog dialog: NESSUNA. Il watchdog distingue i
-# dialog per CLASSE Python (isinstance/type(w).__name__: "PasteLinksDialog",
-# "AboutDialog", "ExperimentalFeaturesDialog", "QProgressDialog", QMessageBox)
-# e per QMessageBox.ButtonRole (il bottone "Scarica comunque" dello storico
-# "gia' scaricato" si riconosce da ButtonRole.DestructiveRole, non dal testo
-# tradotto) — quindi e' insensibile alla lingua per costruzione. Se
-# link_panel.confirm_already_downloaded() smettesse di assegnare
-# DestructiveRole al bottone "scarica comunque", il watchdog lo tratterebbe
-# come un dialog IGNOTO (chiuso dopo 4s col bottone di default): il --dry-run
-# non lo verifica (e' un comportamento, non un'API), va controllato a mano se
-# si tocca link_panel.py.
+# Chiavi i18n usate dal watchdog per RICONOSCERE un dialog: NESSUNA. Il
+# watchdog distingue i dialog per CLASSE Python (isinstance/type(w).__name__:
+# "PasteLinksDialog", "AboutDialog", "ExperimentalFeaturesDialog",
+# "QProgressDialog", QMessageBox) e, per i due QMessageBox del tour, per
+# QMessageBox.ButtonRole/Icon — MAI dal testo tradotto, quindi e' insensibile
+# alla lingua per costruzione:
+# - "gia' scaricato": si riconosce dall'INSIEME dei ButtonRole presenti
+#   (Accept+Destructive+Reject insieme). Se link_panel.confirm_already_downloaded()
+#   smettesse di usare uno di questi tre ruoli, il watchdog lo tratterebbe
+#   come un dialog IGNOTO (chiuso dopo 4s col bottone di default): il
+#   --dry-run non lo verifica (e' un comportamento, non un'API), va
+#   controllato a mano se si tocca link_panel.py.
+# - "cartelle espanse": si riconosce dal flag di stato del driver (armato
+#   prima di ogni Avvia con un link cartella) insieme a Icon.Information + un
+#   solo bottone. Se MainWindow._on_expansion_done() smettesse di essere
+#   Icon.Information a un solo bottone, stessa sorte (dialog ignoto, 4s).
+# La chiave i18n "main_window.expand_report_title" usata per il TITOLO di
+# quel popup non serve al riconoscimento (che resta insensibile alla lingua
+# come sopra): il --dry-run la verifica comunque, ma solo per accorgersi se
+# la chiave sparisce dai dizionari (romperebbe il testo del popup, non la
+# sua individuazione).
 #
 # NOTA SUL NOME "Strumenti": nel codice della GUI non esiste un menu chiamato
 # "Strumenti". Il pulsante piu' vicino concettualmente (unica superficie a
@@ -128,12 +140,67 @@
 # il tour apre per il quinto passo. Se in futuro nasce un vero menu
 # "Strumenti", questo runner va aggiornato per puntare li'.
 #
+# POPUP INTENZIONALI (NON anomalie, NON da liquidare col ramo generico del
+# watchdog): il giro reale ne mostra due, entrambi comportamenti VERI di
+# MDPR. Il watchdog li riconosce PRIMA del suo ramo generico e li tratta come
+# tappe scriptate del tour, con screenshot dedicato:
+#
+# - "Cartelle Mega espanse": QMessageBox.information(self,
+#   t("main_window.expand_report_title"), "\n".join(report)) dentro
+#   MainWindow._on_expansion_done() (src/gui/main_window.py). Compare SEMPRE
+#   dopo un'espansione di cartella riuscita: FolderExpandWorker.run()
+#   aggiunge almeno una riga di riepilogo (chiave "folder_expand.ok_line")
+#   per ogni cartella espansa, quindi "report" non e' mai vuoto quando
+#   l'input contiene un link cartella (sempre vero nel giro di questo
+#   runner). Icona Information, UN solo bottone OK (AcceptRole). Il
+#   watchdog lo riconosce da un flag di stato del driver ("sto aspettando
+#   questo popup", armato dal driver appena PRIMA di ogni clic su Avvia che
+#   include un link cartella — sia il primo giro sia il ri-tentativo del
+#   passo 15) combinato con icona Information + un solo bottone: screenshot
+#   "08-popup-cartelle-espanse.png" alla PRIMA comparsa, trattenuto ~5s in
+#   video, poi chiuso con OK. Ricompare (chiuso, non ri-fotografato) al
+#   ri-tentativo del passo 15, perche' la cartella viene rielencata da capo.
+# - "Links already downloaded": funzione DI MODULO (non un metodo di
+#   classe) confirm_already_downloaded(links, parent) in
+#   src/gui/link_panel.py. Confronta i link (per handle Mega, non per
+#   stringa URL) con download_history.log e, se almeno uno risulta gia'
+#   scaricato, mostra UN QMessageBox (Icon.Warning) con TRE bottoni custom:
+#   "Salta gia' scaricati" (AcceptRole, default — filtra i doppioni e
+#   prosegue con gli altri), "Scarica comunque" (DestructiveRole — li tiene
+#   tutti, li riscarica per davvero), "Annulla" (RejectRole — abortisce,
+#   la funzione ritorna None). E' chiamata da DUE punti, non uno:
+#   LinkPanel._on_paste() (subito dopo la conferma del dialogo "Incolla
+#   link") e MainWindow._start_with_links() (subito dopo il clic su Avvia,
+#   sulla lista GIA' espansa se c'erano cartelle). Al passo 15 del tour
+#   (ri-tentativo con gli stessi link) scatta in ENTRAMBI i punti nello
+#   stesso click: la prima comparsa (al paste, sui 2 link grezzi) va chiusa
+#   in silenzio con "Scarica comunque" — altrimenti la lista si svuota li'
+#   e il successivo Avvia non fa piu' scattare nulla; la seconda (all'Avvia,
+#   sui 2 link ormai espansi — "2 di 2 gia' scaricati" coi link di test in
+#   uso) e' quella VERA da mostrare: screenshot "15-popup-gia-scaricato.png",
+#   poi chiusa con "Salta gia' scaricati" (NON "Scarica comunque": vogliamo
+#   dimostrare l'anti-duplicati, non riscaricare per davvero). Il watchdog
+#   la riconosce dall'INSIEME dei ButtonRole presenti (Accept+Destructive+
+#   Reject insieme), non dal testo tradotto: insensibile alla lingua come il
+#   resto del watchdog, e insensibile anche a QUANTE volte compare.
+#
 # File/formati letti o scritti (OPACHI: il runner fa backup/restore a
 # livello di BYTE, non parsa mai le chiavi JSON):
 # - preferences.json (REPO_ROOT) — l'unica scrittura la fa TR.set_preference(lang)
 #   (chiave "language"); il runner fa solo backup su sidecar prima e restore dopo
 # - session_state.json (REPO_ROOT) — cancellato prima di aprire MainWindow (evita
 #   il prompt "Riprendi sessione?"); backup/restore identico a preferences.json
+# - logs/download_history.log (LOGS_DIR di src.core.config) — backup/restore
+#   IDENTICO a preferences.json/session_state.json (sidecar + self-heal), ma con
+#   in piu' una PULIZIA MIRATA prima del giro: le righe che riguardano gli
+#   handle dei due link di test (GfgljYpJ/LTwSwTqS, vedi _TEST_HISTORY_HANDLES)
+#   vengono rimosse dal file live prima di aprire MainWindow, cosi' un residuo
+#   di storico di un giro precedente non fa scattare "gia' scaricato" fin dal
+#   PRIMO Avvia (lo vogliamo SOLO al ri-tentativo scriptato del passo 15). Il
+#   file completo (storico vero incluso) torna al suo posto dal sidecar a fine
+#   pass, qualunque cosa succeda nel frattempo — il giro scarica per davvero,
+#   quindi durante il pass il file live si arricchisce di righe vere che
+#   vanno scartate al restore, non fuse.
 # - *.demo_orig_backup — sidecar di backup creati dal runner stesso (non di MDPR)
 # - MyDocs/gallery/last-results.json — manifest del runner (non di MDPR): tiene
 #   traccia dell'ultimo risultato OK per (modalita', lingua), cosi' un giro
@@ -147,14 +214,26 @@
 #   <output-dir>/_tmp_segments_<lang>/, <output-dir>/_tmp_explorer_<lang>.mp4 — output
 #   del runner, non di MDPR
 #
+# Flag --reset: PRIMA di qualunque pass (mai in --dry-run, che resta
+# read-only), svuota <output-dir> (default MyDocs/gallery/) tranne le
+# cartelle temporanee "_tmp_*" ancora attive e gli eventuali file nascosti,
+# poi ricrea la cartella vuota. Vedi reset_gallery().
+#
 # Verificato SOLO da un giro reale (il --dry-run non ci arriva):
 # - che i job passino DAVVERO per RUNNING/COMPLETED/ABANDONED con questi nomi
 #   esatti (STATUS_* import OK non garantisce che jobs_iter() li usi ancora
 #   cosi' — e' un comportamento, non una firma);
 # - che ControlsBar._settings_menu/language_combo/theme_btn e i dialoghi Info/
 #   Sperimentale/Incolla si aprano/chiudano visivamente come atteso;
-# - che confirm_already_downloaded() assegni ancora DestructiveRole al
-#   bottone giusto (vedi sopra);
+# - che confirm_already_downloaded() assegni ancora i tre ButtonRole giusti
+#   (vedi sopra) e che, al ri-tentativo del passo 15, scatti DAVVERO due
+#   volte nello stesso click (paste + Avvia) cosi' come previsto — se in
+#   futuro smettesse di scattare al paste, il driver chiuderebbe con "Scarica
+#   comunque" un popup che invece e' gia' quello buono da fotografare, e la
+#   sequenza si romperebbe in un modo che il --dry-run non vede;
+# - che MainWindow._on_expansion_done() mostri DAVVERO il popup Information
+#   ogni volta che c'e' un link cartella (il codice attuale lo garantisce,
+#   vedi POPUP INTENZIONALI, ma e' un comportamento, non una firma);
 # - il testo del titolo finestra (t("main_window.title", ...)) resta stabile
 #   durante una sessione: serve a gdigrab per agganciare la finestra una volta
 #   sola all'apertura (modalita' video);
@@ -219,6 +298,8 @@ SPAN_PAIRS = [
     ("about_dialog_open", "about_dialog_close"),
     ("experimental_dialog_open", "experimental_dialog_close"),
     ("paste_menu_open", "paste_menu_close"),
+    ("expand_report_open", "expand_report_close"),
+    ("duplicate_popup_open", "duplicate_popup_close"),
     ("explorer_open", "explorer_close"),
 ]
 # Padding (secondi prima, secondi dopo) per gli eventi puntuali che meritano
@@ -257,6 +338,11 @@ def parse_args(argv=None):
         help="Valida il legame col codice di MDPR (import/slot/i18n) per ENTRAMBE le modalita' "
              "senza aprire MainWindow, ffmpeg o toccare download/preferenze. <5s, per CI/pre-commit.",
     )
+    p.add_argument(
+        "--reset", action="store_true",
+        help="Svuota <output-dir> (tranne cartelle temporanee attive) PRIMA del giro. "
+             "Nessun effetto in combinazione con --dry-run (resta read-only).",
+    )
     p.add_argument("--_worker", action="store_true", help=argparse.SUPPRESS)
     return p.parse_args(argv)
 
@@ -272,7 +358,7 @@ def parse_args(argv=None):
 # (modulo, [nomi attesi]) — rispecchia "Moduli/classi importati" nel Contratto.
 _DRY_RUN_IMPORTS = [
     ("src.core.diagnostics", ["log_session_start"]),
-    ("src.core.config", ["APP_VERSION"]),
+    ("src.core.config", ["APP_VERSION", "LOGS_DIR", "DOWNLOAD_HISTORY_LOG"]),
     ("src.core.icon_loader", ["build_app_icon"]),
     ("src.core.logging_setup", ["setup_logging", "install_qt_message_handler"]),
     ("src.gui.i18n", ["TR"]),
@@ -292,7 +378,7 @@ _DRY_RUN_IMPORTS = [
 # Contratto con hasattr() senza mai costruire una MainWindow.
 _DRY_RUN_SUPPORT_IMPORTS = [
     ("src.gui.controls", ["ControlsBar"]),
-    ("src.gui.link_panel", ["LinkPanel"]),
+    ("src.gui.link_panel", ["LinkPanel", "confirm_already_downloaded"]),
     ("src.gui.jobs_panel", ["JobsPanel"]),
 ]
 # (classe, attributo) — rispecchia "Slot/metodi/attributi" nel Contratto,
@@ -303,16 +389,26 @@ _DRY_RUN_CLASS_ATTRS = [
     ("MainWindow", "_open_about_dialog"),
     ("MainWindow", "_open_experimental_dialog"),
     ("MainWindow", "_begin_folder_expansion"),
+    ("MainWindow", "_on_expansion_done"),
     ("ControlsBar", "set_download_dir"),
     ("ControlsBar", "_show_settings_menu"),
     ("LinkPanel", "open_paste_dialog"),
     ("JobsPanel", "_on_filter_button_clicked"),
 ]
 _JOB_REQUIRED_FIELDS = {"file_id", "status", "progress", "speed", "file_name", "url", "output_path"}
-# Chiavi i18n usate dal watchdog dialog: NESSUNA (vedi Contratto — distingue
-# per classe/ButtonRole, non per chiave tradotta). Lista vuota apposta: se in
-# futuro il watchdog iniziasse a dipendere da una chiave, va aggiunta QUI.
-_I18N_KEYS_USED = []
+# Il watchdog stesso non dipende da NESSUNA chiave i18n per RICONOSCERE un
+# dialog (vedi Contratto — distingue per classe/ButtonRole/Icon, mai per
+# testo tradotto). Questa lista verifica solo che le chiavi usate per
+# COSTRUIRE i popup "intenzionali" del tour esistano ancora nei due
+# dizionari (una chiave sparita romperebbe il testo del popup, non la sua
+# individuazione).
+_I18N_KEYS_USED = ["main_window.expand_report_title"]
+
+# Handle Mega dei due link di test (vedi DEFAULT_FOLDER_LINK/DEFAULT_FILE_LINK
+# sopra): usati per ripulire da download_history.log le righe residue di un
+# giro precedente prima di aprire MainWindow (vedi "File/formati" nel
+# Contratto).
+_TEST_HISTORY_HANDLES = ("GfgljYpJ", "LTwSwTqS")
 
 
 def run_dry_run() -> int:
@@ -425,6 +521,20 @@ def run_dry_run() -> int:
     except Exception as exc:
         errors.append(f"runner rotto: impossibile importare i dizionari i18n ({type(exc).__name__}: {exc})")
 
+    logs_dir = ns.get("LOGS_DIR")
+    history_name = ns.get("DOWNLOAD_HISTORY_LOG")
+    if logs_dir is None or history_name is None:
+        errors.append(
+            "runner rotto: LOGS_DIR/DOWNLOAD_HISTORY_LOG non importati, "
+            "impossibile calcolare il path di download_history.log"
+        )
+    else:
+        history_path = logs_dir / history_name
+        if history_path.name != history_name:
+            errors.append(f"runner rotto: path di download_history.log calcolato male ({history_path})")
+        else:
+            counts["slots"] += 1
+
     downloads_probe = DEFAULT_OUTPUT_DIR / "downloads"
     pre_existed = downloads_probe.exists()
     try:
@@ -483,12 +593,17 @@ def main() -> int:
         )
         return 2
 
+    out_dir = Path(args.output_dir).resolve()
+    if args.reset:
+        reset_gallery(out_dir)
+
     # Se un giro precedente e' stato ucciso a forza (kill esterno: niente
     # finally Python), il sidecar di backup e' rimasto residuo col vero
     # originale — ripristina PRIMA di spawnare qualunque worker.
-    _self_heal_stale_backups(REPO_ROOT / "preferences.json", REPO_ROOT / "session_state.json")
+    _self_heal_stale_backups(
+        REPO_ROOT / "preferences.json", REPO_ROOT / "session_state.json", _history_log_path(),
+    )
 
-    out_dir = Path(args.output_dir).resolve()
     (out_dir / "videos").mkdir(parents=True, exist_ok=True)
     (out_dir / "screens").mkdir(parents=True, exist_ok=True)
     (out_dir / "timelines").mkdir(parents=True, exist_ok=True)
@@ -522,6 +637,25 @@ def main() -> int:
     write_report(out_dir, manifest)
     print(f"[demo_runner] Fatto. Apri {out_dir / 'index.html'}", flush=True)
     return 0 if overall_ok else 1
+
+
+def reset_gallery(out_dir: Path) -> None:
+    """--reset: svuota out_dir PRIMA di qualunque pass. Salta i file nascosti
+    (nessuno oggi, ma "tranne file nascosti" e' un requisito esplicito) e le
+    cartelle temporanee "_tmp_*" ancora attive (residuo di un giro precedente
+    che potrebbe essere in corso altrove) — tutto il resto viene cancellato."""
+    if out_dir.exists():
+        for entry in out_dir.iterdir():
+            if entry.name.startswith("."):
+                continue
+            if entry.name.startswith("_tmp_"):
+                continue
+            if entry.is_dir():
+                shutil.rmtree(entry, ignore_errors=True)
+            else:
+                entry.unlink(missing_ok=True)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    print("reset: cartella MyDocs/gallery/ svuotata", flush=True)
 
 
 def spawn_worker(mode: str, lang: str, args, out_dir: Path) -> dict:
@@ -653,6 +787,34 @@ def _restore_from_backup(path: Path) -> None:
             pass
 
 
+def _history_log_path() -> Path:
+    from src.core.config import DOWNLOAD_HISTORY_LOG, LOGS_DIR
+    return LOGS_DIR / DOWNLOAD_HISTORY_LOG
+
+
+def _strip_test_history_lines(path: Path) -> None:
+    """Rimuove da download_history.log le righe che riguardano i due handle
+    di test (_TEST_HISTORY_HANDLES), PRIMA di aprire MainWindow. Senza
+    questo, uno storico con residui di un giro precedente (stesso link di
+    default) farebbe scattare "gia' scaricato" fin dal PRIMO Avvia invece
+    che solo al ri-tentativo scriptato del passo 15. Il file viene comunque
+    ripristinato per intero dal sidecar a fine pass (vedi _restore_from_backup):
+    questa funzione tocca solo la copia LIVE usata durante il giro."""
+    if not path.exists():
+        return
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+    except OSError:
+        log.exception("Impossibile leggere %s per la pulizia pre-giro", path)
+        return
+    kept = [line for line in lines if not any(h in line for h in _TEST_HISTORY_HANDLES)]
+    if len(kept) != len(lines):
+        try:
+            path.write_text("".join(kept), encoding="utf-8")
+        except OSError:
+            log.exception("Impossibile ripulire %s dai link di test", path)
+
+
 # ---------------------------------------------------------------------------
 # Worker: un giro completo (una modalita', una lingua), in un processo Python
 # dedicato.
@@ -675,10 +837,13 @@ def run_worker_pass(args) -> dict:
     downloads_dir = out_dir / "downloads"
     prefs_path = REPO_ROOT / "preferences.json"
     session_path = REPO_ROOT / "session_state.json"
+    history_path = _history_log_path()
 
-    _self_heal_stale_backups(prefs_path, session_path)
+    _self_heal_stale_backups(prefs_path, session_path, history_path)
     _ensure_original_backup(prefs_path)
     _ensure_original_backup(session_path)
+    _ensure_original_backup(history_path)
+    _strip_test_history_lines(history_path)
     result: dict = {"lang": lang, "mode": mode, "ok": False}
 
     try:
@@ -767,6 +932,7 @@ def run_worker_pass(args) -> dict:
     finally:
         _restore_from_backup(prefs_path)
         _restore_from_backup(session_path)
+        _restore_from_backup(history_path)
         if downloads_dir.exists():
             shutil.rmtree(downloads_dir, ignore_errors=True)
 
@@ -828,6 +994,8 @@ class DemoDriver:
     PASTE_EMPTY_HOLD_MS = 4000
     DETAIL_HOLD_MS = 20000
     EXPLORER_RECORD_MS = 9000
+    FOLDER_EXPANDED_HOLD_MS = 5000
+    ALREADY_DOWNLOADED_HOLD_MS = 5000
 
     # Attesa di settling (modalita' screenshots): tempo dopo un'azione prima
     # di catturare, cosi' lo stato e' fermo e non a meta' transizione/repaint.
@@ -867,7 +1035,8 @@ class DemoDriver:
         # dal GC e un nuovo dialog puo' riottenere lo stesso id() Python,
         # facendolo ignorare per errore come "gia' gestito".
         self._handled_modals: list = []
-        self._paste_dialog_mode = "fill_and_confirm"  # "tour_empty" durante il passo 2c
+        # "tour_empty" al passo 2c, "retry_same_links" al ri-tentativo (passo 15).
+        self._paste_dialog_mode = "fill_and_confirm"
         self._jobs_seen = False
         self._last_status: dict[int, str] = {}
         self._first_completed_logged = False
@@ -878,6 +1047,15 @@ class DemoDriver:
         self._all_done_triggered = False
         self._filter_shown = False
         self._explorer_done = False
+        # Popup "Cartelle Mega espanse" (vedi POPUP INTENZIONALI nel
+        # Contratto): armato prima di ogni Avvia che include un link cartella.
+        self._awaiting_expand_report = False
+        self._expand_report_shot_done = False
+        # Popup "gia' scaricato" (idem): None finche' non inizia il
+        # ri-tentativo del passo 15; poi "silent_anyway" per la comparsa al
+        # paste, "skip_and_shoot" per quella vera all'Avvia.
+        self._duplicate_popup_mode = None
+        self._duplicate_popup_shot_done = False
         self.notable: list[str] = []
         self.screenshots: list[str] = []
         self.result: dict = {}
@@ -1061,7 +1239,10 @@ class DemoDriver:
         self.log_event("paste_links")
         QTimer.singleShot(500, self._phase_click_start)
 
-    def _fill_paste_dialog(self, dlg) -> None:
+    def _fill_paste_dialog(self, dlg, shot_name: str | None) -> None:
+        """Compila il dialogo coi due link di test e clicca Aggiungi.
+        shot_name=None per il ri-tentativo del passo 15 (i link sono gia'
+        stati fotografati la prima volta, non li rifotografiamo)."""
         from PyQt6.QtCore import QTimer
 
         text = f"{self.folder_link}\n{self.file_link}"
@@ -1076,13 +1257,29 @@ class DemoDriver:
                 self._safe_close(dlg)
 
         def after_wait() -> None:
-            self._maybe_capture("07-dialogo-incolla-link-compilato", dlg, after_fill)
+            if self._finished:
+                return
+            if shot_name is not None:
+                self._maybe_capture(shot_name, dlg, after_fill)
+            else:
+                self._settle_then(after_fill)
 
         QTimer.singleShot(1200, after_wait)
+
+    def _settle_then(self, then) -> None:
+        """Come _maybe_capture, ma senza catturare nulla: solo il respiro
+        (settling in screenshots, minimo in video) prima di proseguire."""
+        if self._finished:
+            return
+        from PyQt6.QtCore import QTimer
+
+        delay = self.SETTLE_MS if self.mode == "screenshots" else 50
+        QTimer.singleShot(delay, then)
 
     def _phase_click_start(self) -> None:
         if self._finished:
             return
+        self._awaiting_expand_report = True
         self.window._on_start()
         self.log_event("start_clicked")
         self.log_event("opening_phase_end")
@@ -1100,14 +1297,14 @@ class DemoDriver:
             self.log_event("jobs_created", count=len(jobs))
             if self.mode == "screenshots" and not self._expansion_shot_done:
                 self.notable.append(
-                    "salto: 08-espansione-cartella: completata troppo velocemente per essere "
+                    "salto: 09-espansione-cartella: completata troppo velocemente per essere "
                     "fotografata (o nessun link cartella nel giro)"
                 )
-            self._maybe_capture("09-job-in-attesa", self.window, lambda: None)
+            self._maybe_capture("10-job-in-attesa", self.window, lambda: None)
 
         if not self._progress_shot_done and any(j.status == self._STATUS_RUNNING() for j in jobs):
             self._progress_shot_done = True
-            self._maybe_capture("10-download-in-corso", self.window, lambda: None)
+            self._maybe_capture("11-download-in-corso", self.window, lambda: None)
 
         for j in jobs:
             prev = self._last_status.get(j.file_id)
@@ -1139,7 +1336,7 @@ class DemoDriver:
         if jobs and all(j.status in terminal for j in jobs) and not self._all_done_triggered:
             self._all_done_triggered = True
             self.log_event("all_completed")
-            self._maybe_capture("12-tutti-completati", self.window, self._phase_filter_completed)
+            self._maybe_capture("13-tutti-completati", self.window, self._phase_filter_completed)
 
     # Import differiti delle costanti di stato (evita import Qt a livello di
     # modulo per il solo processo "genitore", che non ha bisogno di PyQt6).
@@ -1174,7 +1371,7 @@ class DemoDriver:
         self.log_event("detail_dialog_open", job=file_id)
         dlg = self.window._open_dialogs.get(file_id)
         if self.mode == "screenshots" and dlg is not None:
-            self._maybe_capture("11-dialogo-dettaglio-job", dlg, lambda: self._close_detail(file_id))
+            self._maybe_capture("12-dialogo-dettaglio-job", dlg, lambda: self._close_detail(file_id))
         else:
             QTimer.singleShot(self.DETAIL_HOLD_MS, lambda: self._close_detail(file_id))
 
@@ -1199,7 +1396,43 @@ class DemoDriver:
             log.exception("impossibile applicare il filtro Completati")
         self._filter_shown = True
         self.log_event("completed_filter_shown")
-        self._maybe_capture("13-filtro-completati", self.window, self._tour_explorer)
+        self._maybe_capture("14-filtro-completati", self.window, self._phase_retry_duplicate_links)
+
+    # ---- ri-tentativo con gli stessi link (passo 15: anti-duplicati) --------
+
+    def _phase_retry_duplicate_links(self) -> None:
+        """Riapre "Incolla link Mega" con gli STESSI due link (mai rimossi da
+        LinkPanel dopo il primo Avvia) e clicca Aggiungi: e' gia' sufficiente
+        a far scattare confirm_already_downloaded() una prima volta dentro
+        LinkPanel._on_paste() (vedi POPUP INTENZIONALI nel Contratto) — quella
+        comparsa va chiusa in silenzio con "Scarica comunque", altrimenti la
+        lista si svuota qui e il successivo Avvia non innesca piu' nulla."""
+        if self._finished:
+            return
+        from PyQt6.QtCore import QTimer
+
+        self._paste_dialog_mode = "retry_same_links"
+        self._duplicate_popup_mode = "silent_anyway"
+        self.log_event("retry_paste_open")
+        self.window.link_panel.open_paste_dialog()  # blocca; vedi docstring sopra
+        if self._finished:
+            return
+        self.log_event("retry_paste_close")
+        self._paste_dialog_mode = "fill_and_confirm"
+        self._duplicate_popup_mode = "skip_and_shoot"
+        QTimer.singleShot(500, self._phase_retry_click_start)
+
+    def _phase_retry_click_start(self) -> None:
+        if self._finished:
+            return
+        self._awaiting_expand_report = True
+        self.window._on_start()
+        self.log_event("retry_start_clicked")
+        # Da qui in poi il proseguimento (Explorer) e' innescato dal watchdog
+        # stesso, subito dopo aver chiuso il popup "gia' scaricato" vero
+        # (quello dell'Avvia, non quello silenzioso del paste) — vedi
+        # _handle_duplicate_popup. Nessun link supera il filtro (entrambi
+        # gia' scaricati), quindi qui non nascono nuovi job da attendere.
 
     def _first_completed_output_path(self) -> str | None:
         for j in self.window.jobs_panel.model.jobs_iter():
@@ -1251,11 +1484,11 @@ class DemoDriver:
         hwnd = ctypes.windll.user32.GetForegroundWindow()
         if not hwnd:
             self.notable.append(
-                "salto: 14-explorer-file-selezionato: impossibile determinare la finestra Explorer"
+                "salto: 16-explorer-file-selezionato: impossibile determinare la finestra Explorer"
             )
             finish_explorer()
             return
-        self._do_capture_then("14-explorer-file-selezionato", hwnd, finish_explorer)
+        self._do_capture_then("16-explorer-file-selezionato", hwnd, finish_explorer)
 
     # ---- safety cap -----------------------------------------------------------
 
@@ -1312,8 +1545,10 @@ class DemoDriver:
                 self._maybe_capture("04-menu-aggiunta-link-vuoto", dlg, lambda: self._safe_reject(dlg))
             else:
                 QTimer.singleShot(self.PASTE_EMPTY_HOLD_MS, lambda: self._safe_reject(dlg))
+        elif self._paste_dialog_mode == "retry_same_links":
+            self._fill_paste_dialog(dlg, None)
         else:
-            self._fill_paste_dialog(dlg)
+            self._fill_paste_dialog(dlg, "07-dialogo-incolla-link-compilato")
 
     def _handle_tour_dialog(self, w, cls_name: str) -> None:
         from PyQt6.QtCore import QTimer
@@ -1333,14 +1568,38 @@ class DemoDriver:
             return
         self._expansion_shot_done = True
         try:
-            self._grab_and_save("08-espansione-cartella", dlg)
+            self._grab_and_save("09-espansione-cartella", dlg)
         except Exception:
             log.exception("cattura del dialogo di espansione fallita")
-            self.notable.append("salto: 08-espansione-cartella: cattura fallita")
+            self.notable.append("salto: 09-espansione-cartella: cattura fallita")
+
+    # Ruoli che identificano il popup "gia' scaricato" di
+    # confirm_already_downloaded() (src/gui/link_panel.py): l'INSIEME dei tre
+    # ButtonRole, non il testo — vedi POPUP INTENZIONALI nel Contratto.
+    @staticmethod
+    def _duplicate_popup_roles():
+        from PyQt6.QtWidgets import QMessageBox
+        return {
+            QMessageBox.ButtonRole.AcceptRole,
+            QMessageBox.ButtonRole.DestructiveRole,
+            QMessageBox.ButtonRole.RejectRole,
+        }
 
     def _handle_message_box(self, box) -> None:
         from PyQt6.QtCore import QTimer
         from PyQt6.QtWidgets import QMessageBox
+
+        roles = {box.buttonRole(b) for b in box.buttons()}
+        if roles == self._duplicate_popup_roles():
+            self._handle_duplicate_popup(box)
+            return
+        if (
+            self._awaiting_expand_report
+            and len(box.buttons()) == 1
+            and box.icon() == QMessageBox.Icon.Information
+        ):
+            self._handle_expand_report_popup(box)
+            return
 
         title = box.windowTitle()
         text = box.text()
@@ -1359,6 +1618,73 @@ class DemoDriver:
         delay = 1500 if anyway is not None else 4000
         if target is not None:
             QTimer.singleShot(delay, lambda: self._safe_click(target))
+
+    def _handle_expand_report_popup(self, box) -> None:
+        """Popup "Cartelle Mega espanse" (QMessageBox.information in
+        MainWindow._on_expansion_done): intenzionale, non un dialog ignoto —
+        vedi POPUP INTENZIONALI nel Contratto. Fotografato solo alla PRIMA
+        comparsa (08); ricompare (chiuso, non rifotografato) al ri-tentativo
+        del passo 15, perche' la cartella viene rielencata da capo."""
+        from PyQt6.QtCore import QTimer
+
+        self._awaiting_expand_report = False
+        self.log_event("expand_report_open", title=box.windowTitle())
+
+        def close_and_log() -> None:
+            self._safe_close(box)
+            self.log_event("expand_report_close")
+
+        if self.mode == "screenshots":
+            if not self._expand_report_shot_done:
+                self._expand_report_shot_done = True
+                self._maybe_capture("08-popup-cartelle-espanse", box, close_and_log)
+            else:
+                self._settle_then(close_and_log)
+        else:
+            self._expand_report_shot_done = True
+            QTimer.singleShot(self.FOLDER_EXPANDED_HOLD_MS, close_and_log)
+
+    def _handle_duplicate_popup(self, box) -> None:
+        """Popup "gia' scaricato" (confirm_already_downloaded): intenzionale
+        — vedi POPUP INTENZIONALI nel Contratto. In modalita' "silent_anyway"
+        (comparsa al paste del ri-tentativo) si clicca "Scarica comunque" in
+        silenzio, senza fotografare, per non svuotare la lista prima
+        dell'Avvia; in "skip_and_shoot" (comparsa vera, all'Avvia) si
+        fotografa e si clicca "Salta gia' scaricati", poi si prosegue col
+        passo Explorer — nessun job nuovo nascera' da attendere, essendo
+        tutti i link filtrati come doppioni."""
+        from PyQt6.QtCore import QTimer
+        from PyQt6.QtWidgets import QMessageBox
+
+        skip_btn = None
+        anyway_btn = None
+        for b in box.buttons():
+            role = box.buttonRole(b)
+            if role == QMessageBox.ButtonRole.AcceptRole:
+                skip_btn = b
+            elif role == QMessageBox.ButtonRole.DestructiveRole:
+                anyway_btn = b
+
+        if self._duplicate_popup_mode == "skip_and_shoot":
+            self.log_event("duplicate_popup_open", title=box.windowTitle())
+            target = skip_btn or anyway_btn
+            first_shot = not self._duplicate_popup_shot_done
+            self._duplicate_popup_shot_done = True
+
+            def click_and_continue() -> None:
+                self._safe_click(target)
+                self.log_event("duplicate_popup_close")
+                self._duplicate_popup_mode = None
+                QTimer.singleShot(800, self._tour_explorer)
+
+            if self.mode == "screenshots" and first_shot:
+                self._maybe_capture("15-popup-gia-scaricato", box, click_and_continue)
+            else:
+                QTimer.singleShot(self.ALREADY_DOWNLOADED_HOLD_MS, click_and_continue)
+        else:
+            self.log_event("duplicate_popup_paste_stage", title=box.windowTitle())
+            target = anyway_btn or skip_btn
+            QTimer.singleShot(300, lambda: self._safe_click(target))
 
     @staticmethod
     def _safe_click(btn) -> None:
@@ -1450,6 +1776,15 @@ class DemoDriver:
             self.log_event("completed_filter_shown", skipped=True, reason=f"interrotto ({reason})")
         if not self._explorer_done:
             self.log_event("explorer_open", skipped=True, reason=f"interrotto ({reason})")
+        if self.mode == "screenshots":
+            if not self._expand_report_shot_done:
+                self.notable.append(
+                    "salto: 08-popup-cartelle-espanse: popup non mostrato prima dello stop"
+                )
+            if not self._duplicate_popup_shot_done:
+                self.notable.append(
+                    "salto: 15-popup-gia-scaricato: popup non mostrato prima dello stop"
+                )
 
         self.log_event("recording_stop_requested", reason=reason)
         self._stop_ffmpeg()
@@ -1759,9 +2094,11 @@ REALE del tool (download COMPLETI veri, niente stub/fake).
 
 Entrambe le modalita' pilotano un tour completo dei 5 punti della barra comandi (Impostazioni,
 Sperimentale, Aggiungi link, Tema, Info), poi aggiungono i due link Mega veri, avviano il
-download, aprono il dettaglio del primo job che supera il 10%, attendono il completamento reale
-di tutti i job, applicano il filtro "Completati" e infine aprono Esplora risorse con il file
-scaricato in evidenza.
+download (compare il popup "Cartelle Mega espanse", momento intenzionale del tour), aprono il
+dettaglio del primo job che supera il 10%, attendono il completamento reale di tutti i job,
+applicano il filtro "Completati", ri-incollano gli STESSI due link e cliccano di nuovo Avvia per
+mostrare la funzione anti-duplicati (popup "Links already downloaded", chiuso senza riscaricare)
+e infine aprono Esplora risorse con il file scaricato in evidenza.
 
 ## Cosa contiene
 
