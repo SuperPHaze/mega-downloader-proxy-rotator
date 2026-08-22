@@ -60,7 +60,7 @@ App **desktop per Windows** (Python + PyQt6) che scarica file **e intere cartell
 
 **Per usarla** — scarica il pacchetto pronto:
 1. Vai alla [Release più recente](https://github.com/SuperPHaze/mega-downloader-proxy-rotator/releases/latest) e scarica lo `.zip`.
-2. Estrai, doppio clic su **`install.bat`** (crea l'ambiente e installa tutto).
+2. Estrai, doppio clic su **`install.bat`** (crea l'ambiente e installa tutto: app, test e strumenti in `tools/`).
 3. Avvia con **`avvia.bat`**.
 
 **Dai sorgenti** — richiede Python 3.11–3.14 nel PATH:
@@ -69,6 +69,8 @@ git clone https://github.com/SuperPHaze/mega-downloader-proxy-rotator
 cd mega-downloader-proxy-rotator
 install.bat
 ```
+
+Un solo comando prepara tutto: dipendenze runtime (`requirements.txt`), dipendenze di test/strumenti (`requirements-dev.txt`, servono a `pytest` e a `tools/demo/demo_runner.py`) e verifica/installazione di **ffmpeg** (richiesto solo dal demo runner in modalità video; l'app vera e propria non lo usa). Per installare solo l'app di base, senza test/strumenti né ffmpeg: `powershell -ExecutionPolicy Bypass -File install.ps1 -Minimal`.
 
 > Il `venv` non è portabile tra macchine: se sposti il progetto, non copiare `venv/` e riesegui `install.bat`.
 

@@ -2,8 +2,14 @@
 # Da eseguire dalla root del progetto (la cartella che contiene src/):
 #
 #   powershell -ExecutionPolicy Bypass -File install.ps1
+#
+# Per default installa TUTTO: dipendenze runtime (requirements.txt) +
+# dipendenze di test/strumenti (requirements-dev.txt, serve a pytest e a
+# tools/demo/demo_runner.py) + verifica/installa ffmpeg (richiesto solo dal
+# demo runner in modalita' video). -Minimal salta requirements-dev.txt e il
+# check ffmpeg: solo l'app di base.
 
-param([ValidateSet("EN","IT")][string]$Lang = "EN")
+param([ValidateSet("EN","IT")][string]$Lang = "EN", [switch]$Minimal)
 
 function L([string]$en, [string]$it) {
     if ($Lang -eq "IT") { return $it } else { return $en }
@@ -166,6 +172,21 @@ if ($LASTEXITCODE -ne 0) {
 }
 Write-OK (L "Dependencies installed." "Dipendenze installate.")
 
+if ($Minimal) {
+    Write-Step (L "Skipping test/tools dependencies (-Minimal): requirements-dev.txt not installed." "Salto le dipendenze di test/strumenti (-Minimal): requirements-dev.txt non installato.")
+} else {
+    Write-Step (L "Installing test/tools dependencies from requirements-dev.txt..." "Installazione dipendenze di test/strumenti da requirements-dev.txt...")
+    $prevEAP = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    & $venvPy -m pip install -r requirements-dev.txt
+    $ErrorActionPreference = $prevEAP
+    if ($LASTEXITCODE -ne 0) {
+        Write-Warn (L "requirements-dev.txt installation FAILED (non-fatal): 'pytest' and the demo runner test suite may not work. The app itself is unaffected." "Installazione di requirements-dev.txt FALLITA (non bloccante): 'pytest' e i test del demo runner potrebbero non funzionare. Il tool in se' non e' impattato.")
+    } else {
+        Write-OK (L "Test/tools dependencies installed (pytest)." "Dipendenze di test/strumenti installate (pytest).")
+    }
+}
+
 # Il backport "pathlib" (PyPI) rompe Python moderno: rimuovilo SOLO se presente,
 # senza far fallire l'installazione (pip scrive su stderr se non c'e').
 $prevEAP = $ErrorActionPreference
@@ -185,22 +206,72 @@ if errorlevel 1 pause'
 $batContent | Out-File -FilePath ".\avvia.bat" -Encoding ascii
 Write-OK (L "avvia.bat created in the project root." "avvia.bat creato nella root del progetto.")
 
-# ---- 6. Smoke test ---------------------------------------------------
+# ---- 6. Verifica ffmpeg (richiesto solo da tools/demo/demo_runner.py) -
+
+if ($Minimal) {
+    Write-Step (L "Skipping ffmpeg check (-Minimal)." "Salto verifica ffmpeg (-Minimal).")
+} else {
+    Write-Step (L "Checking ffmpeg (used by tools/demo/demo_runner.py)..." "Verifica ffmpeg (usato da tools/demo/demo_runner.py)...")
+
+    $ffmpegFound = [bool](Get-Command ffmpeg -ErrorAction SilentlyContinue)
+    if ($ffmpegFound) {
+        Write-OK (L "ffmpeg found in PATH." "ffmpeg trovato nel PATH.")
+    } else {
+        $wingetFound = [bool](Get-Command winget -ErrorAction SilentlyContinue)
+        if ($wingetFound) {
+            Write-Host "    $(L "ffmpeg not found: installing via winget (Gyan.FFmpeg)..." "ffmpeg non trovato: installazione via winget (Gyan.FFmpeg)...")" -ForegroundColor Yellow
+            $prevEAP = $ErrorActionPreference
+            $ErrorActionPreference = 'Continue'
+            winget install --id Gyan.FFmpeg -e --silent --accept-source-agreements --accept-package-agreements
+            $ErrorActionPreference = $prevEAP
+
+            # winget puo' ritornare un exit code inaffidabile (0 anche a installazione
+            # fallita, o non-zero per warning innocui): l'unica verifica attendibile e'
+            # ricontrollare il PATH dopo un refresh da registro (il processo corrente
+            # non vede le variabili Machine/User cambiate dall'installer).
+            $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("PATH", "User")
+            $ffmpegFound = [bool](Get-Command ffmpeg -ErrorAction SilentlyContinue)
+            if ($ffmpegFound) {
+                Write-OK (L "ffmpeg installed." "ffmpeg installato.")
+            } else {
+                Write-Warn (L "ffmpeg installation via winget did not complete. Install it manually: https://ffmpeg.org/download.html (or 'choco install ffmpeg'). Only tools/demo/demo_runner.py needs it -- the app itself works without it." "Installazione di ffmpeg via winget non riuscita. Installalo manualmente: https://ffmpeg.org/download.html (oppure 'choco install ffmpeg'). Serve solo a tools/demo/demo_runner.py -- il tool in se' funziona comunque senza.")
+            }
+        } else {
+            Write-Warn (L "ffmpeg not found and winget is not available on this system. Install ffmpeg manually: https://ffmpeg.org/download.html (or 'choco install ffmpeg'). Only tools/demo/demo_runner.py needs it -- the app itself works without it." "ffmpeg non trovato e winget non e' disponibile su questo sistema. Installalo manualmente: https://ffmpeg.org/download.html (oppure 'choco install ffmpeg'). Serve solo a tools/demo/demo_runner.py -- il tool in se' funziona comunque senza.")
+        }
+    }
+}
+
+# ---- 7. Smoke test ---------------------------------------------------
 
 Write-Step (L "Smoke test: importing key modules..." "Smoke test: import moduli chiave...")
 
-$testScript = @'
+# Lista generata dall'inventario reale delle dipendenze (audit AST di
+# src/tools/scripts/tests/MyDocs, vedi CLAUDE.md): i 6 pacchetti terzi di
+# requirements.txt -- incluse le due dipendenze "invisibili" a un grep sugli
+# import (lxml e PySocks: mai importate direttamente dal nostro codice, sono
+# bs4 e requests/urllib3 a farlo internamente per nome-parser/schema URL) --
+# piu' pytest da requirements-dev.txt quando non e' -Minimal.
+$smokeModules = @(
+    @{ Name = "PyQt6"; Imp = "from PyQt6.QtWidgets import QApplication" },
+    @{ Name = "requests"; Imp = "import requests" },
+    @{ Name = "bs4"; Imp = "from bs4 import BeautifulSoup" },
+    @{ Name = "lxml"; Imp = "import lxml" },
+    @{ Name = "pycryptodome"; Imp = "from Crypto.Cipher import AES" },
+    @{ Name = "PySocks"; Imp = "import socks" },
+    @{ Name = "src.core"; Imp = "from src.core.config import OUTPUT_DIR" }
+)
+if (-not $Minimal) {
+    $smokeModules += @{ Name = "pytest"; Imp = "import pytest" }
+}
+$smokeEntries = ($smokeModules | ForEach-Object { '    ("{0}", "{1}"),' -f $_.Name, $_.Imp }) -join "`n"
+
+$testScript = @"
 import sys
 sys.path.insert(0, ".")
 errors = []
 for name, imp in [
-    ("PyQt6",        "from PyQt6.QtWidgets import QApplication"),
-    ("requests",     "import requests"),
-    ("bs4",          "from bs4 import BeautifulSoup"),
-    ("lxml",         "import lxml"),
-    ("pycryptodome", "from Crypto.Cipher import AES"),
-    ("PySocks",      "import socks"),
-    ("src.core",     "from src.core.config import OUTPUT_DIR"),
+$smokeEntries
 ]:
     try:
         exec(imp)
@@ -212,7 +283,7 @@ if errors:
     sys.exit(1)
 else:
     print("ALL_OK")
-'@
+"@
 
 # Eseguito da file temporaneo (non con "python -c $testScript"): passando a un
 # eseguibile nativo uno script multi-riga con virgolette doppie annidate,
@@ -233,6 +304,14 @@ if ("$result" -match "ALL_OK") {
     Write-Err (L "Smoke test failed:" "Smoke test fallito:")
     Write-Host "    $result" -ForegroundColor Red
     exit 1
+}
+
+if (-not $Minimal) {
+    if ([bool](Get-Command ffmpeg -ErrorAction SilentlyContinue)) {
+        Write-OK (L "ffmpeg available (tools/demo/demo_runner.py video mode ready)." "ffmpeg disponibile (tools/demo/demo_runner.py in modalita' video e' pronto).")
+    } else {
+        Write-Warn (L "ffmpeg still not found: tools/demo/demo_runner.py (video mode) will not work until you install it. The app itself is unaffected." "ffmpeg ancora non trovato: tools/demo/demo_runner.py (modalita' video) non funzionera' finche' non lo installi. Il tool in se' non e' impattato.")
+    }
 }
 
 # ---- Riepilogo -------------------------------------------------------

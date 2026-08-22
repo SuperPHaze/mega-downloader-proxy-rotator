@@ -240,6 +240,24 @@ python -m venv venv
 Comandi sempre dalla root `mega-proxy-downloader\`, mai da `src\`.
 - **L'upgrade di pip PRIMA di requirements.txt è obbligatorio**: il pip bundled (es. 22.3 con Python 3.11) non risolve i wheel PyQt6-sip recenti → `ResolutionImpossible` su PyQt6. `install.ps1` lo fa già; su macchina nuova usare `install.bat` (wrapper cmd/doppio-clic di `install.ps1`) o `install.ps1` direttamente.
 - I venv NON sono portabili tra macchine (pyvenv.cfg punta al Python d'origine): mai copiare `venv`, ricrearla sempre. `package.ps1` la esclude già dallo zip.
+- **`install.ps1` per default installa TUTTO**, non solo l'app: dopo `requirements.txt` installa anche
+  `requirements-dev.txt` (serve a `pytest` e a `tools/demo/demo_runner.py`) e verifica/installa **ffmpeg**
+  via winget (`Gyan.FFmpeg`, richiesto solo dal demo runner in modalità video — l'app stessa non lo usa;
+  se winget manca o l'installazione fallisce, solo un warning bilingue, mai un errore bloccante). Flag
+  `-Minimal` salta entrambi (requirements-dev.txt e ffmpeg): solo l'app di base. Lo smoke test finale
+  (righe ~245-290) genera la lista dei moduli da importare dall'inventario reale delle dipendenze
+  (6 pacchetti di `requirements.txt` + `pytest` se non `-Minimal`), non da una lista hard-coded.
+- **Dipendenze "invisibili" a un grep sugli import**: `lxml` e `PySocks` sono runtime reali (dichiarate
+  in `requirements.txt`) ma non vengono MAI importate direttamente dal codice del progetto — `lxml` è
+  selezionata per nome-parser stringa (`BeautifulSoup(html, "lxml")` in `proxy/scraper.py`), `PySocks`
+  è importata internamente da `requests`/`urllib3` quando l'URL del proxy usa uno schema `socks5h://`/
+  `socks4://` (costruito in `core/proxy_url.py`). Un audit basato solo su `import` letterali le
+  dichiarerebbe erroneamente "non usate": vanno cercate per come sono effettivamente consumate.
+- `tools/`, `scripts/` e i test non introducono NESSUNA dipendenza third-party oltre a quelle già in
+  `requirements.txt` (più `pytest` da `requirements-dev.txt` per i test): l'unico pacchetto pip
+  importato direttamente sotto `tools/` è `PyQt6` (già in `requirements.txt`). Prima di aggiungere un
+  nuovo file in quelle cartelle con un import pip nuovo, aggiornare `requirements-dev.txt` (o
+  `requirements.txt` se serve anche all'app) e lo smoke test di `install.ps1` nello stesso ciclo.
 
 ## Versioning e packaging
 - La versione dell'app è definita in `src/core/config.py` come `APP_VERSION` (semver `MAJOR.MINOR.PATCH`).

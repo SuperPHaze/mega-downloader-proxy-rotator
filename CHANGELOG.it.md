@@ -6,6 +6,15 @@ Tutte le modifiche rilevanti del progetto. Formato basato su [Keep a Changelog](
 
 ## [Non rilasciato]
 
+### Corretto
+- **`install.ps1` prepara davvero tutto in un solo passaggio**: oltre a `requirements.txt` installa
+  ora anche `requirements-dev.txt` (serve a `pytest` e a `tools/demo/demo_runner.py`, prima andava
+  installato a mano) e verifica/installa **ffmpeg** via winget (richiesto solo dal demo runner in
+  modalità video; solo un avviso, mai un errore bloccante, se manca o winget non è disponibile).
+  Nuovo flag `-Minimal` per chi vuole solo l'app di base, senza dipendenze di test/strumenti né
+  ffmpeg. Lo smoke test finale ora genera la lista dei moduli da un inventario reale delle
+  dipendenze invece di una lista fissa nel codice.
+
 ## [2.0.0] — 2026-08-21
 
 ### Aggiunto
