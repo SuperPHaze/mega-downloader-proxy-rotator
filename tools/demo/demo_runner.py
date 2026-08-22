@@ -1,29 +1,36 @@
-# Demo runner MDPR — video reali (IT/EN) + galleria di screenshot.
+# Demo runner MDPR — due modalita' separate: video reali (IT/EN) e screenshot
+# puliti (IT/EN), entrambe con un giro reale del tool (download COMPLETI veri).
 #
-# Pilota la GUI VERA con metodi/slot Qt reali (nessun mouse/tastiera simulati),
-# registra con ffmpeg (gdigrab), fa scaricare per davvero i due link Mega dati,
-# poi produce un taglio "bello" a velocita' variabile (ffmpeg setpts) + stills
-# agli eventi. Riusabile tale e quale alle prossime release (bastano i due link
-# di default o --folder-link/--file-link).
+# Perche' due modalita' e non una sola con estrazione di frame: gli screenshot
+# ricavati da un video escono spesso mossi o catturati a meta' transizione. Il
+# video vuole ritmo (velocita' variabile in post-produzione); gli screenshot
+# vogliono fotografie di stati FERMI (settling + cattura dedicata). Le due
+# modalita' condividono lo stesso flusso "regia" (tour dei 5 menu, download
+# reale, filtro Completati, apertura Explorer) ma non condividono l'output.
+#
+# Pilota la GUI VERA con metodi/slot Qt reali (nessun mouse/tastiera simulati).
 #
 # Architettura: il processo "genitore" (questo script invocato senza --_worker)
-# fa da orchestratore puro Python (nessun Qt). Per ogni lingua rilancia SE STESSO
-# come sottoprocesso con --_worker: garantisce una "nuova istanza pulita" per
-# lingua (QApplication/Translator/orchestrator sono singleton di modulo, non
-# vanno riusati fra due giri) e isola un eventuale blocco di una lingua senza
-# perdere l'altra.
+# fa da orchestratore puro Python (nessun Qt). Per ogni (modalita', lingua)
+# rilancia SE STESSO come sottoprocesso con --_worker: garantisce una "nuova
+# istanza pulita" (QApplication/Translator/orchestrator sono singleton di
+# modulo, non vanno riusati fra due giri) e isola un eventuale blocco di un
+# giro senza perdere gli altri. Un `--mode both` esegue prima TUTTI i pass
+# screenshots (piu' veloci da rivedere, meno rischio di rompersi in post-
+# produzione) poi TUTTI i pass video, ciascuno con il proprio backup/restore
+# di preferenze e la propria pulizia di downloads/.
 #
 # === Contratto con MDPR (aggiornare se cambia) ===
 #
 # Questo script dipende da superficie PRIVATA della GUI (metodi con underscore,
 # attributi interni), non solo da API pubbliche: e' una scelta deliberata (serve
-# a pilotare cose — menu impostazioni, filtro job — che non hanno un ingresso
-# pubblico piu' pulito), ma vuol dire che un refactor interno la puo' rompere
-# senza toccare nessun contratto "ufficiale". Questa sezione e' il modo per
-# accorgersene: se tocchi uno di questi punti in src/gui o src/core, aggiorna
-# QUI e nel codice sotto, poi rilancia `--dry-run` (lo verifica in automatico
-# per import/slot/i18n; il resto — vedi "Verificato SOLO da un giro reale" — va
-# controllato a mano o con un giro vero).
+# a pilotare cose — menu impostazioni, filtro job, dialogo di espansione — che
+# non hanno un ingresso pubblico piu' pulito), ma vuol dire che un refactor
+# interno la puo' rompere senza toccare nessun contratto "ufficiale". Questa
+# sezione e' il modo per accorgersene: se tocchi uno di questi punti in
+# src/gui o src/core, aggiorna QUI e nel codice sotto, poi rilancia `--dry-run`
+# (lo verifica in automatico per import/slot/i18n; il resto — vedi "Verificato
+# SOLO da un giro reale" — va controllato a mano o con un giro vero).
 #
 # Moduli/classi importati da src/ (rotti = ImportError, il --dry-run lo becca):
 # - src.core.diagnostics                  (funzione: log_session_start)
@@ -36,8 +43,10 @@
 #                                           CANCELLED/FAILED; classe Job, vedi sotto)
 # - src.gui.jobs_panel.FILTER_COMPLETED   (costante)
 # - src.gui.paste_links_dialog.PasteLinksDialog       (classe)
-# - src.gui.about_dialog.AboutDialog                  (classe)
-# - src.gui.experimental_dialog.ExperimentalFeaturesDialog  (classe)
+# - src.gui.about_dialog.AboutDialog                  (classe, SOLO per riconoscimento
+#                                                       per nome nel watchdog: non piu'
+#                                                       istanziata direttamente dal runner)
+# - src.gui.experimental_dialog.ExperimentalFeaturesDialog  (idem)
 #
 # Slot/metodi/attributi chiamati o letti su MainWindow e sotto-widget (MOLTI
 # sono privati/con underscore: e' voluto, vedi sopra). Verificati dal --dry-run
@@ -51,23 +60,43 @@
 #                                                     "self._open_dialogs" compaia nel
 #                                                     sorgente di MainWindow.__init__
 #                                                     (non instanzia MainWindow)
+# - MainWindow._open_about_dialog()                — apre AboutDialog (menu Info del tour)
+# - MainWindow._open_experimental_dialog()         — apre ExperimentalFeaturesDialog
+#                                                     (menu "Strumenti" del tour — vedi nota
+#                                                     sotto: nella GUI si chiama "Sperimentale")
+# - MainWindow._begin_folder_expansion(links)      — assegna self._expand_dialog: il
+#                                                     dry-run verifica che "_expand_dialog"
+#                                                     compaia nel sorgente del metodo (stesso
+#                                                     trucco di _open_dialogs, non instanzia)
 # - ControlsBar.set_download_dir(str)              — reindirizza i download di test
 # - ControlsBar._show_settings_menu()              — apre il popup Impostazioni
-# - ControlsBar._settings_menu                     — QMenu persistente, SOLO su istanza:
-#                                                     il dry-run costruisce una ControlsBar()
-#                                                     autonoma (headless, sicura: nessuna
-#                                                     rete nel suo __init__) per verificarlo
+# - ControlsBar._settings_menu                     — QMenu persistente, SOLO su istanza
+# - ControlsBar.language_combo                     — QComboBox pubblico dentro il popup
+#                                                     Impostazioni; .showPopup()/.hidePopup()
+#                                                     per il "sub-menu" Lingua del tour
+# - ControlsBar.theme_btn                          — QPushButton pubblico, .click() per il
+#                                                     toggle tema del tour (non e' un menu:
+#                                                     e' un pulsante, come da Contratto)
+#   (_settings_menu/language_combo/theme_btn sono verificati dal dry-run costruendo una
+#   ControlsBar() autonoma — headless, sicura: nessuna rete nel suo __init__)
 # - LinkPanel.open_paste_dialog()                  — apre il dialogo "Incolla link Mega"
+#                                                     (usato DUE volte dal tour: vuoto per
+#                                                     mostrare l'interfaccia pulita, poi
+#                                                     compilato per l'aggiunta reale)
 # - JobsPanel._on_filter_button_clicked(category)  — applica un filtro (usato per "Completati")
 # - JobsPanel.model                                — attributo, istanza di JobsModel (SOLO
 #                                                     verificabile con un giro vero: JobsPanel
 #                                                     non e' nel Contratto delle istanze headless)
 # - JobsModel.jobs_iter()                          — polling dello stato job (NESSUN segnale
 #                                                     Qt e' usato per lo stato: vedi sotto)
-# - Job (dataclass): campi .file_id/.status/.progress/.speed/.file_name/.url — verificati
-#   con dataclasses.fields(Job), non serve istanza
-# - PasteLinksDialog.edit (QTextEdit) / .add_btn (QPushButton)  — riempiti dal watchdog
-# - AboutDialog(parent) / ExperimentalFeaturesDialog(parent) — costruttori, poi .exec() standard Qt
+# - Job (dataclass): campi .file_id/.status/.progress/.speed/.file_name/.url/.output_path —
+#   verificati con dataclasses.fields(Job), non serve istanza. .output_path e' NUOVO
+#   (serve al passo 9, apertura Explorer sul file scaricato) rispetto alla versione precedente
+#   del runner.
+# - PasteLinksDialog.edit (QTextEdit) / .add_btn (QPushButton) / .cancel_btn (QPushButton) —
+#   riempiti/cliccati dal watchdog. .cancel_btn e' NUOVO (chiude il giro "vuoto" del tour
+#   senza confermare nulla). Verificati costruendo un PasteLinksDialog([], False) headless
+#   (nessuna rete nel suo __init__).
 #
 # Segnali osservati via connect(): NESSUNO. Il runner NON si collega a
 # JobsModel.job_updated / aggregates_changed / TR.language_changed / a nessun
@@ -88,10 +117,16 @@
 # tradotto) — quindi e' insensibile alla lingua per costruzione. Se
 # link_panel.confirm_already_downloaded() smettesse di assegnare
 # DestructiveRole al bottone "scarica comunque", il watchdog lo tratterebbe
-# come un dialog IGNOTO (chiuso dopo 4s col bottone di default — probabilmente
-# "Salta", cioe' l'opposto di quel che serve alla demo): il --dry-run non lo
-# verifica (e' un comportamento, non un'API), va controllato a mano se si
-# tocca link_panel.py.
+# come un dialog IGNOTO (chiuso dopo 4s col bottone di default): il --dry-run
+# non lo verifica (e' un comportamento, non un'API), va controllato a mano se
+# si tocca link_panel.py.
+#
+# NOTA SUL NOME "Strumenti": nel codice della GUI non esiste un menu chiamato
+# "Strumenti". Il pulsante piu' vicino concettualmente (unica superficie a
+# icona/dialogo separata oltre a Impostazioni/Aggiungi link/Tema/Info) e' il
+# pulsante "Sperimentale" (icona 🧪, ExperimentalFeaturesDialog): e' quello che
+# il tour apre per il quinto passo. Se in futuro nasce un vero menu
+# "Strumenti", questo runner va aggiornato per puntare li'.
 #
 # File/formati letti o scritti (OPACHI: il runner fa backup/restore a
 # livello di BYTE, non parsa mai le chiavi JSON):
@@ -100,32 +135,52 @@
 # - session_state.json (REPO_ROOT) — cancellato prima di aprire MainWindow (evita
 #   il prompt "Riprendi sessione?"); backup/restore identico a preferences.json
 # - *.demo_orig_backup — sidecar di backup creati dal runner stesso (non di MDPR)
+# - MyDocs/gallery/last-results.json — manifest del runner (non di MDPR): tiene
+#   traccia dell'ultimo risultato OK per (modalita', lingua), cosi' un giro
+#   `--mode screenshots` successivo a un giro `--mode video` non fa sparire la
+#   sezione video da index.html (e viceversa). Riletto/aggiornato a ogni giro.
 #
 # Cartelle usate:
 # - <output-dir>/downloads/  — destinazione download di test (svuotata a inizio
 #   E fine di OGNI pass, mai la downloads/ reale del progetto)
-# - <output-dir>/videos/, <output-dir>/<lang>/, <output-dir>/<lang>/uniform/,
-#   <output-dir>/_tmp_segments_<lang>/ — output del runner, non di MDPR
+# - <output-dir>/videos/, <output-dir>/screens/<lang>/, <output-dir>/timelines/,
+#   <output-dir>/_tmp_segments_<lang>/, <output-dir>/_tmp_explorer_<lang>.mp4 — output
+#   del runner, non di MDPR
 #
 # Verificato SOLO da un giro reale (il --dry-run non ci arriva):
 # - che i job passino DAVVERO per RUNNING/COMPLETED/ABANDONED con questi nomi
 #   esatti (STATUS_* import OK non garantisce che jobs_iter() li usi ancora
 #   cosi' — e' un comportamento, non una firma);
-# - che ControlsBar._settings_menu si apra/chiuda visivamente come atteso;
+# - che ControlsBar._settings_menu/language_combo/theme_btn e i dialoghi Info/
+#   Sperimentale/Incolla si aprano/chiudano visivamente come atteso;
 # - che confirm_already_downloaded() assegni ancora DestructiveRole al
 #   bottone giusto (vedi sopra);
 # - il testo del titolo finestra (t("main_window.title", ...)) resta stabile
-#   durante una sessione (nessun contatore dinamico): serve a gdigrab per
-#   agganciare la finestra una volta sola all'apertura.
+#   durante una sessione: serve a gdigrab per agganciare la finestra una volta
+#   sola all'apertura (modalita' video);
+# - che `QScreen.grabWindow(hwnd)` catturi correttamente il contenuto di popup
+#   Qt (QMenu, popup di QComboBox) e non solo lo sfondo: e' un dettaglio di
+#   composizione della finestra su Windows che non si puo' verificare offline
+#   (modalita' screenshots);
+# - che `ctypes.windll.user32.GetForegroundWindow()` restituisca davvero
+#   l'HWND della finestra Explorer appena aperta (passo 9/Explorer) e non
+#   un'altra finestra che avesse rubato il focus nel frattempo (modalita'
+#   screenshots) — se sbaglia bersaglio, lo screenshot 14 mostra la finestra
+#   sbagliata invece di fallire rumorosamente;
+# - che il segmento Explorer (schermo intero, modalita' video) si concateni
+#   senza artefatti visivi dopo lo scale+pad a WINDOW_W x WINDOW_H.
 #
 # Se cambi UNO qualunque di questi punti nel codice/GUI di MDPR, aggiorna
 # questa sezione + il codice del runner, poi rilancia `--dry-run`. Se il
-# cambio e' non-triviale, valuta anche un giro reale (~20-90 min) prima di
-# considerare "finito" il ciclo di lavoro (vedi .claude/rules/demo-runner.md).
+# cambio e' non-triviale, valuta anche un giro reale (~20-90+ min per
+# modalita') prima di considerare "finito" il ciclo di lavoro (vedi
+# .claude/rules/demo-runner.md).
 from __future__ import annotations
 
 import argparse
 import base64
+import ctypes
+import ctypes.wintypes
 import dataclasses
 import importlib
 import inspect
@@ -152,19 +207,24 @@ DEFAULT_FILE_LINK = "https://mega.nz/file/LTwSwTqS#vtlB9H3KnaecHgN13Vvs3VjAQNYPR
 
 WINDOW_W, WINDOW_H = 1440, 900
 FFMPEG_FRAMERATE = "12"
+_MANIFEST_NAME = "last-results.json"
 
-# Coppie apri/chiudi che diventano un'unica finestra a 1x nel taglio "bello"
-# (l'interazione intera resta a velocita' naturale, non solo un dintorno).
+# Coppie apri/chiudi (modalita' video) che diventano un'unica finestra a 1x nel
+# taglio "bello" (l'interazione intera resta a velocita' naturale, non solo un
+# dintorno del timestamp).
 SPAN_PAIRS = [
     ("opening_phase_begin", "opening_phase_end"),
     ("detail_dialog_open", "detail_dialog_close"),
     ("settings_menu_open", "settings_menu_close"),
     ("about_dialog_open", "about_dialog_close"),
     ("experimental_dialog_open", "experimental_dialog_close"),
+    ("paste_menu_open", "paste_menu_close"),
+    ("explorer_open", "explorer_close"),
 ]
 # Padding (secondi prima, secondi dopo) per gli eventi puntuali che meritano
-# una sosta piu' lunga del default (2s prima / 4s dopo).
+# una sosta piu' lunga del default (2s prima / 4s dopo) nel taglio video.
 EVENT_PAD = {
+    "theme_toggled": (1.0, 3.0),
     "job_completed_first": (2.0, 10.0),
     "job_abandoned_first": (2.0, 5.0),
     "all_completed": (2.0, 15.0),
@@ -182,8 +242,11 @@ log = logging.getLogger("demo_runner")
 
 def parse_args(argv=None):
     p = argparse.ArgumentParser(
-        description="Registra un giro reale del tool (IT/EN), produce video + galleria.",
+        description="Registra un giro reale del tool (IT/EN): video e/o galleria di screenshot.",
     )
+    p.add_argument("--mode", choices=["video", "screenshots", "both"], default=None,
+                    help="video = solo registrazione+taglio; screenshots = solo foto a stato "
+                         "fermo; both = screenshots poi video. Obbligatorio fuori da --dry-run.")
     p.add_argument("--lang", choices=["it", "en", "both"], default="both")
     p.add_argument("--folder-link", default=DEFAULT_FOLDER_LINK)
     p.add_argument("--file-link", default=DEFAULT_FILE_LINK)
@@ -191,8 +254,8 @@ def parse_args(argv=None):
     p.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR))
     p.add_argument(
         "--dry-run", action="store_true",
-        help="Valida il legame col codice di MDPR (import/slot/i18n) senza aprire "
-             "MainWindow, ffmpeg o toccare download/preferenze. <5s, per CI/pre-commit.",
+        help="Valida il legame col codice di MDPR (import/slot/i18n) per ENTRAMBE le modalita' "
+             "senza aprire MainWindow, ffmpeg o toccare download/preferenze. <5s, per CI/pre-commit.",
     )
     p.add_argument("--_worker", action="store_true", help=argparse.SUPPRESS)
     return p.parse_args(argv)
@@ -237,12 +300,15 @@ _DRY_RUN_SUPPORT_IMPORTS = [
 _DRY_RUN_CLASS_ATTRS = [
     ("MainWindow", "_on_start"),
     ("MainWindow", "_open_detail"),
+    ("MainWindow", "_open_about_dialog"),
+    ("MainWindow", "_open_experimental_dialog"),
+    ("MainWindow", "_begin_folder_expansion"),
     ("ControlsBar", "set_download_dir"),
     ("ControlsBar", "_show_settings_menu"),
     ("LinkPanel", "open_paste_dialog"),
     ("JobsPanel", "_on_filter_button_clicked"),
 ]
-_JOB_REQUIRED_FIELDS = {"file_id", "status", "progress", "speed", "file_name", "url"}
+_JOB_REQUIRED_FIELDS = {"file_id", "status", "progress", "speed", "file_name", "url", "output_path"}
 # Chiavi i18n usate dal watchdog dialog: NESSUNA (vedi Contratto — distingue
 # per classe/ButtonRole, non per chiave tradotta). Lista vuota apposta: se in
 # futuro il watchdog iniziasse a dipendere da una chiave, va aggiunta QUI.
@@ -298,6 +364,18 @@ def run_dry_run() -> int:
                 counts["slots"] += 1
         except (OSError, TypeError) as exc:
             errors.append(f"runner rotto: impossibile leggere il sorgente di MainWindow.__init__ ({exc})")
+        try:
+            expand_src = inspect.getsource(MainWindow._begin_folder_expansion)
+            if "_expand_dialog" not in expand_src:
+                errors.append(
+                    "runner rotto: MainWindow._begin_folder_expansion non assegna piu' self._expand_dialog"
+                )
+            else:
+                counts["slots"] += 1
+        except (OSError, TypeError, AttributeError) as exc:
+            errors.append(
+                f"runner rotto: impossibile leggere il sorgente di MainWindow._begin_folder_expansion ({exc})"
+            )
 
     ControlsBar = ns.get("ControlsBar")
     if ControlsBar is not None:
@@ -305,15 +383,35 @@ def run_dry_run() -> int:
             from PyQt6.QtWidgets import QApplication
             app = QApplication.instance() or QApplication([sys.argv[0]])
             cb = ControlsBar()
-            if not hasattr(cb, "_settings_menu"):
-                errors.append("runner rotto: ControlsBar()._settings_menu non esiste piu'")
-            else:
-                counts["slots"] += 1
+            for attr in ("_settings_menu", "language_combo", "theme_btn"):
+                if not hasattr(cb, attr):
+                    errors.append(f"runner rotto: ControlsBar().{attr} non esiste piu'")
+                else:
+                    counts["slots"] += 1
             cb.deleteLater()
             del app
         except Exception as exc:
             errors.append(
-                f"runner rotto: impossibile verificare ControlsBar._settings_menu "
+                f"runner rotto: impossibile verificare gli attributi di ControlsBar() "
+                f"({type(exc).__name__}: {exc})",
+            )
+
+    PasteLinksDialog = ns.get("PasteLinksDialog")
+    if PasteLinksDialog is not None:
+        try:
+            from PyQt6.QtWidgets import QApplication
+            app = QApplication.instance() or QApplication([sys.argv[0]])
+            dlg = PasteLinksDialog([], False)
+            for attr in ("edit", "add_btn", "cancel_btn"):
+                if not hasattr(dlg, attr):
+                    errors.append(f"runner rotto: PasteLinksDialog().{attr} non esiste piu'")
+                else:
+                    counts["slots"] += 1
+            dlg.deleteLater()
+            del app
+        except Exception as exc:
+            errors.append(
+                f"runner rotto: impossibile verificare gli attributi di PasteLinksDialog() "
                 f"({type(exc).__name__}: {exc})",
             )
 
@@ -350,7 +448,7 @@ def _dry_run_report(errors: list[str], counts: dict, t_start: float) -> int:
         return 1
     print(
         f"dry-run OK: {counts['imports']} imports, {counts['slots']} slots, "
-        f"{counts['i18n']} chiavi i18n, tutto in ordine ({elapsed:.2f}s)",
+        f"{counts['i18n']} chiavi i18n, tutto in ordine (entrambe le modalita', {elapsed:.2f}s)",
         flush=True,
     )
     return 0
@@ -369,7 +467,15 @@ def main() -> int:
         print("RESULT_JSON:" + json.dumps(result), flush=True)
         return 0 if result.get("ok") else 1
 
-    if shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None:
+    if args.mode is None:
+        print(
+            "--mode e' obbligatorio: video | screenshots | both (oppure usa --dry-run).",
+            flush=True,
+        )
+        return 2
+
+    needs_ffmpeg = args.mode in ("video", "both")
+    if needs_ffmpeg and (shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None):
         print(
             "ffmpeg/ffprobe non trovati nel PATH. Installa con "
             "'winget install ffmpeg' (o 'choco install ffmpeg -y') e rilancia.",
@@ -384,44 +490,51 @@ def main() -> int:
 
     out_dir = Path(args.output_dir).resolve()
     (out_dir / "videos").mkdir(parents=True, exist_ok=True)
+    (out_dir / "screens").mkdir(parents=True, exist_ok=True)
+    (out_dir / "timelines").mkdir(parents=True, exist_ok=True)
 
+    run_modes = ["screenshots", "video"] if args.mode == "both" else [args.mode]
     langs = ["it", "en"] if args.lang == "both" else [args.lang]
-    results: dict[str, dict] = {}
-    for lang in langs:
-        print(f"[demo_runner] === Avvio pass '{lang}' ===", flush=True)
-        results[lang] = spawn_worker(lang, args, out_dir)
-        r = results[lang]
-        if r.get("ok"):
-            print(
-                f"[demo_runner] Pass '{lang}' OK: raw={r.get('raw_duration_s'):.0f}s "
-                f"bello={r.get('cut_duration_s'):.0f}s stills={len(r.get('stills', []))}",
-                flush=True,
-            )
-        else:
-            print(f"[demo_runner] Pass '{lang}' FALLITO: {r.get('error')}", flush=True)
+
+    manifest = _load_manifest(out_dir)
+    overall_ok = True
+    for mode in run_modes:
+        print(f"[demo_runner] === Avvio modalita' '{mode}' ===", flush=True)
+        mode_results: dict[str, dict] = {}
+        for lang in langs:
+            print(f"[demo_runner] --- pass '{mode}'/'{lang}' ---", flush=True)
+            mode_results[lang] = spawn_worker(mode, lang, args, out_dir)
+            r = mode_results[lang]
+            if r.get("ok"):
+                print(f"[demo_runner] '{mode}'/'{lang}' OK: stop_reason={r.get('stop_reason')}", flush=True)
+            else:
+                print(f"[demo_runner] '{mode}'/'{lang}' FALLITO: {r.get('error')}", flush=True)
+                overall_ok = False
+        manifest.setdefault(mode, {}).update(mode_results)
+        _save_manifest(out_dir, manifest)
 
     downloads_dir = out_dir / "downloads"
     if downloads_dir.exists():
         shutil.rmtree(downloads_dir, ignore_errors=True)
 
-    build_index_html(out_dir, results)
-    write_readme(out_dir, args)
-    write_report(out_dir, results)
+    build_index_html(out_dir, manifest)
+    write_readme(out_dir, args, manifest)
+    write_report(out_dir, manifest)
     print(f"[demo_runner] Fatto. Apri {out_dir / 'index.html'}", flush=True)
-    return 0 if all(r.get("ok") for r in results.values()) else 1
+    return 0 if overall_ok else 1
 
 
-def spawn_worker(lang: str, args, out_dir: Path) -> dict:
+def spawn_worker(mode: str, lang: str, args, out_dir: Path) -> dict:
     argv = [
         sys.executable, str(SCRIPT_PATH),
-        "--_worker", "--lang", lang,
+        "--_worker", "--mode", mode, "--lang", lang,
         "--folder-link", args.folder_link,
         "--file-link", args.file_link,
         "--safety-cap-minutes", str(args.safety_cap_minutes),
         "--output-dir", str(out_dir),
     ]
     # Margine oltre il safety-cap per lasciare tempo al post-processing
-    # (segmenti ffmpeg + stills) dentro lo stesso sottoprocesso.
+    # (segmenti ffmpeg, in modalita' video) dentro lo stesso sottoprocesso.
     hard_timeout = args.safety_cap_minutes * 60 + 900
     try:
         proc = subprocess.run(
@@ -430,14 +543,14 @@ def spawn_worker(lang: str, args, out_dir: Path) -> dict:
         )
     except subprocess.TimeoutExpired as exc:
         return {
-            "lang": lang, "ok": False, "error": "hard_timeout_subprocess",
+            "lang": lang, "mode": mode, "ok": False, "error": "hard_timeout_subprocess",
             "stdout_tail": (exc.stdout or "")[-4000:],
             "stderr_tail": (exc.stderr or "")[-4000:],
         }
     result = _extract_result_json(proc.stdout or "")
     if result is None:
         return {
-            "lang": lang, "ok": False, "error": "no_result_json",
+            "lang": lang, "mode": mode, "ok": False, "error": "no_result_json",
             "returncode": proc.returncode,
             "stdout_tail": (proc.stdout or "")[-4000:],
             "stderr_tail": (proc.stderr or "")[-4000:],
@@ -454,6 +567,30 @@ def _extract_result_json(stdout: str):
             except json.JSONDecodeError:
                 return None
     return None
+
+
+# ---------------------------------------------------------------------------
+# Manifest: ultimo risultato OK per (modalita', lingua). Serve perche' i giri
+# video e screenshots avvengono tipicamente in SESSIONI SEPARATE (non sempre
+# --mode both): senza un manifest persistente, un giro `--mode screenshots`
+# da solo ricostruirebbe un index.html senza la sezione video del giro
+# precedente (e viceversa).
+# ---------------------------------------------------------------------------
+
+def _load_manifest(out_dir: Path) -> dict:
+    path = out_dir / _MANIFEST_NAME
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        log.warning("Manifest %s illeggibile, riparto da zero", path)
+        return {}
+
+
+def _save_manifest(out_dir: Path, manifest: dict) -> None:
+    path = out_dir / _MANIFEST_NAME
+    path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 # ---------------------------------------------------------------------------
@@ -517,17 +654,24 @@ def _restore_from_backup(path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Worker: un giro completo (una lingua), in un processo Python dedicato.
+# Worker: un giro completo (una modalita', una lingua), in un processo Python
+# dedicato.
 # ---------------------------------------------------------------------------
 
 def run_worker_pass(args) -> dict:
     lang = args.lang
+    mode = args.mode
     if lang not in ("it", "en"):
-        return {"lang": lang, "ok": False, "error": "lang_non_valido_per_worker"}
+        return {"lang": lang, "mode": mode, "ok": False, "error": "lang_non_valido_per_worker"}
+    if mode not in ("video", "screenshots"):
+        return {"lang": lang, "mode": mode, "ok": False, "error": "mode_non_valido_per_worker"}
 
     out_dir = Path(args.output_dir).resolve()
     videos_dir = out_dir / "videos"
-    timeline_path = out_dir / f"timeline-{lang}.jsonl"
+    screens_lang_dir = out_dir / "screens" / lang
+    mode_key = "video" if mode == "video" else "screens"
+    timeline_path = out_dir / "timelines" / f"timeline-{mode_key}-{lang}.jsonl"
+    timeline_path.parent.mkdir(parents=True, exist_ok=True)
     downloads_dir = out_dir / "downloads"
     prefs_path = REPO_ROOT / "preferences.json"
     session_path = REPO_ROOT / "session_state.json"
@@ -535,7 +679,7 @@ def run_worker_pass(args) -> dict:
     _self_heal_stale_backups(prefs_path, session_path)
     _ensure_original_backup(prefs_path)
     _ensure_original_backup(session_path)
-    result: dict = {"lang": lang, "ok": False}
+    result: dict = {"lang": lang, "mode": mode, "ok": False}
 
     try:
         if downloads_dir.exists():
@@ -580,7 +724,7 @@ def run_worker_pass(args) -> dict:
         window.show()
 
         timeline_fh = timeline_path.open("w", encoding="utf-8")
-        driver = DemoDriver(window, lang, args, out_dir, timeline_fh)
+        driver = DemoDriver(window, lang, args, out_dir, timeline_fh, mode)
         QTimer.singleShot(1000, driver.begin)
         app.exec()
         timeline_fh.close()
@@ -589,30 +733,34 @@ def run_worker_pass(args) -> dict:
         result["stop_reason"] = driver.result.get("stop_reason", "sconosciuto")
         result["notable"] = driver.notable
 
-        raw_path = videos_dir / f"raw-{lang}.mp4"
-        result["raw_path"] = str(raw_path)
-        if not raw_path.exists() or raw_path.stat().st_size == 0:
-            result["ok"] = False
-            result["error"] = "video_raw_mancante_o_vuoto"
-            return result
-
         events = _read_events(timeline_path)
         result["events_count"] = len(events)
-        result["timeline_path"] = str(timeline_path)
 
-        demo_path = videos_dir / f"demo-{lang}.mp4"
-        tmp_dir = out_dir / f"_tmp_segments_{lang}"
-        cut_info = build_variable_speed_cut(raw_path, events, demo_path, tmp_dir)
-        result.update(cut_info)
-        result["demo_path"] = str(demo_path)
+        if mode == "video":
+            raw_path = videos_dir / f"raw-{lang}.mp4"
+            if not raw_path.exists() or raw_path.stat().st_size == 0:
+                result["ok"] = False
+                result["error"] = "video_raw_mancante_o_vuoto"
+                return result
+            demo_path = videos_dir / f"demo-{lang}.mp4"
+            tmp_dir = out_dir / f"_tmp_segments_{lang}"
+            explorer_raw = driver.explorer_raw_path
+            if explorer_raw is not None and not (explorer_raw.exists() and explorer_raw.stat().st_size > 0):
+                explorer_raw = None
+            cut_info = build_variable_speed_cut(raw_path, events, demo_path, tmp_dir, explorer_raw)
+            result.update(cut_info)
+            result["explorer_segment_included"] = explorer_raw is not None
+        else:
+            screens_lang_dir.mkdir(parents=True, exist_ok=True)
+            result["screenshots"] = list(driver.screenshots)
+            if not driver.screenshots:
+                result["notable"] = list(result.get("notable") or []) + [
+                    "nessuno screenshot prodotto in questo giro"
+                ]
 
-        lang_dir = out_dir / lang
-        stills = extract_stills(raw_path, events, lang_dir, cut_info["raw_duration_s"])
-        result["stills"] = stills
-        result["stills_dir"] = str(lang_dir)
         return result
     except Exception as exc:  # noqa: BLE001 — vogliamo comunque il RESULT_JSON
-        log.exception("Errore nel pass %s", lang)
+        log.exception("Errore nel pass %s/%s", mode, lang)
         result["ok"] = False
         result["error"] = f"{type(exc).__name__}: {exc}"
         return result
@@ -646,24 +794,64 @@ def _read_events(timeline_path: Path) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
-# DemoDriver — pilota MainWindow via metodi/slot Qt reali, registra la timeline.
+# DemoDriver — pilota MainWindow via metodi/slot Qt reali, registra la
+# timeline e (a seconda della modalita') la registrazione video o gli
+# screenshot a stato fermo.
+#
+# Il tour dei 5 menu (Impostazioni, Sperimentale/"Strumenti", Aggiungi link
+# vuoto, Tema, Info) avviene tutto in apertura, PRIMA di aggiungere i link
+# veri: e' un cambio deliberato rispetto alla versione precedente del runner
+# (che apriva Impostazioni/Info/Sperimentale a meta' download, quando la
+# velocita' aggregata si stabilizzava) perche' il tour non ha piu' bisogno di
+# aspettare nulla di asincrono — la dashboard e' comunque vuota in quel
+# momento, quindi tanto vale farlo subito e in modo deterministico.
+#
+# Nota sui passi 4/5 del flusso richiesto ("Job pronti pre-avvio" prima di
+# "Avvio"): nella GUI reale i job compaiono nel modello SOLO dopo aver
+# invocato MainWindow._on_start() (LinkPanel tiene i link in una lista
+# interna non visibile finche' non si clicca Avvia — non esiste una coda
+# "pronta ma non ancora avviata" visibile a schermo). I due passi sono quindi
+# uniti: si clicca Avvia e si cattura il primo istante in cui i job compaiono
+# (ancora in coda/appena partiti), invece di una fase separata pre-Avvio.
 # ---------------------------------------------------------------------------
 
 class DemoDriver:
-    # Dialog che apriamo noi stessi con exec(): il watchdog li chiude dopo
-    # questo hold, ma il log open/close resta a carico di chi li apre (una
-    # sola sorgente di verita' per gli eventi, niente timer in corsa).
-    _DIALOG_CLOSE_HOLD_S = {
-        "AboutDialog": 8.0,
-        "ExperimentalFeaturesDialog": 10.0,
+    # Attese reali (millisecondi) usate SOLO in modalita' video: tengono un
+    # menu/dialogo visibilmente aperto abbastanza a lungo da avere footage
+    # reale da mantenere a 1x nel taglio (il post-processing puo' scegliere
+    # la velocita' di un intervallo gia' registrato, non fabbricarne di
+    # nuovo). In modalita' screenshots non servono: basta il settling.
+    SETTINGS_HOLD_MS = 5000
+    LANGUAGE_POPUP_HOLD_MS = 1500
+    EXPERIMENTAL_HOLD_MS = 10000
+    ABOUT_HOLD_MS = 8000
+    PASTE_EMPTY_HOLD_MS = 4000
+    DETAIL_HOLD_MS = 20000
+    EXPLORER_RECORD_MS = 9000
+
+    # Attesa di settling (modalita' screenshots): tempo dopo un'azione prima
+    # di catturare, cosi' lo stato e' fermo e non a meta' transizione/repaint.
+    SETTLE_MS = 500
+    INTRO_SETTLE_MS = 1500
+
+    # Dialog aperti dal watchdog generico (non dal driver stesso, che non ha
+    # un riferimento diretto: MainWindow._open_about_dialog()/
+    # _open_experimental_dialog() costruiscono+eseguono il dialog al proprio
+    # interno). slug = nome file screenshot, hold_attr = nome dell'attributo
+    # di classe con l'attesa in modalita' video.
+    _DIALOG_TOUR = {
+        "AboutDialog": ("06-menu-info", "ABOUT_HOLD_MS"),
+        "ExperimentalFeaturesDialog": ("03-menu-strumenti", "EXPERIMENTAL_HOLD_MS"),
     }
     # Dialog che si autogestiscono (progress non bloccante dell'espansione
-    # cartelle): il watchdog non deve toccarli.
+    # cartelle): il watchdog non deve toccarli (in modalita' screenshots viene
+    # comunque tentata una cattura best-effort, vedi _maybe_capture_expansion_dialog).
     _IGNORED_MODAL_TYPES = {"QProgressDialog"}
 
-    def __init__(self, window, lang: str, args, out_dir: Path, timeline_fh) -> None:
+    def __init__(self, window, lang: str, args, out_dir: Path, timeline_fh, mode: str) -> None:
         self.window = window
         self.lang = lang
+        self.mode = mode
         self.out_dir = out_dir
         self.folder_link = args.folder_link
         self.file_link = args.file_link
@@ -672,20 +860,26 @@ class DemoDriver:
 
         self.t0: float | None = None
         self.ffmpeg_proc = None
+        self.explorer_ffmpeg_proc = None
+        self.explorer_raw_path: Path | None = None
         self._finished = False
         # Riferimenti FORTI (non id()): un dialog chiuso puo' essere raccolto
         # dal GC e un nuovo dialog puo' riottenere lo stesso id() Python,
         # facendolo ignorare per errore come "gia' gestito".
         self._handled_modals: list = []
+        self._paste_dialog_mode = "fill_and_confirm"  # "tour_empty" durante il passo 2c
         self._jobs_seen = False
         self._last_status: dict[int, str] = {}
         self._first_completed_logged = False
         self._first_abandoned_logged = False
         self._detail_opened = False
-        self._settings_sequence_started = False
-        self._speed_stable_ticks = 0
+        self._expansion_shot_done = False
+        self._progress_shot_done = False
         self._all_done_triggered = False
+        self._filter_shown = False
+        self._explorer_done = False
         self.notable: list[str] = []
+        self.screenshots: list[str] = []
         self.result: dict = {}
 
         self._watchdog_timer = None
@@ -696,7 +890,8 @@ class DemoDriver:
     def begin(self) -> None:
         from PyQt6.QtCore import QTimer
 
-        self.ffmpeg_proc = self._start_ffmpeg()
+        if self.mode == "video":
+            self.ffmpeg_proc = self._start_ffmpeg()
         self.t0 = time.monotonic()
         self.log_event("recording_started", title=self.window.windowTitle())
         self.log_event("opening_phase_begin")
@@ -711,7 +906,7 @@ class DemoDriver:
         self._ticker_timer.start(1000)
 
         QTimer.singleShot(int(self.safety_cap_s * 1000), self._on_safety_cap)
-        QTimer.singleShot(5000, self._phase1_paste)
+        QTimer.singleShot(self.INTRO_SETTLE_MS, self._tour_step_startup_shot)
 
     def _start_ffmpeg(self):
         raw_path = self.out_dir / "videos" / f"raw-{self.lang}.mp4"
@@ -733,36 +928,166 @@ class DemoDriver:
             stderr=subprocess.DEVNULL, cwd=str(self.out_dir),
         )
 
-    # ---- fase 1: apertura ---------------------------------------------------
+    def _start_explorer_ffmpeg(self) -> None:
+        path = self.out_dir / f"_tmp_explorer_{self.lang}.mp4"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        cmd = [
+            "ffmpeg", "-y",
+            "-f", "gdigrab",
+            "-framerate", FFMPEG_FRAMERATE,
+            "-draw_mouse", "0",
+            "-i", "desktop",
+            "-an",
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+            "-pix_fmt", "yuv420p",
+            str(path),
+        ]
+        self.explorer_ffmpeg_proc = subprocess.Popen(
+            cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL, cwd=str(self.out_dir),
+        )
+        self.explorer_raw_path = path
 
-    def _phase1_paste(self) -> None:
+    # ---- tour dei 5 menu (fase 2, tutto in apertura) ------------------------
+
+    def _tour_step_startup_shot(self) -> None:
+        if self._finished:
+            return
+        self._maybe_capture("01-startup", self.window, self._tour_step_settings)
+
+    def _tour_step_settings(self) -> None:
         if self._finished:
             return
         from PyQt6.QtCore import QTimer
 
-        self.window.link_panel.open_paste_dialog()  # il watchdog compila e conferma
+        controls = self.window.controls
+        menu = controls._settings_menu
+        self.log_event("settings_menu_open")
+
+        def after_shot() -> None:
+            if self._finished:
+                return
+            if self.mode == "screenshots":
+                self._tour_settings_language(menu)
+            else:
+                QTimer.singleShot(self.SETTINGS_HOLD_MS, lambda: self._close_settings_menu(menu))
+
+        self._maybe_capture("02-menu-impostazioni", menu, after_shot)
+        controls._show_settings_menu()  # blocca (nested loop) finche' menu.close()
+        if self._finished:
+            return
+
+    def _tour_settings_language(self, menu) -> None:
+        if self._finished:
+            return
+        combo = self.window.controls.language_combo
+        combo.showPopup()
+        self.log_event("settings_menu_language_open")
+        popup = combo.view().window()
+
+        def after_lang_shot() -> None:
+            if self._finished:
+                return
+            combo.hidePopup()
+            self.log_event("settings_menu_language_close")
+            self._close_settings_menu(menu)
+
+        self._maybe_capture("02b-menu-impostazioni-lingua", popup, after_lang_shot)
+
+    def _close_settings_menu(self, menu) -> None:
+        if self._finished:
+            return
+        from PyQt6.QtCore import QTimer
+
+        self.log_event("settings_menu_close")
+        menu.close()
+        QTimer.singleShot(300, self._tour_step_experimental)
+
+    def _tour_step_experimental(self) -> None:
+        if self._finished:
+            return
+        from PyQt6.QtCore import QTimer
+
+        self.log_event("experimental_dialog_open")
+        self.window._open_experimental_dialog()  # blocca; il watchdog cattura+chiude
+        if self._finished:
+            return
+        self.log_event("experimental_dialog_close")
+        QTimer.singleShot(300, self._tour_step_paste_empty)
+
+    def _tour_step_paste_empty(self) -> None:
+        if self._finished:
+            return
+        from PyQt6.QtCore import QTimer
+
+        self._paste_dialog_mode = "tour_empty"
+        self.log_event("paste_menu_open")
+        self.window.link_panel.open_paste_dialog()  # blocca; il watchdog cattura+annulla
+        if self._finished:
+            return
+        self.log_event("paste_menu_close")
+        self._paste_dialog_mode = "fill_and_confirm"
+        QTimer.singleShot(300, self._tour_step_theme)
+
+    def _tour_step_theme(self) -> None:
+        if self._finished:
+            return
+        self.window.controls.theme_btn.click()
+        self.log_event("theme_toggled")
+        self._maybe_capture("05-menu-tema", self.window, self._tour_step_info)
+
+    def _tour_step_info(self) -> None:
+        if self._finished:
+            return
+        from PyQt6.QtCore import QTimer
+
+        self.log_event("about_dialog_open")
+        self.window._open_about_dialog()  # blocca; il watchdog cattura+chiude
+        if self._finished:
+            return
+        self.log_event("about_dialog_close")
+        QTimer.singleShot(300, self._tour_step_paste_fill)
+
+    # ---- fase 3: aggiunta link reale + avvio ---------------------------------
+
+    def _tour_step_paste_fill(self) -> None:
+        if self._finished:
+            return
+        from PyQt6.QtCore import QTimer
+
+        self.window.link_panel.open_paste_dialog()  # blocca; il watchdog compila e conferma
         if self._finished:
             return
         self.log_event("paste_links")
-        QTimer.singleShot(1200, self._phase1_click_start)
+        QTimer.singleShot(500, self._phase_click_start)
 
     def _fill_paste_dialog(self, dlg) -> None:
         from PyQt6.QtCore import QTimer
 
         text = f"{self.folder_link}\n{self.file_link}"
         dlg.edit.setPlainText(text)
-        QTimer.singleShot(
-            1200, lambda: dlg.add_btn.click() if dlg.add_btn.isEnabled() else self._safe_close(dlg),
-        )
 
-    def _phase1_click_start(self) -> None:
+        def after_fill() -> None:
+            if self._finished:
+                return
+            if dlg.add_btn.isEnabled():
+                dlg.add_btn.click()
+            else:
+                self._safe_close(dlg)
+
+        def after_wait() -> None:
+            self._maybe_capture("07-dialogo-incolla-link-compilato", dlg, after_fill)
+
+        QTimer.singleShot(1200, after_wait)
+
+    def _phase_click_start(self) -> None:
         if self._finished:
             return
         self.window._on_start()
         self.log_event("start_clicked")
         self.log_event("opening_phase_end")
 
-    # ---- ticker periodico: stato job + trigger fase 2/3/4 -------------------
+    # ---- ticker periodico: stato job + trigger fasi successive --------------
 
     def _ticker_tick(self) -> None:
         if self._finished:
@@ -773,6 +1098,16 @@ class DemoDriver:
         if jobs and not self._jobs_seen:
             self._jobs_seen = True
             self.log_event("jobs_created", count=len(jobs))
+            if self.mode == "screenshots" and not self._expansion_shot_done:
+                self.notable.append(
+                    "salto: 08-espansione-cartella: completata troppo velocemente per essere "
+                    "fotografata (o nessun link cartella nel giro)"
+                )
+            self._maybe_capture("09-job-in-attesa", self.window, lambda: None)
+
+        if not self._progress_shot_done and any(j.status == self._STATUS_RUNNING() for j in jobs):
+            self._progress_shot_done = True
+            self._maybe_capture("10-download-in-corso", self.window, lambda: None)
 
         for j in jobs:
             prev = self._last_status.get(j.file_id)
@@ -800,20 +1135,11 @@ class DemoDriver:
                 self._detail_opened = True
                 self._open_detail(candidate.file_id)
 
-        if not self._settings_sequence_started:
-            agg_speed = sum(j.speed for j in jobs)
-            self._speed_stable_ticks = self._speed_stable_ticks + 1 if agg_speed > 0 else 0
-            if self._speed_stable_ticks >= 3:
-                self._settings_sequence_started = True
-                self.log_event("settings_sequence_start")
-                self._open_settings_menu()
-
         terminal = self._TERMINAL_STATUSES()
         if jobs and all(j.status in terminal for j in jobs) and not self._all_done_triggered:
             self._all_done_triggered = True
             self.log_event("all_completed")
-            from PyQt6.QtCore import QTimer
-            QTimer.singleShot(500, self._phase4_show_completed_filter)
+            self._maybe_capture("12-tutti-completati", self.window, self._phase_filter_completed)
 
     # Import differiti delle costanti di stato (evita import Qt a livello di
     # modulo per il solo processo "genitore", che non ha bisogno di PyQt6).
@@ -839,14 +1165,18 @@ class DemoDriver:
         )
         return {STATUS_COMPLETED, STATUS_ABANDONED, STATUS_CANCELLED, STATUS_FAILED}
 
-    # ---- fase 2: dettaglio job + impostazioni/about/sperimentali ------------
+    # ---- dettaglio job (>10% di progresso) -----------------------------------
 
     def _open_detail(self, file_id: int) -> None:
         from PyQt6.QtCore import QTimer
 
         self.window._open_detail(file_id)
         self.log_event("detail_dialog_open", job=file_id)
-        QTimer.singleShot(20000, lambda: self._close_detail(file_id))
+        dlg = self.window._open_dialogs.get(file_id)
+        if self.mode == "screenshots" and dlg is not None:
+            self._maybe_capture("11-dialogo-dettaglio-job", dlg, lambda: self._close_detail(file_id))
+        else:
+            QTimer.singleShot(self.DETAIL_HOLD_MS, lambda: self._close_detail(file_id))
 
     def _close_detail(self, file_id: int) -> None:
         if self._finished:
@@ -856,61 +1186,76 @@ class DemoDriver:
             dlg.close()
         self.log_event("detail_dialog_close", job=file_id)
 
-    def _open_settings_menu(self) -> None:
+    # ---- completamento: filtro + Explorer ------------------------------------
+
+    def _phase_filter_completed(self) -> None:
         if self._finished:
             return
-        from PyQt6.QtCore import QTimer
-
-        menu = self.window.controls._settings_menu
-        QTimer.singleShot(5000, menu.close)
-        self.log_event("settings_menu_open")
-        self.window.controls._show_settings_menu()  # blocca finche' il menu non chiude
-        if self._finished:
-            return
-        self.log_event("settings_menu_close")
-        QTimer.singleShot(1500, self._open_about)
-
-    def _open_about(self) -> None:
-        if self._finished:
-            return
-        from src.gui.about_dialog import AboutDialog
-
-        dlg = AboutDialog(self.window)
-        self.log_event("about_dialog_open")
-        dlg.exec()  # il watchdog lo chiude dopo _DIALOG_CLOSE_HOLD_S["AboutDialog"]
-        if self._finished:
-            return
-        self.log_event("about_dialog_close")
-        from PyQt6.QtCore import QTimer
-        QTimer.singleShot(1500, self._open_experimental)
-
-    def _open_experimental(self) -> None:
-        if self._finished:
-            return
-        from src.gui.experimental_dialog import ExperimentalFeaturesDialog
-
-        dlg = ExperimentalFeaturesDialog(self.window)
-        self.log_event("experimental_dialog_open")
-        dlg.exec()  # il watchdog lo chiude dopo _DIALOG_CLOSE_HOLD_S["ExperimentalFeaturesDialog"]
-        if self._finished:
-            return
-        self.log_event("experimental_dialog_close")
-
-    # ---- fase 4: completamento -----------------------------------------------
-
-    def _phase4_show_completed_filter(self) -> None:
-        if self._finished:
-            return
-        from PyQt6.QtCore import QTimer
-
         from src.gui.jobs_panel import FILTER_COMPLETED
 
         try:
             self.window.jobs_panel._on_filter_button_clicked(FILTER_COMPLETED)
         except Exception:
             log.exception("impossibile applicare il filtro Completati")
+        self._filter_shown = True
         self.log_event("completed_filter_shown")
-        QTimer.singleShot(15000, lambda: self._finish("natural_completion"))
+        self._maybe_capture("13-filtro-completati", self.window, self._tour_explorer)
+
+    def _first_completed_output_path(self) -> str | None:
+        for j in self.window.jobs_panel.model.jobs_iter():
+            if j.status == self._STATUS_COMPLETED() and j.output_path:
+                return j.output_path
+        return None
+
+    def _tour_explorer(self) -> None:
+        if self._finished:
+            return
+        from PyQt6.QtCore import QTimer
+
+        self._explorer_done = True
+        path = self._first_completed_output_path()
+        if not path:
+            self.log_event("explorer_step", skipped=True, reason="nessun job completato con output_path")
+            self.notable.append("salto: apertura Explorer: nessun file completato disponibile")
+            self._finish("natural_completion")
+            return
+
+        if self.mode == "video":
+            self._stop_ffmpeg()
+            self.log_event("main_recording_stopped_for_explorer")
+            subprocess.run(["explorer", f"/select,{path}"], check=False)
+            self.log_event("explorer_open")
+            self._start_explorer_ffmpeg()
+            QTimer.singleShot(self.EXPLORER_RECORD_MS, self._finish_explorer_video)
+        else:
+            subprocess.run(["explorer", f"/select,{path}"], check=False)
+            self.log_event("explorer_open")
+            QTimer.singleShot(self.SETTLE_MS + 1000, self._capture_explorer)
+
+    def _finish_explorer_video(self) -> None:
+        if self._finished:
+            return
+        self._stop_explorer_ffmpeg()
+        self.log_event("explorer_close")
+        self._finish("natural_completion")
+
+    def _capture_explorer(self) -> None:
+        if self._finished:
+            return
+
+        def finish_explorer() -> None:
+            self.log_event("explorer_close")
+            self._finish("natural_completion")
+
+        ctypes.windll.user32.GetForegroundWindow.restype = ctypes.wintypes.HWND
+        hwnd = ctypes.windll.user32.GetForegroundWindow()
+        if not hwnd:
+            self.notable.append(
+                "salto: 14-explorer-file-selezionato: impossibile determinare la finestra Explorer"
+            )
+            finish_explorer()
+            return
+        self._do_capture_then("14-explorer-file-selezionato", hwnd, finish_explorer)
 
     # ---- safety cap -----------------------------------------------------------
 
@@ -924,14 +1269,18 @@ class DemoDriver:
         self.log_event("safety_cap_triggered", incomplete=incomplete)
         self._finish("safety_cap")
 
-    # ---- watchdog dialog inattesi ---------------------------------------------
+    # ---- watchdog dialog inattesi (e dialog aperti dai veri slot MainWindow) --
 
     def _watchdog_tick(self) -> None:
         if self._finished:
             return
+        from PyQt6.QtCore import QTimer
         from PyQt6.QtWidgets import QApplication, QDialog, QMessageBox
 
         from src.gui.paste_links_dialog import PasteLinksDialog
+
+        if self.mode == "screenshots":
+            self._maybe_capture_expansion_dialog()
 
         w = QApplication.activeModalWidget()
         if w is None:
@@ -943,22 +1292,51 @@ class DemoDriver:
             return  # si autogestisce (es. il progress dell'espansione cartelle)
         self._handled_modals.append(w)
 
-        from PyQt6.QtCore import QTimer
-
         if isinstance(w, PasteLinksDialog):
-            self._fill_paste_dialog(w)
+            self._handle_paste_dialog(w)
         elif isinstance(w, QMessageBox):
             self._handle_message_box(w)
-        elif cls_name in self._DIALOG_CLOSE_HOLD_S:
-            # Aperto deliberatamente da noi (About/Sperimentali): il log
-            # open/close resta a carico di chi lo apre, qui solo il timer.
-            hold_ms = int(self._DIALOG_CLOSE_HOLD_S[cls_name] * 1000)
-            QTimer.singleShot(hold_ms, lambda: self._safe_close(w))
+        elif cls_name in self._DIALOG_TOUR:
+            self._handle_tour_dialog(w, cls_name)
         elif isinstance(w, QDialog):
             title = w.windowTitle()
             self.log_event("unexpected_dialog", title=title)
             self.notable.append(f"Dialogo modale inatteso durante il giro {self.lang}: {title!r}")
             QTimer.singleShot(4000, lambda: self._safe_close(w))
+
+    def _handle_paste_dialog(self, dlg) -> None:
+        from PyQt6.QtCore import QTimer
+
+        if self._paste_dialog_mode == "tour_empty":
+            if self.mode == "screenshots":
+                self._maybe_capture("04-menu-aggiunta-link-vuoto", dlg, lambda: self._safe_reject(dlg))
+            else:
+                QTimer.singleShot(self.PASTE_EMPTY_HOLD_MS, lambda: self._safe_reject(dlg))
+        else:
+            self._fill_paste_dialog(dlg)
+
+    def _handle_tour_dialog(self, w, cls_name: str) -> None:
+        from PyQt6.QtCore import QTimer
+
+        slug, hold_attr = self._DIALOG_TOUR[cls_name]
+        if self.mode == "screenshots":
+            self._maybe_capture(slug, w, lambda: self._safe_close(w))
+        else:
+            hold_ms = getattr(self, hold_attr)
+            QTimer.singleShot(hold_ms, lambda: self._safe_close(w))
+
+    def _maybe_capture_expansion_dialog(self) -> None:
+        if self._expansion_shot_done or self._jobs_seen:
+            return
+        dlg = getattr(self.window, "_expand_dialog", None)
+        if dlg is None:
+            return
+        self._expansion_shot_done = True
+        try:
+            self._grab_and_save("08-espansione-cartella", dlg)
+        except Exception:
+            log.exception("cattura del dialogo di espansione fallita")
+            self.notable.append("salto: 08-espansione-cartella: cattura fallita")
 
     def _handle_message_box(self, box) -> None:
         from PyQt6.QtCore import QTimer
@@ -999,6 +1377,61 @@ class DemoDriver:
             except Exception:
                 pass
 
+    @staticmethod
+    def _safe_reject(dlg) -> None:
+        try:
+            dlg.cancel_btn.click()
+        except Exception:
+            try:
+                dlg.reject()
+            except Exception:
+                pass
+
+    # ---- cattura screenshot (solo modalita' screenshots) -----------------------
+
+    def _maybe_capture(self, name: str, widget, then) -> None:
+        """Punto d'attesa comune ai due modi: in screenshots fa il settling
+        (SETTLE_MS) e salva il PNG; in video e' solo un respiro minimo prima
+        di proseguire (il "hold" vero per la registrazione lo fanno i
+        chiamanti con QTimer piu' lunghi attorno a questa chiamata, quando la
+        tappa e' un menu/dialogo che deve restare visibilmente aperto)."""
+        if self._finished:
+            return
+        from PyQt6.QtCore import QTimer
+
+        if self.mode == "screenshots":
+            QTimer.singleShot(self.SETTLE_MS, lambda: self._do_capture_then(name, widget, then))
+        else:
+            QTimer.singleShot(50, then)
+
+    def _do_capture_then(self, name: str, widget, then) -> None:
+        if self._finished:
+            return
+        try:
+            self._grab_and_save(name, widget)
+        except Exception:
+            log.exception("cattura screenshot fallita per %s", name)
+            self.notable.append(f"salto: {name}: cattura fallita")
+        then()
+
+    def _grab_and_save(self, name: str, target) -> None:
+        from PyQt6.QtWidgets import QApplication
+
+        hwnd = target if isinstance(target, int) else int(target.winId())
+        screen = QApplication.primaryScreen()
+        if screen is None:
+            raise RuntimeError("nessuno schermo primario disponibile")
+        pix = screen.grabWindow(hwnd)
+        if pix.isNull():
+            raise RuntimeError(f"grabWindow ha restituito una pixmap vuota per {name}")
+        lang_dir = self.out_dir / "screens" / self.lang
+        lang_dir.mkdir(parents=True, exist_ok=True)
+        out_path = lang_dir / f"{name}.png"
+        if not pix.save(str(out_path), "PNG"):
+            raise RuntimeError(f"salvataggio PNG fallito: {out_path}")
+        self.screenshots.append(out_path.name)
+        self.log_event("screenshot_saved", name=out_path.name)
+
     # ---- chiusura -----------------------------------------------------------
 
     def _finish(self, reason: str) -> None:
@@ -1011,16 +1444,16 @@ class DemoDriver:
                 "detail_dialog_open", skipped=True,
                 reason="nessun job ha superato il 10% prima dello stop",
             )
-        if not self._settings_sequence_started:
-            self.log_event(
-                "settings_sequence_start", skipped=True,
-                reason="velocita' aggregata mai stabilmente sopra zero prima dello stop",
-            )
         if not self._all_done_triggered:
             self.log_event("all_completed", skipped=True, reason=f"interrotto ({reason})")
+        if not self._filter_shown:
+            self.log_event("completed_filter_shown", skipped=True, reason=f"interrotto ({reason})")
+        if not self._explorer_done:
+            self.log_event("explorer_open", skipped=True, reason=f"interrotto ({reason})")
 
         self.log_event("recording_stop_requested", reason=reason)
         self._stop_ffmpeg()
+        self._stop_explorer_ffmpeg()
         try:
             self.window.close()
         except Exception:
@@ -1032,35 +1465,58 @@ class DemoDriver:
         QTimer.singleShot(500, QApplication.instance().quit)
 
     def _stop_ffmpeg(self) -> None:
-        if self.ffmpeg_proc is None:
+        proc = self.ffmpeg_proc
+        if proc is None:
             return
+        self.ffmpeg_proc = None
         try:
-            if self.ffmpeg_proc.stdin:
-                self.ffmpeg_proc.stdin.write(b"q")
-                self.ffmpeg_proc.stdin.flush()
+            if proc.stdin:
+                proc.stdin.write(b"q")
+                proc.stdin.flush()
         except Exception:
             pass
         try:
-            self.ffmpeg_proc.wait(timeout=15)
+            proc.wait(timeout=15)
         except subprocess.TimeoutExpired:
-            self.ffmpeg_proc.terminate()
+            proc.terminate()
             try:
-                self.ffmpeg_proc.wait(timeout=5)
+                proc.wait(timeout=5)
             except subprocess.TimeoutExpired:
-                self.ffmpeg_proc.kill()
+                proc.kill()
         self.log_event("recording_stopped")
+
+    def _stop_explorer_ffmpeg(self) -> None:
+        proc = self.explorer_ffmpeg_proc
+        if proc is None:
+            return
+        self.explorer_ffmpeg_proc = None
+        try:
+            if proc.stdin:
+                proc.stdin.write(b"q")
+                proc.stdin.flush()
+        except Exception:
+            pass
+        try:
+            proc.wait(timeout=15)
+        except subprocess.TimeoutExpired:
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
 
     # ---- log timeline ---------------------------------------------------------
 
     def log_event(self, event: str, **fields) -> None:
         t = round(time.monotonic() - self.t0, 2) if self.t0 is not None else 0.0
-        rec = {"t": t, "event": event, "lang": self.lang, **fields}
+        rec = {"t": t, "event": event, "lang": self.lang, "mode": self.mode, **fields}
         self.timeline_fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
         self.timeline_fh.flush()
 
 
 # ---------------------------------------------------------------------------
-# Post-processing: taglio a velocita' variabile + stills.
+# Post-processing (solo modalita' video): taglio a velocita' variabile,
+# con in coda l'eventuale segmento Explorer a schermo intero.
 # ---------------------------------------------------------------------------
 
 def probe_duration(path: Path) -> float:
@@ -1072,7 +1528,10 @@ def probe_duration(path: Path) -> float:
     return float(out.stdout.strip())
 
 
-def build_variable_speed_cut(raw_path: Path, events: list[dict], out_path: Path, tmp_dir: Path) -> dict:
+def build_variable_speed_cut(
+    raw_path: Path, events: list[dict], out_path: Path, tmp_dir: Path,
+    extra_segment_path: Path | None = None,
+) -> dict:
     duration = probe_duration(raw_path)
 
     by_name_times: dict[str, list[float]] = {}
@@ -1152,6 +1611,23 @@ def build_variable_speed_cut(raw_path: Path, events: list[dict], out_path: Path,
         subprocess.run(cmd, check=True, capture_output=True)
         seg_files.append(seg_path)
 
+    # Segmento Explorer (schermo intero, 1x): scalato/letterboxato al frame
+    # size del resto del video cosi' la concatenazione con "-c copy" resta
+    # valida (stesso codec/risoluzione/framerate/pixfmt di tutti gli altri
+    # segmenti). Sempre in coda, mai finestrato: e' gia' breve di suo.
+    if extra_segment_path is not None:
+        extra_seg = tmp_dir / f"seg_{len(seg_files):04d}_explorer.mp4"
+        cmd = [
+            "ffmpeg", "-y", "-i", str(extra_segment_path),
+            "-vf",
+            f"scale={WINDOW_W}:{WINDOW_H}:force_original_aspect_ratio=decrease,"
+            f"pad={WINDOW_W}:{WINDOW_H}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={FFMPEG_FRAMERATE}",
+            "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
+            str(extra_seg),
+        ]
+        subprocess.run(cmd, check=True, capture_output=True)
+        seg_files.append(extra_seg)
+
     list_path = tmp_dir / "concat_list.txt"
     with list_path.open("w", encoding="utf-8") as fh:
         for sp in seg_files:
@@ -1168,39 +1644,10 @@ def build_variable_speed_cut(raw_path: Path, events: list[dict], out_path: Path,
     return {"segments": len(segments), "raw_duration_s": duration, "cut_duration_s": cut_duration}
 
 
-def extract_stills(raw_path: Path, events: list[dict], lang_dir: Path, duration: float) -> list[str]:
-    lang_dir.mkdir(parents=True, exist_ok=True)
-    uniform_dir = lang_dir / "uniform"
-    uniform_dir.mkdir(parents=True, exist_ok=True)
-
-    produced = []
-    idx = 0
-    seen_slugs: set[str] = set()
-    for e in events:
-        if e.get("skipped"):
-            continue
-        idx += 1
-        base_slug = re.sub(r"[^a-z0-9]+", "-", e["event"].lower()).strip("-") or "event"
-        slug, n = base_slug, 2
-        while slug in seen_slugs:
-            slug = f"{base_slug}-{n}"
-            n += 1
-        seen_slugs.add(slug)
-        t = max(0.0, min(duration - 0.1, e["t"] + 3.0))
-        out_path = lang_dir / f"{idx:02d}-{slug}.png"
-        cmd = ["ffmpeg", "-y", "-ss", f"{t:.3f}", "-i", str(raw_path), "-vframes", "1", "-q:v", "2", str(out_path)]
-        subprocess.run(cmd, check=True, capture_output=True)
-        produced.append(out_path.name)
-
-    subprocess.run(
-        ["ffmpeg", "-y", "-i", str(raw_path), "-vf", "fps=1/30", str(uniform_dir / "frame-%03d.png")],
-        check=True, capture_output=True,
-    )
-    return produced
-
-
 # ---------------------------------------------------------------------------
-# Output: index.html, README.md, report testuale.
+# Output: index.html, README.md, report testuale — costruiti dal manifest
+# (unione dell'ultimo risultato OK per ogni (modalita', lingua), non solo
+# dal risultato del giro appena fatto: vedi la sezione Manifest sopra).
 # ---------------------------------------------------------------------------
 
 def _esc(s: str) -> str:
@@ -1209,43 +1656,49 @@ def _esc(s: str) -> str:
     )
 
 
-def build_index_html(out_dir: Path, results: dict[str, dict]) -> None:
-    langs = [l for l in ("it", "en") if results.get(l, {}).get("ok")]
+def build_index_html(out_dir: Path, manifest: dict) -> None:
+    video = manifest.get("video", {})
+    screenshots = manifest.get("screenshots", {})
+    video_langs = [l for l in ("it", "en") if video.get(l, {}).get("ok")]
+    shot_langs = [l for l in ("it", "en") if screenshots.get(l, {}).get("ok")]
 
     video_cols = "\n".join(
         f'''<div class="col">
       <h2>{l.upper()}</h2>
       <video controls preload="metadata" src="videos/demo-{l}.mp4"></video>
-      <p class="meta">Durata: {results[l]["cut_duration_s"]:.0f}s (raw: {results[l]["raw_duration_s"]:.0f}s) — {results[l]["segments"]} segmenti</p>
+      <p class="meta">Durata: {video[l]["cut_duration_s"]:.0f}s (raw: {video[l]["raw_duration_s"]:.0f}s) — {video[l]["segments"]} segmenti</p>
     </div>'''
-        for l in langs
-    ) or "<p>Nessun video disponibile: entrambi i pass sono falliti.</p>"
+        for l in video_langs
+    ) or "<p>Nessun video disponibile (esegui <code>--mode video</code>).</p>"
 
-    still_names: dict[str, str] = {}
-    for l in langs:
-        for name in results[l].get("stills", []):
-            slug = name.split("-", 1)[1] if "-" in name else name
-            still_names.setdefault(slug, name)
+    shot_names: list[str] = []
+    seen: set[str] = set()
+    for l in shot_langs:
+        for name in screenshots[l].get("screenshots", []):
+            if name not in seen:
+                seen.add(name)
+                shot_names.append(name)
+    shot_names.sort()
 
-    still_rows = []
-    for slug in sorted(still_names):
+    shot_rows = []
+    for name in shot_names:
         cells = []
-        for l in langs:
-            match = next((n for n in results[l].get("stills", []) if n.endswith(slug)), None)
-            if match:
-                cells.append(f'<img src="{l}/{match}" alt="{_esc(slug)} ({l})" loading="lazy">')
+        for l in shot_langs:
+            if name in screenshots[l].get("screenshots", []):
+                cells.append(f'<img src="screens/{l}/{name}" alt="{_esc(name)} ({l})" loading="lazy">')
             else:
                 cells.append('<div class="missing">—</div>')
-        still_rows.append(
-            f'<div class="still-row"><div class="still-label">{_esc(slug)}</div>'
+        label = name.rsplit(".", 1)[0]
+        shot_rows.append(
+            f'<div class="still-row"><div class="still-label">{_esc(label)}</div>'
             + "".join(f'<div class="still-cell">{c}</div>' for c in cells)
             + "</div>",
         )
 
     raw_links = "\n".join(
-        f'<li><a href="videos/raw-{l}.mp4">raw-{l}.mp4</a> ({results[l]["raw_duration_s"]:.0f}s)</li>'
-        for l in langs
-    )
+        f'<li><a href="videos/raw-{l}.mp4">raw-{l}.mp4</a> ({video[l]["raw_duration_s"]:.0f}s)</li>'
+        for l in video_langs
+    ) or "<li>Nessuno.</li>"
 
     html = f"""<title>MDPR — Demo bilingue</title>
 <style>
@@ -1264,7 +1717,7 @@ def build_index_html(out_dir: Path, results: dict[str, dict]) -> None:
   video {{ width:100%; border-radius:6px; background:#000; }}
   .meta {{ color:var(--muted); font-size:0.85rem; }}
   h2.section {{ font-size:1.1rem; border-bottom:1px solid var(--border); padding-bottom:6px; margin-top:36px; }}
-  .still-row {{ display:grid; grid-template-columns: 200px repeat({max(len(langs),1)}, 1fr); gap:10px; align-items:center; padding:8px 0; border-bottom:1px solid var(--border); }}
+  .still-row {{ display:grid; grid-template-columns: 220px repeat({max(len(shot_langs), 1)}, 1fr); gap:10px; align-items:center; padding:8px 0; border-bottom:1px solid var(--border); }}
   .still-label {{ color:var(--muted); font-size:0.85rem; }}
   .still-cell img {{ width:100%; border-radius:6px; border:1px solid var(--border); display:block; }}
   .missing {{ color:var(--muted); font-size:0.8rem; }}
@@ -1272,15 +1725,16 @@ def build_index_html(out_dir: Path, results: dict[str, dict]) -> None:
   a {{ color:var(--accent); }}
 </style>
 <h1>MDPR — Demo bilingue (download reali)</h1>
-<p class="sub">Generato da <code>demo_runner.py</code>. Video "belli" a velocita' variabile (interazioni a 1x, attese accelerate).</p>
+<p class="sub">Generato da <code>demo_runner.py</code>. Video "belli" a velocita' variabile in alto,
+galleria di screenshot puliti sotto (catturati a stato fermo, non estratti dal video).</p>
 
 <div class="videos">
 {video_cols}
 </div>
 
-<h2 class="section">Screenshot agli eventi</h2>
+<h2 class="section">Screenshot (stato fermo)</h2>
 <div class="stills">
-{"".join(still_rows) if still_rows else "<p>Nessuno still disponibile.</p>"}
+{"".join(shot_rows) if shot_rows else '<p>Nessuno screenshot disponibile (esegui <code>--mode screenshots</code>).</p>'}
 </div>
 
 <h2 class="section">Grezzi (archivio)</h2>
@@ -1291,19 +1745,35 @@ def build_index_html(out_dir: Path, results: dict[str, dict]) -> None:
     (out_dir / "index.html").write_text(html, encoding="utf-8")
 
 
-def write_readme(out_dir: Path, args) -> None:
-    content = f"""# MDPR — Demo runner (video + galleria bilingue)
+def write_readme(out_dir: Path, args, manifest: dict) -> None:
+    content = f"""# MDPR — Demo runner (video + galleria di screenshot bilingue)
 
-Materiale generato da `demo_runner.py`: due video reali del tool (IT/EN) con download
-COMPLETI veri, un taglio "bello" a velocita' variabile e una galleria di screenshot.
-Niente stub, niente fake: e' il tool vero che scarica dai due link Mega dati.
+Materiale generato da `demo_runner.py`: due modalita' separate, entrambe basate su un giro
+REALE del tool (download COMPLETI veri, niente stub/fake).
+
+- **`--mode video`**: due video reali del tool (IT/EN), un taglio "bello" a velocita' variabile
+  e le registrazioni grezze.
+- **`--mode screenshots`**: una galleria di foto a STATO FERMO (settling + cattura, non frame
+  estratti da un video: niente sfocatura da movimento o transizioni a meta').
+- **`--mode both`**: esegue prima tutti i pass screenshots, poi tutti i pass video.
+
+Entrambe le modalita' pilotano un tour completo dei 5 punti della barra comandi (Impostazioni,
+Sperimentale, Aggiungi link, Tema, Info), poi aggiungono i due link Mega veri, avviano il
+download, aprono il dettaglio del primo job che supera il 10%, attendono il completamento reale
+di tutti i job, applicano il filtro "Completati" e infine aprono Esplora risorse con il file
+scaricato in evidenza.
 
 ## Cosa contiene
 
-- `videos/raw-it.mp4`, `videos/raw-en.mp4` — registrazioni grezze (durata reale).
-- `videos/demo-it.mp4`, `videos/demo-en.mp4` — tagli "belli" a velocita' variabile (~5-8 min).
-- `timeline-it.jsonl`, `timeline-en.jsonl` — log eventi (usato dal post-processing).
-- `it/`, `en/` — screenshot agli eventi + `uniform/` (uno ogni 30s, copertura).
+- `videos/raw-it.mp4`, `videos/raw-en.mp4` — registrazioni grezze (durata reale, modalita' video).
+- `videos/demo-it.mp4`, `videos/demo-en.mp4` — tagli "belli" a velocita' variabile (~5-8 min),
+  col segmento Explorer finale a schermo intero incollato in coda.
+- `screens/it/`, `screens/en/` — screenshot numerati a stato fermo (modalita' screenshots).
+- `timelines/timeline-video-it.jsonl`, `timeline-video-en.jsonl`,
+  `timelines/timeline-screens-it.jsonl`, `timeline-screens-en.jsonl` — log eventi per pass.
+- `last-results.json` — manifest interno del runner (ultimo risultato OK per modalita'/lingua):
+  permette a un giro `--mode screenshots` di non far sparire la sezione video di un giro
+  precedente in `index.html`, e viceversa.
 - `index.html` — galleria statica auto-contenuta (apri a doppio clic).
 
 Lo script che genera tutto questo, `demo_runner.py`, vive altrove — e' un
@@ -1314,13 +1784,15 @@ codice della GUI.
 ## Come rilanciarlo (prossima release)
 
 ```
-python tools/demo/demo_runner.py --lang both
+python tools/demo/demo_runner.py --mode video       --lang both
+python tools/demo/demo_runner.py --mode screenshots --lang both
+python tools/demo/demo_runner.py --mode both        --lang both
 ```
 
 Di default usa i due link qui sotto. Per cambiarli:
 
 ```
-python tools/demo/demo_runner.py --lang both \\
+python tools/demo/demo_runner.py --mode both --lang both \\
   --folder-link <url cartella Mega> \\
   --file-link <url file singolo Mega> \\
   --safety-cap-minutes 90
@@ -1328,26 +1800,33 @@ python tools/demo/demo_runner.py --lang both \\
 
 Prima di un giro lungo, `python tools/demo/demo_runner.py --dry-run` verifica
 in meno di 5 secondi che il runner sia ancora allineato al codice del tool
-(import, slot, chiavi i18n) senza scaricare o registrare nulla.
+(import, slot, chiavi i18n, per ENTRAMBE le modalita') senza scaricare o
+registrare nulla.
 
-Un giro completo (IT+EN) dura 20-90+ minuti reali (dipende dai proxy gratuiti disponibili
-al momento): il runner scarica per davvero, non accelera nulla durante la registrazione —
-la velocita' variabile e' SOLO nel taglio finale, in post-processing.
+Un giro completo (IT+EN) dura 20-90+ minuti reali per modalita' (dipende dai proxy gratuiti
+disponibili al momento): il runner scarica per davvero fino al completamento di tutti i job,
+non accelera nulla durante il giro — la velocita' variabile (modalita' video) e' SOLO nel
+taglio finale, in post-produzione.
 
 ## Se qualcosa va storto
 
-- **ffmpeg non installato**: `winget install ffmpeg` (o `choco install ffmpeg -y`), poi rilancia.
+- **ffmpeg non installato**: serve solo per `--mode video`/`both`. `winget install ffmpeg`
+  (o `choco install ffmpeg -y`), poi rilancia.
 - **La finestra non viene agganciata da ffmpeg (gdigrab)**: gdigrab risolve il titolo UNA
   volta all'apertura dello stream e poi cattura sempre la stessa finestra (handle), anche se
   il titolo cambia dopo — nella pratica qui il titolo di MDPR resta comunque stabile durante
   una sessione (non include contatori dinamici). Se il tool viene rinominato/il titolo cambia
   radicalmente, aggiorna la logica di aggancio in `DemoDriver._start_ffmpeg`.
+- **Uno screenshot manca dalla galleria**: la modalita' screenshots salta (con nota nel
+  report) le tappe non catturabili invece di fermare l'intero giro — es. l'espansione di una
+  cartella troppo veloce da fotografare, o un popup che non si presta alla cattura. Controlla
+  `run-report.md` per l'elenco dei salti.
 - **Una lingua viene troncata dal safety cap** (`--safety-cap-minutes`, default 90): non e' un
   errore, e' un dato reale (pool proxy debole al momento del giro). Il runner chiude comunque
-  i job in corso e ferma la registrazione; il report finale lo segnala.
-- **Il pool proxy e' scarso**: il video mostrera' molte attese/retry — fa parte del punto
-  (mostrare come il tool reagisce). Se in 10 minuti reali non parte NESSUN download, e' il
-  caso di controllare i proxy prima di rilanciare.
+  i job in corso e ferma la registrazione/cattura; il report finale lo segnala.
+- **Il pool proxy e' scarso**: molte attese/retry — fa parte del punto (mostrare come il tool
+  reagisce). Se in 10 minuti reali non parte NESSUN download, e' il caso di controllare i
+  proxy prima di rilanciare.
 - **Il PC va in sospensione durante il giro**: un giro dura facilmente 20-90+ minuti; se il
   risparmio energetico sospende il PC, il processo viene ucciso a forza (osservato). Disattiva
   la sospensione automatica prima di lanciare un giro lungo. Se succede comunque, le preferenze
@@ -1361,9 +1840,14 @@ la velocita' variabile e' SOLO nel taglio finale, in post-processing.
   storico "gia' scaricato", riconosciuto per `QMessageBox.ButtonRole`, non per testo tradotto)
   e non blocca mai il giro. Vedi la sezione "Contratto con MDPR" in cima al runner per l'elenco
   completo di cosa dipende da cosa nel codice del tool.
+- Screenshot: `QScreen.grabWindow(hwnd)` sul HWND della finestra bersaglio (finestra principale,
+  dialogo modale, o — per il passo Explorer — la finestra in primo piano rilevata via
+  `ctypes`/`GetForegroundWindow`), con un settling di 500ms dopo l'azione prima di catturare.
+- Video, segmento Explorer: registrazione a schermo intero separata (`gdigrab -i desktop`,
+  ~9s), poi scalata/letterboxata alla risoluzione del resto del video e incollata in coda nel
+  taglio finale, cosi' la concatenazione resta valida (stesso codec/risoluzione/framerate).
 - Cartella download di test isolata: `MyDocs/gallery/downloads/` (svuotata a inizio E fine di
-  OGNI pass, IT e EN inclusi, cosi' l'altra lingua riparte da un download reale e non da un
-  file gia' completo).
+  OGNI pass, cosi' ogni pass riparte da un download reale e non da un file gia' completo).
 - La preferenza lingua (`preferences.json`) e la sessione da ripristinare
   (`session_state.json`) vengono salvate su un sidecar su disco (`*.demo_orig_backup`) prima
   del giro e ripristinate dopo: il giro dimostrativo non lascia alterata la lingua/tema reale
@@ -1385,21 +1869,29 @@ Link di default usati in questo giro:
     (out_dir / "README.md").write_text(content, encoding="utf-8")
 
 
-def write_report(out_dir: Path, results: dict[str, dict]) -> None:
+def write_report(out_dir: Path, manifest: dict) -> None:
     lines = ["# Report giro demo", ""]
-    for lang, r in results.items():
-        lines.append(f"## {lang}")
-        lines.append(f"- ok: {r.get('ok')}")
-        lines.append(f"- stop_reason: {r.get('stop_reason')}")
-        lines.append(f"- raw_duration_s: {r.get('raw_duration_s')}")
-        lines.append(f"- cut_duration_s: {r.get('cut_duration_s')}")
-        lines.append(f"- segments: {r.get('segments')}")
-        lines.append(f"- stills: {len(r.get('stills', []))}")
-        if r.get("error"):
-            lines.append(f"- error: {r.get('error')}")
-        for note in r.get("notable", []):
-            lines.append(f"- NOTABILE: {note}")
-        lines.append("")
+    for mode in ("screenshots", "video"):
+        results = manifest.get(mode, {})
+        if not results:
+            continue
+        lines.append(f"## Modalita': {mode}")
+        for lang, r in results.items():
+            lines.append(f"### {lang}")
+            lines.append(f"- ok: {r.get('ok')}")
+            lines.append(f"- stop_reason: {r.get('stop_reason')}")
+            if mode == "video":
+                lines.append(f"- raw_duration_s: {r.get('raw_duration_s')}")
+                lines.append(f"- cut_duration_s: {r.get('cut_duration_s')}")
+                lines.append(f"- segments: {r.get('segments')}")
+                lines.append(f"- explorer_segment_included: {r.get('explorer_segment_included')}")
+            else:
+                lines.append(f"- screenshots: {len(r.get('screenshots', []))}")
+            if r.get("error"):
+                lines.append(f"- error: {r.get('error')}")
+            for note in r.get("notable", []) or []:
+                lines.append(f"- NOTABILE: {note}")
+            lines.append("")
     (out_dir / "run-report.md").write_text("\n".join(lines), encoding="utf-8")
 
 
