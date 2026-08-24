@@ -24,6 +24,9 @@ preferences.json
 # Stato sessione per il ripristino all'avvio (link non completati)
 session_state.json
 
+# Sidecar del demo runner (backup prima dell'override per i test)
+*.demo_orig_backup
+
 # Cache branding remoto (manifest + logo scaricati)
 branding_cache.json
 branding_logo.*
