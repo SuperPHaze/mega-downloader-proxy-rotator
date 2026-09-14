@@ -21,7 +21,8 @@ Formati attesi:
         ordine cronologico (dalla piu' vecchia alla corrente).
     crash.log: dump nativi di faulthandler ("Fatal Python error: ..." senza
         timestamp) intervallati da voci scritte dall'app con timestamp ISO:
-        "<iso> [THREAD-EXC] ..." / "<iso> [QT-FATAL] ...".
+        "<iso> [THREAD-EXC] ..." / "<iso> [QT-FATAL] ..." /
+        "<iso> [MAIN-EXC]" (eccezione non gestita del thread principale).
 """
 from __future__ import annotations
 
@@ -44,7 +45,8 @@ DOWNLOAD_EVENT_TYPES = {"download_completed", "download_abandoned", "download_ca
 # logging_setup._write_crash_log). I dump nativi di faulthandler invece NON
 # hanno timestamp: iniziano con "Fatal Python error: ...".
 CRASH_ENTRY_START_RE = re.compile(
-    r"^(?P<ts>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}) \[(?P<kind>THREAD-EXC|QT-FATAL)\]\s?(?P<rest>.*)$"
+    r"^(?P<ts>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}) "
+    r"\[(?P<kind>THREAD-EXC|QT-FATAL|MAIN-EXC)\]\s?(?P<rest>.*)$"
 )
 NATIVE_FAULT_START_RE = re.compile(r"^Fatal Python error:")
 
@@ -84,7 +86,7 @@ class DownloadEvent:
 
 @dataclass
 class CrashEntry:
-    kind: str  # THREAD-EXC | QT-FATAL | NATIVE
+    kind: str  # THREAD-EXC | QT-FATAL | MAIN-EXC | NATIVE
     timestamp: str | None
     text: str
 

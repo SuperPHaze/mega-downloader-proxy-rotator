@@ -72,7 +72,25 @@ STRINGS: dict[str, str | dict[str, str]] = {
     "controls.row_time_limit": "Limite min/file:",
     "controls.row_chunk": "Pezzo:",
     "controls.row_download_dir": "Cartella download:",
+    "controls.row_minimize": "Riduzione a icona:",
     "controls.row_language": "Lingua:",
+
+    # ---- barra comandi: riduzione a icona ----------------------------------
+    "controls.minimize_reset": "Chiedi ogni volta",
+    "controls.minimize_tooltip_ask": (
+        "Riducendo la finestra a icona, il programma chiede ogni volta\n"
+        "dove metterla: area di notifica o barra delle applicazioni."
+    ),
+    "controls.minimize_tooltip_tray": (
+        "Ora la finestra ridotta va nell'area di notifica, accanto\n"
+        "all'orologio, senza chiedere.\n"
+        "Premi per tornare a farti chiedere ogni volta."
+    ),
+    "controls.minimize_tooltip_taskbar": (
+        "Ora la finestra ridotta resta nella barra delle applicazioni,\n"
+        "senza chiedere.\n"
+        "Premi per tornare a farti chiedere ogni volta."
+    ),
 
     # ---- barra comandi: selettore di lingua --------------------------------
     # I nomi delle lingue restano nella lingua stessa (convenzione diffusa:
@@ -561,6 +579,32 @@ STRINGS: dict[str, str | dict[str, str]] = {
     # quindi come codice (chiave intera, col punto) e non come testo gia' reso.
     "main_window.restart_no_orchestrator": "Nessun orchestrator attivo",
     "main_window.restart_refused": "Riavvio rifiutato dall'orchestrator",
+
+    # ---- area di notifica (icona accanto all'orologio) ----------------------
+    "main_window.minimize_ask_restored": (
+        "Alla prossima riduzione a icona ti verrà chiesto di nuovo dove "
+        "mettere la finestra."
+    ),
+    "tray.menu_show": "Mostra la finestra",
+    "tray.menu_quit": "Esci",
+    "tray.tooltip_idle": "Nessun download in corso",
+    "tray.tooltip_running": "{running} in corso · {done}/{total} completati · {speed}",
+    "tray.tooltip_done": "{done}/{total} completati",
+    # Domanda al momento della riduzione a icona.
+    "tray.ask_title": "Riduzione a icona",
+    "tray.ask_body": "Dove vuoi mettere la finestra?",
+    "tray.ask_tray": "Area di notifica",
+    "tray.ask_taskbar": "Barra delle applicazioni",
+    "tray.ask_remember": "Ricorda la scelta",
+    # Avvisi a comparsa. `file_fallback` copre i casi in cui il nome del file
+    # non e' ancora noto (l'errore puo' arrivare prima del resolve).
+    "tray.file_fallback": "File {file}",
+    "tray.notify_completed_title": "Download completato",
+    "tray.notify_completed_body": "{name}  ({done}/{total})",
+    "tray.notify_failed_title": "Download non riuscito",
+    "tray.notify_failed_body": "{name}: {error}",
+    "tray.notify_queue_done_title": "Coda completata",
+    "tray.notify_queue_done_body": "{done}/{total} file scaricati.",
 
     # ---- setup del pool proxy ----------------------------------------------
     # Le righe di stato nascono nell'orchestrator, fuori dalla GUI: viaggiano

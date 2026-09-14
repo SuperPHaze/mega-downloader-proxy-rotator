@@ -4,6 +4,8 @@
 # di destinazione sia utilizzabile.
 import threading
 
+import pytest
+
 from src.core import logging_setup
 
 
@@ -89,3 +91,102 @@ def test_tee_stream_delegates_unknown_attributes_to_original_stream():
     tee = logging_setup._TeeStream(stream, _FakeFile())
 
     assert tee.isatty() is False
+
+
+# ---- avvio silenzioso: nessuna console, quindi nessun flusso originale ------
+# Con pythonw.exe sys.stdout/sys.stderr valgono None. Il tee resta l'unico
+# consumatore e NON deve sollevare: basterebbe la prima riga di log per far
+# cadere l'applicazione prima che la finestra compaia. E' il test piu'
+# importante dei tre lavori: copre l'unica cosa che puo' impedire l'avvio.
+
+def test_tee_stream_senza_flusso_originale_scrive_solo_su_file():
+    file = _FakeFile()
+    tee = logging_setup._TeeStream(None, file)
+
+    scritti = tee.write("riga senza console\n")
+
+    assert file.written == ["riga senza console\n"]
+    assert file.flushed is True
+    assert scritti == len("riga senza console\n")
+
+
+def test_tee_stream_senza_flusso_originale_flush_innocuo():
+    file = _FakeFile()
+    tee = logging_setup._TeeStream(None, file)
+
+    tee.flush()     # non deve sollevare
+
+    assert file.flushed is True
+
+
+def test_tee_stream_senza_flusso_originale_non_e_un_terminale():
+    """`isatty()` deve rispondere, non delegare a None: chi la interroga lo fa
+    per decidere se colorare l'output."""
+    tee = logging_setup._TeeStream(None, _FakeFile())
+
+    assert tee.isatty() is False
+
+
+def test_tee_stream_senza_flusso_originale_non_inventa_un_descrittore():
+    tee = logging_setup._TeeStream(None, _FakeFile())
+
+    with pytest.raises(OSError):
+        tee.fileno()
+
+
+def test_tee_stream_senza_flusso_originale_non_finge_attributi():
+    """Un attributo che non esiste deve risultare assente (`hasattr` False),
+    non tornare qualcosa di inventato."""
+    tee = logging_setup._TeeStream(None, _FakeFile())
+
+    assert not hasattr(tee, "buffer")
+    with pytest.raises(AttributeError):
+        tee.encoding
+
+
+def test_tee_stream_senza_flusso_originale_sopravvive_al_file_rotto():
+    """Nessuna console E file rotto: non resta niente, ma nemmeno un'eccezione
+    (sarebbe un crash all'avvio senza alcuna traccia visibile)."""
+    tee = logging_setup._TeeStream(None, _BrokenFile())
+
+    tee.write("nessuno mi leggera'\n")
+    tee.flush()
+
+
+def test_tee_stream_regge_un_flusso_che_si_rompe_a_meta():
+    """Console sparita a sessione avviata: il file deve restare."""
+    class _StreamRotto:
+        def write(self, data):
+            raise OSError("console chiusa")
+
+        def flush(self):
+            raise OSError("console chiusa")
+
+    file = _FakeFile()
+    tee = logging_setup._TeeStream(_StreamRotto(), file)
+
+    tee.write("riga\n")
+    tee.flush()
+
+    assert file.written == ["riga\n"]
+
+
+def test_excepthook_del_thread_principale_scrive_in_crash_log():
+    """Senza console il traceback di un'eccezione non gestita del thread
+    principale deve restare in crash.log, dove lo legge tools/report.py."""
+    logging_setup.setup_logging()
+    scritti = []
+    original = logging_setup._write_crash_log
+    logging_setup._write_crash_log = scritti.append
+    try:
+        try:
+            raise RuntimeError("boom di prova")
+        except RuntimeError as exc:
+            logging_setup.log_unhandled_main_exception(
+                type(exc), exc, exc.__traceback__,
+            )
+    finally:
+        logging_setup._write_crash_log = original
+
+    assert scritti and "[MAIN-EXC]" in scritti[0]
+    assert "boom di prova" in scritti[0]

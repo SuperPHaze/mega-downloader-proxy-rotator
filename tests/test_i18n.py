@@ -902,6 +902,7 @@ def test_language_fanout_covers_every_persistent_surface():
         "self._stats_panel.retranslate",
         "self.jobs_panel.retranslate",
         "self.link_panel.retranslate",
+        "self._tray.retranslate",
         "self._retranslate_open_details",
         "self._refresh_status",
     ):

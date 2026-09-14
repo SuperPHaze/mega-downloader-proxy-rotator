@@ -26,7 +26,7 @@ https://github.com/user-attachments/assets/1ebcd19c-38f5-40b5-86ff-5a1c87154a2d
 
 
 
-![version](https://img.shields.io/badge/version-2.0.0-blue)
+![version](https://img.shields.io/badge/version-2.1.0-blue)
 ![python](https://img.shields.io/badge/python-3.11%E2%80%933.14-blue)
 ![platform](https://img.shields.io/badge/platform-Windows%2010%2F11-lightgrey)
 ![gui](https://img.shields.io/badge/GUI-PyQt6-green)
@@ -62,14 +62,15 @@ A **Windows desktop app** (Python + PyQt6) that downloads files **and entire fol
 - **Passive crash diagnostics**, always on (memory heartbeat, multi-thread tracebacks), universal structured logging (`logs/events.jsonl`), and an HTML report generator (`tools/report.py`).
 - **Tabbed interface** with a compact 3-zone dashboard (speed, downloads, proxy) — a radial speed gauge (% of session peak), a segmented bar for download status, compact cards for proxy pool status — button-based job filters showing the file count per state (in progress/completed/not completed), light/dark theme, global and per-job pause/resume/cancel.
 - **Bilingual Italian/English interface**: on first launch it follows the system language, then you choose it from the Settings menu (Automatic / Italiano / English) and the change is immediate, with no restart. The whole interface is translated, error messages included; messages in the log files stay in Italian because they are there for diagnostics.
+- **Notification area icon**: when you minimize the window you choose — once, or for good — whether to send it next to the clock or leave it in the taskbar; pop-up notices on every completed file, on every error and when the queue is done. The X still closes the program, as always.
 - **CLI mode** for headless machines.
 
 ## ⚡ Quick install (Windows 10/11)
 
 **To use it** — download the ready-made package:
 1. Go to the [latest Release](https://github.com/SuperPHaze/mega-downloader-proxy-rotator/releases/latest) and download the `.zip`.
-2. Extract it, then double-click **`install.bat`** (creates the environment and installs everything).
-3. Launch with **`avvia.bat`**.
+2. Extract it, then double-click **`install.bat`** (creates the environment and installs everything: the app, the tests and the tools in `tools/`).
+3. Launch with **`avvia.bat`**: it starts with no terminal window. If it does not start, **`avvia-debug.bat`** does the same thing keeping the terminal visible, so you can see why.
 
 **From source** — requires Python 3.11–3.14 on your PATH:
 ```bash
@@ -77,6 +78,8 @@ git clone https://github.com/SuperPHaze/mega-downloader-proxy-rotator
 cd mega-downloader-proxy-rotator
 install.bat
 ```
+
+A single command sets everything up: runtime dependencies (`requirements.txt`), test/tool dependencies (`requirements-dev.txt`, needed by `pytest` and `tools/demo/demo_runner.py`) and the check/installation of **ffmpeg** (needed only by the demo runner in video mode; the app itself does not use it). To install just the base app, with no tests/tools and no ffmpeg: `powershell -ExecutionPolicy Bypass -File install.ps1 -Minimal`.
 
 > The `venv` is not portable across machines: if you move the project, don't copy `venv/` — re-run `install.bat`.
 

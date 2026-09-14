@@ -1,5 +1,6 @@
 # Preferenze utente persistenti (tema chiaro/scuro, lingua dell'interfaccia,
-# controllo aggiornamenti, leve sperimentali, cartella di download).
+# controllo aggiornamenti, leve sperimentali, cartella di download,
+# destinazione della riduzione a icona).
 # File JSON accanto a proxy_cache.json nella root del progetto.
 from __future__ import annotations
 
@@ -113,6 +114,25 @@ def load_download_dir() -> str:
 
 def save_download_dir(path: str) -> None:
     _save_pref("download_dir", str(path or ""))
+
+
+def load_minimize_target() -> str:
+    """Dove va la finestra quando viene ridotta a icona: "ask" (chiedi ogni
+    volta), "tray" (area di notifica accanto all'orologio), "taskbar" (barra
+    delle applicazioni, com'era prima).
+
+    Retro-compatibile: un preferences.json senza la chiave — o con un valore
+    ignoto — si comporta come "ask". I tre valori sono gli stessi di
+    `gui/tray.MINIMIZE_TARGETS`, ripetuti qui perche' importarli farebbe un
+    ciclo (tray -> i18n -> preferences); `tests/test_tray.py` verifica che i
+    due elenchi coincidano.
+    """
+    val = str(_load_prefs().get("minimize_target", "ask") or "ask").strip().lower()
+    return val if val in ("ask", "tray", "taskbar") else "ask"
+
+
+def save_minimize_target(value: str) -> None:
+    _save_pref("minimize_target", str(value or "ask"))
 
 
 def load_language() -> str:

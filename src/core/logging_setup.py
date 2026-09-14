@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import faulthandler
+import io
 import json
 import logging
 import sys
@@ -79,18 +80,32 @@ _terminal_log_file_handle = None
 class _TeeStream:
     """Sdoppia un flusso (stdout/stderr) su un file, oltre al flusso originale.
 
-    Gli attributi non definiti qui (isatty, fileno, encoding, ...) sono
-    delegati al flusso originale via __getattr__: librerie e Qt devono
-    vedere il flusso reale, non il tee. fileno() resta quello reale, quindi
-    l'output nativo C-level continua ad andare al terminale e non al file
-    (qui catturiamo solo il livello Python, sufficiente per i nostri log)."""
+    Gli attributi non definiti qui (isatty, encoding, ...) sono delegati al
+    flusso originale via __getattr__: librerie e Qt devono vedere il flusso
+    reale, non il tee. fileno() resta quello reale, quindi l'output nativo
+    C-level continua ad andare al terminale e non al file (qui catturiamo solo
+    il livello Python, sufficiente per i nostri log).
+
+    **Il flusso originale puo' mancare del tutto** (`None`): e' il caso
+    dell'avvio silenzioso con `pythonw.exe`, dove non esiste console e Python
+    mette `sys.stdout`/`sys.stderr` a `None`. In quel caso il tee resta l'UNICO
+    consumatore — scrive solo su file — e nessun metodo deve sollevare:
+    basterebbe la prima riga di log per far cadere l'applicazione prima ancora
+    che la finestra compaia. `fileno()` in quel caso NON inventa un
+    descrittore: dichiara che non ce n'e' uno, come fa qualunque flusso Python
+    senza supporto (`io.UnsupportedOperation` e' sia OSError sia ValueError,
+    quindi i chiamanti difensivi la intercettano comunque)."""
 
     def __init__(self, stream, file):
         self._stream = stream
         self._file = file
 
     def write(self, data):
-        self._stream.write(data)
+        if self._stream is not None:
+            try:
+                self._stream.write(data)
+            except Exception:
+                pass  # console sparita a meta' sessione: il file resta
         try:
             self._file.write(data)
             self._file.flush()
@@ -99,19 +114,49 @@ class _TeeStream:
         return len(data)
 
     def flush(self):
-        self._stream.flush()
+        if self._stream is not None:
+            try:
+                self._stream.flush()
+            except Exception:
+                pass
         try:
             self._file.flush()
         except Exception:
             pass
 
+    def isatty(self):
+        # Senza console non c'e' terminale interattivo: rispondere "non lo so"
+        # (delegando a None) farebbe esplodere chi la interroga per decidere
+        # se colorare l'output.
+        if self._stream is None:
+            return False
+        try:
+            return bool(self._stream.isatty())
+        except Exception:
+            return False
+
+    def fileno(self):
+        if self._stream is None:
+            raise io.UnsupportedOperation(
+                "nessun descrittore: processo senza console (pythonw)"
+            )
+        return self._stream.fileno()
+
     def __getattr__(self, name):
+        if self._stream is None:
+            # Nessun flusso da cui delegare: AttributeError e' la risposta
+            # corretta (chi sonda con hasattr() deve vedere "non c'e'").
+            raise AttributeError(name)
         return getattr(self._stream, name)
 
 
 def _install_terminal_tee() -> None:
     """Sdoppia sys.stdout/sys.stderr su logs/terminal-log.txt (riazzerato a
-    ogni avvio). Se l'apertura del file fallisce, prosegue senza tee."""
+    ogni avvio). Se l'apertura del file fallisce, prosegue senza tee.
+
+    Con `pythonw.exe` i due flussi originali sono `None`: il tee si installa
+    lo stesso, e da li' in poi `logs/terminal-log.txt` e' l'unica copia di cio'
+    che senza console non si vede piu' da nessuna parte."""
     global _terminal_log_file_handle
     try:
         _terminal_log_file_handle = open(
@@ -157,6 +202,23 @@ def _threading_excepthook(args: threading.ExceptHookArgs) -> None:
     _write_crash_log(f"{ts} [THREAD-EXC] {thread_name}\n{tb_text}\n")
 
 
+def log_unhandled_main_exception(exc_type, exc_value, exc_tb) -> None:
+    """Scrive in crash.log un'eccezione non gestita del THREAD PRINCIPALE.
+
+    Gemello di `_threading_excepthook` per i thread secondari. Serviva meno
+    finche' l'app partiva da un terminale: il traceback si vedeva a video.
+    Con l'avvio silenzioso (pythonw, nessuna console) crash.log e'
+    l'unico posto dove quel traceback sta insieme ai crash nativi, ed e' il
+    file che `tools/report.py` legge per ricostruire com'e' morta la
+    sessione. Non solleva mai: gira dentro un excepthook."""
+    ts = datetime.now().isoformat(timespec="seconds")
+    try:
+        tb_text = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
+    except Exception:       # pragma: no cover - difensivo
+        tb_text = f"{exc_type}: {exc_value}\n"
+    _write_crash_log(f"{ts} [MAIN-EXC]\n{tb_text}\n")
+
+
 def setup_logging(level: int = logging.DEBUG) -> Path:
     global _initialized, _crash_file_handle
     if _initialized:
@@ -173,10 +235,20 @@ def setup_logging(level: int = logging.DEBUG) -> Path:
 
     # Console (stderr): sys.stderr e' già sdoppiato da _install_terminal_tee(),
     # quindi tutto cio' che passa di qui finisce anche in terminal-log.txt.
-    ch = logging.StreamHandler(sys.stderr)
-    ch.setLevel(level)
-    ch.setFormatter(fmt)
-    root.addHandler(ch)
+    # Se il tee NON si e' installato (file non apribile) e siamo senza console
+    # (pythonw), sys.stderr e' None: un StreamHandler su None fallirebbe a ogni
+    # riga, in silenzio ma su ogni riga. Meglio non aggiungerlo affatto: il
+    # file rotante e events.jsonl restano, ed e' li' che si guarda davvero.
+    if sys.stderr is not None:
+        ch = logging.StreamHandler(sys.stderr)
+        ch.setLevel(level)
+        ch.setFormatter(fmt)
+        root.addHandler(ch)
+    else:
+        root.warning(
+            "Nessuno stderr (processo senza console) e nessun tee: "
+            "log solo su file",
+        )
 
     # File rotante (5 MB x 3 backup).
     fh = RotatingFileHandler(_LOG_FILE, maxBytes=5_000_000, backupCount=3, encoding="utf-8")
@@ -201,6 +273,10 @@ def setup_logging(level: int = logging.DEBUG) -> Path:
     # crash.log: append, line-buffered. Se non e' scrivibile (permessi,
     # disco pieno) la diagnostica nativa resta disattivata ma l'app continua:
     # non e' un errore che deve impedire l'avvio.
+    # Nota per l'avvio silenzioso (pythonw, nessuna console): faulthandler
+    # scrive QUI, su un file vero con un descrittore vero, non su sys.stderr —
+    # il traceback nativo di un segfault resta quindi disponibile anche senza
+    # terminale. E' il motivo per cui `file=` e' esplicito e non va tolto.
     try:
         _crash_file_handle = open(_CRASH_LOG_FILE, "a", buffering=1, encoding="utf-8")
         faulthandler.enable(file=_crash_file_handle, all_threads=True)

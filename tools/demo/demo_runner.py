@@ -60,6 +60,18 @@
 #                                                     "self._open_dialogs" compaia nel
 #                                                     sorgente di MainWindow.__init__
 #                                                     (non instanzia MainWindow)
+# - MainWindow._tray                               — TrayController (src/gui/tray.py), SOLO
+#                                                     su istanza: il runner chiama
+#                                                     .shutdown() subito dopo aver creato
+#                                                     la finestra, per NON avere avvisi a
+#                                                     comparsa di Windows dentro il
+#                                                     segmento Explorer (registrato a
+#                                                     schermo intero). Stesso trucco di
+#                                                     _open_dialogs per il dry-run:
+#                                                     "self._tray" nel sorgente di
+#                                                     MainWindow.__init__.
+#                                                     shutdown() e' idempotente: la
+#                                                     closeEvent lo richiama a fine giro
 # - MainWindow._open_about_dialog()                — apre AboutDialog (menu Info del tour)
 # - MainWindow._open_experimental_dialog()         — apre ExperimentalFeaturesDialog
 #                                                     (menu "Strumenti" del tour — vedi nota
@@ -456,6 +468,10 @@ def run_dry_run() -> int:
             init_src = inspect.getsource(MainWindow.__init__)
             if "_open_dialogs" not in init_src:
                 errors.append("runner rotto: MainWindow.__init__ non assegna piu' self._open_dialogs")
+            else:
+                counts["slots"] += 1
+            if "self._tray" not in init_src:
+                errors.append("runner rotto: MainWindow.__init__ non assegna piu' self._tray")
             else:
                 counts["slots"] += 1
         except (OSError, TypeError) as exc:
@@ -882,6 +898,13 @@ def run_worker_pass(args) -> dict:
 
         window = MainWindow()
         window.setWindowIcon(icon)
+        # Icona nell'area di notifica smontata subito: durante un giro reale
+        # l'app manda un avviso a comparsa a ogni file completato, e il
+        # segmento Explorer registra lo SCHERMO INTERO (gdigrab -i desktop) —
+        # un avviso di Windows in mezzo al video non c'entra nulla con la
+        # demo. Smontarla evita anche di lasciare un'icona in giro se il giro
+        # si interrompe. Vedi "Contratto con MDPR" in cima.
+        window._tray.shutdown()
         _fit_geometry(window, app)
         # Reindirizza i download nella cartella di test isolata (senza emettere
         # download_dir_changed: set_download_dir non persiste su preferences.json).

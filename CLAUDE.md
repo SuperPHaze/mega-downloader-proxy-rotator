@@ -22,13 +22,24 @@ src/
 │   ├── telemetry.py       # telemetria "scatola nera": recorder asincrono (writer daemon) di tentativi-chunk + campioni 1Hz in logs/telemetry/<id>/; no-op se TELEMETRY_ENABLED=False
 │   ├── diagnostics.py     # heartbeat periodico (INFO), RSS via psutil se disponibile / fallback GetProcessMemoryInfo (psapi) su Windows, marcatori di sessione, riga CONFIG a inizio sessione
 │   ├── events.py          # EventBus opzionale (non usato dal flusso)
-│   ├── logging_setup.py   # setup root logger + sys.excepthook
+│   ├── logging_setup.py   # setup root logger + sys.excepthook + tee di stdout/stderr su terminal-log.txt.
+│   │                     #   `_TeeStream` regge un flusso originale ASSENTE (`None`): con `pythonw.exe`
+│   │                     #   non c'è console e `sys.stdout`/`sys.stderr` valgono None — senza guardia la
+│   │                     #   prima riga di log ucciderebbe l'app prima della finestra. Senza tee E senza
+│   │                     #   stderr, l'handler di console non viene nemmeno aggiunto.
+│   │                     #   `log_unhandled_main_exception()` porta in crash.log anche le eccezioni non
+│   │                     #   gestite del thread PRINCIPALE (gemello di `_threading_excepthook`): senza
+│   │                     #   console è l'unico posto dove il traceback resta, e lo legge `tools/report.py`
 │   ├── failed_log.py      # logger JSONL dei link abbandonati
 │   ├── download_history.py # storico JSONL download completati + extract_handle
 │   ├── sources_stats.py   # logger JSONL metriche per-fonte
 │   ├── version_compare.py # parse_semver/is_newer, puro stdlib (no I/O)
 │   ├── branding.py        # Branding (nome/acronimo/autore/nick/link/logo): default -> cache -> remoto
-│   ├── icon_loader.py     # build_app_icon(): QIcon robusta .ico->fallback .png, mai null senza log
+│   ├── icon_loader.py     # build_app_icon(): QIcon robusta .ico->fallback .png, mai null senza log. I fotogrammi
+│   │                     #   del .ico si leggono UNO PER UNO con QImageReader e si aggiungono con addPixmap: la
+│   │                     #   sola `addFile()` lascia al lettore ICO di Qt la scelta di quante dimensioni esporre
+│   │                     #   (con Qt 6.11 le espone tutte e 7 — misurato — ma non è un contratto). Il controllo
+│   │                     #   di riuscita è `availableSizes()`, non `isNull()`
 │   ├── file_naming.py     # sanitize_folder_name() + sanitize_file_name() (nome file sicuro per Windows: caratteri riservati + device name CON/NUL/…, estensione preservata; applicata alla SORGENTE in mega_api.resolve_public_url) + final_output_dir(file_name, file_id, output_root): path finale del download (output_root = cartella scelta dall'utente, None=default); rinomina la cartella hash-based al primo resolve riuscito; + folder_job_output_dir(rel_path, output_root): cartella di destinazione ad ALBERO per i job nati da un link cartella (ri-sanifica i segmenti: è il confine col filesystem)
 │   ├── disk.py            # ensure_free_space()/free_space_bytes() + InsufficientDiskSpaceError (UserFacingError+OSError, codice `disk_full`): check spazio disco PRIMA del download (errore d'ambiente: il worker abbandona subito senza bruciare i tentativi). Solo stdlib
 │   ├── mega_links.py      # FONTE UNICA delle forme di URL Mega (stdlib puro, niente I/O né Crypto):
@@ -69,7 +80,14 @@ src/
     ├── main_window.py     # MainWindow (QMainWindow); _on_start fa da gate: se ci sono link cartella
     │                      #   avvia FolderExpandWorker e il flusso riprende in _start_with_links;
     │                      #   _delete_folder_job_file elimina il SINGOLO file di un job-cartella
-    │                      #   (+ .part + sidecar) e pota le cartelle vuote, mai l'albero condiviso; ripristino sessione all'avvio (prompt "Riprendi sessione precedente?" da session_store, differito con QTimer.singleShot); propaga la cartella download scelta a orchestrator.start(output_root=...) e la usa per il delete cartella; _on_language_changed fa il fan-out della ritraduzione su TUTTE le superfici persistenti (gemello di _on_theme_toggle), riga di stato compresa: _set_status_t/_set_status_tn ricordano chiave+parametri in _status_source e _refresh_status la riscrive, mentre _set_status (grezzo) azzera la memoria
+    │                      #   (+ .part + sidecar) e pota le cartelle vuote, mai l'albero condiviso; ripristino sessione all'avvio (prompt "Riprendi sessione precedente?" da session_store, differito con QTimer.singleShot); propaga la cartella download scelta a orchestrator.start(output_root=...) e la usa per il delete cartella; _on_language_changed fa il fan-out della ritraduzione su TUTTE le superfici persistenti (gemello di _on_theme_toggle), riga di stato compresa: _set_status_t/_set_status_tn ricordano chiave+parametri in _status_source e _refresh_status la riscrive, mentre _set_status (grezzo) azzera la memoria;
+    │                      #   changeEvent intercetta la RIDUZIONE A ICONA e differisce la decisione con
+    │                      #   QTimer.singleShot(0) (dentro il gestore dell'evento la finestra sta ancora
+    │                      #   cambiando stato): _handle_minimized chiede o applica la preferenza,
+    │                      #   _hide_to_tray nasconde finestra E finestre figlie (il dettaglio di un job non
+    │                      #   sparisce da solo: misurato), _restore_from_tray le rimette com'erano;
+    │                      #   closeEvent smonta l'icona (fantasma nell'area di notifica) e chiude
+    │                      #   l'APPLICAZIONE — serve perché main.py disattiva setQuitOnLastWindowClosed
     ├── link_panel.py      # gestore lista link (nascosto nell'UI, API get_links/set_links/open_paste_dialog); i suoi widget non si vedono, ma i dialoghi che apre sì (import da file, avviso «già scaricati»); i18n: t()/tn() + retranslate(), contatore link al singolare/plurale
     ├── paste_links_dialog.py # dialog modale incolla/edita lista link; contatori Validi/Non validi/Duplicati/Cartelle (i18n: t("paste.*"), conteggi come parametro {n})
     ├── jobs_model.py      # JobsModel (QObject) + Job (throughput/file_name/output_path); NON formatta testo:
@@ -103,7 +121,17 @@ src/
     ├── folder_expand_worker.py # FolderExpandWorker(QThread): espande i link cartella prima dell'avvio; le righe di report passano da t()/tn() (clausole opzionali autonome: separatore incluso nella chiave)
     │                      #   (rete fuori dal thread GUI); i link non-cartella passano invariati e
     │                      #   nell'ordine originale
-    ├── preferences.py     # carica/salva preferenze utente (tema, lingua GUI ("auto"/"it"/"en"), check aggiornamenti all'avvio, selezione per velocità abilitata + soglia KB/s, stats_panel_expanded, download_dir) in preferences.json
+    ├── tray.py            # icona nell'area di notifica (QSystemTrayIcon): menu «Mostra la finestra»/«Esci»,
+    │                      #   doppio clic, avvisi a comparsa, suggerimento con lo stato. Due funzioni PURE
+    │                      #   (testabili senza area di notifica, che la piattaforma Qt offscreen non ha):
+    │                      #   `resolve_minimize_action(pref, tray_available)` e `tooltip_text(...)`;
+    │                      #   `ask_minimize_target()` è il dialogo modale della domanda alla riduzione.
+    │                      #   `TrayController` è INERTE se `isSystemTrayAvailable()` è False (nessuna
+    │                      #   condizione nei chiamanti) ed è una superficie PERSISTENTE: ha `retranslate()`
+    │                      #   ed è nel fan-out di `_on_language_changed`. I valori di `MINIMIZE_TARGETS`
+    │                      #   sono ripetuti in `preferences.py` (importarli sarebbe un ciclo): li tiene
+    │                      #   allineati `tests/test_tray.py`
+    ├── preferences.py     # carica/salva preferenze utente (tema, lingua GUI ("auto"/"it"/"en"), check aggiornamenti all'avvio, selezione per velocità abilitata + soglia KB/s, stats_panel_expanded, download_dir, minimize_target "ask"/"tray"/"taskbar") in preferences.json
     ├── i18n.py            # motore di traduzione GUI: Translator(QObject) con language_changed(str), singleton di modulo TR (come CURRENT_PALETTE), t(key, **params) e tn(key, n, **params); risolve "auto" dal locale (QLocale → prefisso → it, altrimenti en), persiste via preferences, installa qtbase_<lang>.qm via QLibraryInfo. Chiave mancante in EN → testo IT + WARNING una volta sola; mai eccezione
     ├── strings_it.py      # dizionario piatto IT — è la FONTE del testo utente; INNESTA `ERROR_TEXTS_IT` di
     │                      #   `core/error_catalog.py` come chiavi `err.*` (una sola fonte per l'italiano degli errori,
@@ -143,7 +171,11 @@ package.ps1                # packaging: crea dist/MegaProxyRotator-X.Y.Z.zip
 ```
 
 ## Entry point
-`src/main.py` → `QApplication` → `TR.initialize()` (lingua GUI, PRIMA della finestra) → `MainWindow` → `DownloadOrchestrator`.
+`src/main.py` → `QApplication` → `setQuitOnLastWindowClosed(False)` → `TR.initialize()` (lingua GUI,
+PRIMA della finestra) → `MainWindow` → `DownloadOrchestrator`.
+`setQuitOnLastWindowClosed(False)` serve perché nascondere la finestra nell'area di notifica non
+uccida il processo: da lì in poi l'uscita è ESPLICITA e passa tutta da `MainWindow.closeEvent`
+(sia la X sia la voce «Esci» dell'icona, che chiama `close()`).
 
 ## Flusso dati
 1. Utente incolla link Mega in `LinkPanel` → clic "Avvia".
@@ -263,7 +295,12 @@ Comandi sempre dalla root `mega-proxy-downloader\`, mai da `src\`.
 - La versione dell'app è definita in `src/core/config.py` come `APP_VERSION` (semver `MAJOR.MINOR.PATCH`).
 - `APP_VERSION` viene mostrata nel titolo della finestra principale (`MainWindow`).
 - `package.ps1` legge `APP_VERSION` e produce `dist/MegaProxyRotator-X.Y.Z.zip` escludendo `venv`, `dist`, `downloads`, `__pycache__`, `.git`, `.claude`, log e cache.
-- L'utente che riceve lo zip esegue `install.ps1` (crea venv + dipendenze) e poi `avvia.bat`.
+- L'utente che riceve lo zip esegue `install.ps1` (crea venv + dipendenze) e poi `avvia.bat`
+  (avvio silenzioso con `pythonw.exe`) oppure `avvia-debug.bat` (terminale visibile, per capire
+  perche' non parte). `install.ps1` genera ENTRAMBI: cambiando uno dei due file in root va
+  cambiato anche il testo che l'installer scrive, altrimenti la prossima installazione lo
+  riporta indietro. `package.ps1` prende i file da `git ls-files` e fallisce se trova
+  `.py`/`.bat` nuovi non tracciati (finirebbero fuori dallo zip).
 - **Regola obbligatoria**: al termine di ogni task, chiedere all'utente se vuole aggiornare `APP_VERSION`.
 
 ## File da NON modificare senza motivo

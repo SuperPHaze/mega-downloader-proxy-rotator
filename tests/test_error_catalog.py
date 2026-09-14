@@ -56,6 +56,13 @@ CONTRATTI_INTERNI = {
     ("core/mega_links.py", "folder_id, node_handle e node_key_b64 sono obbligatori"),
     ("core/mega_links.py", "rel_path non puo' essere vuoto"),
     ("downloader/mega_api.py", "formato proxy non riconosciuto: {}"),
+    # Non e' un errore dell'utente ma il contratto dei flussi Python: un
+    # flusso senza descrittore lo DICE invece di inventarne uno (avvio
+    # silenzioso con pythonw.exe, dove non esiste console).
+    (
+        "core/logging_setup.py",
+        "nessun descrittore: processo senza console (pythonw)",
+    ),
 }
 
 

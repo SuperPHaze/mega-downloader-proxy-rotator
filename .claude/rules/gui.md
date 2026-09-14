@@ -138,6 +138,44 @@ tenerlo allineato quando cambi slot pubblici o dialoghi.
   `rmtree` cancellerebbe roba altrui. Vedi `_delete_folder_job_file` in `main_window.py` e la regola
   d'area `downloader.md`.
 
+## Area di notifica e uscita dall'applicazione
+`src/main.py` chiama `app.setQuitOnLastWindowClosed(False)`: senza, nascondere l'unica finestra
+per mandarla nell'area di notifica **termina il processo**. Le conseguenze sono due, e vanno
+tenute insieme:
+
+- **L'uscita non è più automatica**: `MainWindow.closeEvent` chiude l'applicazione in modo
+  esplicito (`app.quit()`), altrimenti la X lascerebbe un processo vivo e invisibile. La voce
+  «Esci» dell'icona passa dallo stesso punto (chiama `close()`), così teardown dei thread,
+  smontaggio dell'icona e marcatore di chiusura pulita avvengono una volta sola e sempre.
+  La chiamata è condizionata a `not app.quitOnLastWindowClosed()`: chi monta la propria
+  `QApplication` con il default di Qt — il demo runner — non deve trovarsi il processo spento
+  sotto i piedi quando chiude la finestra a metà lavoro.
+- **L'icona va smontata prima dell'uscita** (`TrayController.shutdown()` in `closeEvent`): un
+  `QSystemTrayIcon` ancora registrato quando il processo muore lascia un'icona fantasma nell'area
+  di notifica finché non ci si passa sopra col mouse. È la stessa regola dei thread attesi in
+  `closeEvent`: ciò che la GUI monta, la GUI lo smonta.
+
+Altre convenzioni dell'area di notifica:
+- **`TrayController` è INERTE** quando `QSystemTrayIcon.isSystemTrayAvailable()` è False (area
+  disattivata, piattaforma Qt offscreen dei test): nasce comunque e ogni metodo è un no-op, così
+  i chiamanti non si riempiono di condizioni. Chi decide *cosa fare* non lo chiede all'oggetto
+  grafico ma alla funzione pura `resolve_minimize_action(pref, tray_available)`.
+- **La riduzione a icona si intercetta in `changeEvent`** (`WindowStateChange` + `isMinimized()`)
+  e il lavoro vero si **differisce** con `QTimer.singleShot(0, ...)`: dentro il gestore dell'evento
+  la finestra sta ancora cambiando stato, e nasconderla o aprirci un dialogo modale è il modo più
+  rapido per rientrare nella propria logica. Un guardiano (`_suppress_minimize_prompt`) tiene fuori
+  le riduzioni **nostre** (il ripristino), che non devono valere come una scelta dell'utente.
+- **Non si toccano i flag della finestra** (`Qt.Tool` e simili) per nasconderla dalla barra delle
+  applicazioni: su Windows basta `hide()`, e cambiare i flag a finestra già creata ne azzera
+  geometria e stato. Il ripristino è `showNormal()` + `raise_()` + `activateWindow()`, in
+  quest'ordine.
+- **Nascondere la finestra nasconde anche le sue finestre figlie** (dettaglio di un job,
+  avanzamento dell'espansione): non spariscono da sole — misurato — e «nell'area di notifica»
+  deve voler dire che dell'app non resta niente a video. Vanno rimesse com'erano al ripristino.
+- **L'icona è una superficie persistente**: ha `retranslate()` ed è nel fan-out di
+  `_on_language_changed`, come i pannelli. Il dialogo della domanda è modale e creato su
+  richiesta: non ne ha bisogno.
+
 ## Thread di GUI e chiusura della finestra
 Oltre ai worker dell'orchestrator, la `MainWindow` possiede dei `QThread` propri per il lavoro di
 rete che non appartiene a una sessione di download: `UpdateCheckWorker`, `SpeedTestWorker`,

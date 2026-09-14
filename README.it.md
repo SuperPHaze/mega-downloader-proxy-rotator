@@ -22,7 +22,7 @@ https://github.com/user-attachments/assets/275c6fbe-3792-4178-8a75-dc8f4610df3e
 
 
 
-![version](https://img.shields.io/badge/version-2.0.0-blue)
+![version](https://img.shields.io/badge/version-2.1.0-blue)
 ![python](https://img.shields.io/badge/python-3.11%E2%80%933.14-blue)
 ![platform](https://img.shields.io/badge/platform-Windows%2010%2F11-lightgrey)
 ![gui](https://img.shields.io/badge/GUI-PyQt6-green)
@@ -58,6 +58,7 @@ App **desktop per Windows** (Python + PyQt6) che scarica file **e intere cartell
 - **Diagnostica crash passiva** sempre attiva (heartbeat di memoria, traceback multi-thread), log strutturato universale (`logs/events.jsonl`) e un generatore di report HTML (`tools/report.py`).
 - **Interfaccia** a schede con cruscotto compatto a 3 zone (velocità, download, proxy) — gauge radiale di velocità (% del picco di sessione), barra segmentata per lo stato dei download, card compatte per lo stato del pool proxy — filtri job a pulsanti con conteggio dei file per stato (in corso/completati/non completati), tema chiaro/scuro, pausa/ripresa/annullo globali e per singolo job.
 - **Interfaccia bilingue italiano/inglese**: al primo avvio segue la lingua del sistema, poi si sceglie dal menu Impostazioni (Automatica / Italiano / English) e il cambio è immediato, senza riavviare. È tradotta tutta l'interfaccia, messaggi d'errore compresi; i messaggi nei file di log restano in italiano perché servono alla diagnosi.
+- **Icona nell'area di notifica**: riducendo la finestra si sceglie (una volta o per sempre) se mandarla accanto all'orologio o lasciarla nella barra delle applicazioni; avvisi a comparsa a ogni file completato, a ogni errore e a coda completata. La X chiude il programma, come sempre.
 - **Modalità CLI** per macchine headless.
 
 ## ⚡ Installazione rapida (Windows 10/11)
@@ -65,7 +66,7 @@ App **desktop per Windows** (Python + PyQt6) che scarica file **e intere cartell
 **Per usarla** — scarica il pacchetto pronto:
 1. Vai alla [Release più recente](https://github.com/SuperPHaze/mega-downloader-proxy-rotator/releases/latest) e scarica lo `.zip`.
 2. Estrai, doppio clic su **`install.bat`** (crea l'ambiente e installa tutto: app, test e strumenti in `tools/`).
-3. Avvia con **`avvia.bat`**.
+3. Avvia con **`avvia.bat`**: parte senza finestra del terminale. Se non parte, **`avvia-debug.bat`** fa la stessa cosa tenendo il terminale visibile, così si vede perché.
 
 **Dai sorgenti** — richiede Python 3.11–3.14 nel PATH:
 ```bash

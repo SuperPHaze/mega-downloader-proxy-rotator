@@ -196,15 +196,39 @@ $ErrorActionPreference = $prevEAP
 
 # ---- 5. Crea launcher .bat -------------------------------------------
 
-Write-Step (L "Creating launcher avvia.bat..." "Creazione launcher avvia.bat...")
+Write-Step (L "Creating launchers avvia.bat and avvia-debug.bat..." "Creazione launcher avvia.bat e avvia-debug.bat...")
 
+# Due lanci: quello normale e' SILENZIOSO (pythonw.exe, nessuna finestra di
+# terminale), quello di riserva mostra il terminale ed e' li' per diagnosticare.
+# Il contenuto deve restare identico ai file versionati in root: se cambi uno,
+# cambia l'altro, altrimenti la prossima installazione riporta indietro il file.
 $batContent = '@echo off
+rem Avvio normale, SILENZIOSO: pythonw.exe non apre alcuna finestra di
+rem terminale. "start" fa partire l''app e lascia terminare subito questo
+rem script invece di restare appeso al programma per tutta la sessione.
+rem La console che Windows apre per qualunque .bat resta visibile per un
+rem istante: e'' il prezzo del doppio clic su un .bat.
+rem Se l''app non parte e vuoi vedere il perche'', usa avvia-debug.bat.
+cd /d "%~dp0"
+if not exist ".\venv\Scripts\pythonw.exe" (
+    echo [ERRORE] Ambiente non installato: esegui prima install.bat
+    pause
+    exit /b 1
+)
+start "" ".\venv\Scripts\pythonw.exe" -m src.main'
+
+$batDebugContent = '@echo off
+rem Avvio di riserva, con la finestra del terminale VISIBILE: e'' il
+rem comportamento che avvia.bat aveva prima dell''avvio silenzioso.
+rem Serve quando l''app non parte e in logs\ non c''e'' abbastanza per capire
+rem perche'' (per esempio un errore prima che il logging sia attivo).
 cd /d "%~dp0"
 .\venv\Scripts\python.exe -m src.main
 if errorlevel 1 pause'
 
 $batContent | Out-File -FilePath ".\avvia.bat" -Encoding ascii
-Write-OK (L "avvia.bat created in the project root." "avvia.bat creato nella root del progetto.")
+$batDebugContent | Out-File -FilePath ".\avvia-debug.bat" -Encoding ascii
+Write-OK (L "avvia.bat (silent) and avvia-debug.bat (visible console) created in the project root." "avvia.bat (silenzioso) e avvia-debug.bat (terminale visibile) creati nella root del progetto.")
 
 # ---- 6. Verifica ffmpeg (richiesto solo da tools/demo/demo_runner.py) -
 
@@ -322,7 +346,10 @@ Write-Host "$(L "  Installation completed successfully!  " "  Installazione comp
 Write-Host "==========================================" -ForegroundColor Green
 Write-Host ""
 Write-Host "$(L "  Quick start:" "  Avvio rapido:")" -ForegroundColor White
-Write-Host "$(L "    Double-click avvia.bat" "    Doppio clic su avvia.bat")" -ForegroundColor Yellow
+Write-Host "$(L "    Double-click avvia.bat (starts with no terminal window)" "    Doppio clic su avvia.bat (parte senza finestra del terminale)")" -ForegroundColor Yellow
+Write-Host ""
+Write-Host "$(L "  If it does not start, to see why:" "  Se non parte, per vedere perche':")" -ForegroundColor White
+Write-Host "$(L "    Double-click avvia-debug.bat (keeps the terminal visible)" "    Doppio clic su avvia-debug.bat (tiene il terminale visibile)")" -ForegroundColor Yellow
 Write-Host ""
 Write-Host "$(L "  Or from a terminal:" "  Oppure da terminale:")" -ForegroundColor White
 Write-Host "    .\venv\Scripts\python.exe -m src.main" -ForegroundColor Yellow

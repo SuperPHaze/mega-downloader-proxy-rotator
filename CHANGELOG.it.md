@@ -6,7 +6,45 @@ Tutte le modifiche rilevanti del progetto. Formato basato su [Keep a Changelog](
 
 ## [Non rilasciato]
 
+## [2.1.0] — 2026-09-14
+
+### Aggiunto
+- **Icona nell'area di notifica, accanto all'orologio.** Riducendo la finestra a icona il
+  programma chiede dove metterla — **area di notifica** oppure **barra delle applicazioni**,
+  com'era prima — e la finestra di domanda ha una casella **«Ricorda la scelta»**. Dall'icona:
+  doppio clic per riaprire la finestra, menu con **«Mostra la finestra»** ed **«Esci»**,
+  suggerimento del mouse con lo stato della sessione (file in corso, completati, velocità).
+  Quando l'app è nell'area di notifica non compare più nella barra delle applicazioni, e con lei
+  spariscono anche le finestre di dettaglio aperte (tornano al ripristino, come stavano). Nuovi
+  **avvisi a comparsa**: a ogni file completato, a ogni file non riuscito e a coda completata.
+  Il pulsante di chiusura della finestra (la X) resta quello di sempre: chiude l'applicazione.
+  Se l'area di notifica non è disponibile, nessuna domanda e nessuna icona: la riduzione resta
+  quella di prima.
+- **Menu Impostazioni → «Riduzione a icona:»**, con il pulsante **«Chiedi ogni volta»**: rimette
+  la domanda dopo che è stata messa a tacere con «Ricorda la scelta». Il suggerimento del mouse
+  dice qual è la scelta attualmente in vigore.
+- **Avvio senza finestra del terminale.** `avvia.bat` ora lancia il programma con `pythonw.exe`:
+  nessuna finestra nera che resta aperta accanto all'applicazione. Il nuovo **`avvia-debug.bat`**
+  fa l'opposto e mantiene il terminale visibile: è il lancio di riserva da usare quando l'app non
+  parte e si vuole vedere perché. `install.ps1` crea entrambi i file.
+
 ### Corretto
+- **Icona dell'applicazione caricata in modo esplicito a tutte le sue dimensioni.** Il file
+  `assets/icon.ico` ne contiene sette (16, 24, 32, 48, 64, 128, 256 pixel): ora vengono lette e
+  registrate una per una, invece di lasciare al lettore di immagini la scelta di quante
+  esporne. Il ripiego al `.png` scatta anche quando il `.ico` esiste ma non è leggibile (prima
+  il controllo si affidava a un dettaglio interno della libreria grafica), e l'avviso nel log
+  quando non si carica nulla è ora coperto da un test.
+- **Avvio silenzioso senza console: la cattura dell'output non si rompe più.** Senza terminale
+  `sys.stdout`/`sys.stderr` non esistono, e la prima riga di log avrebbe fatto cadere il
+  programma prima ancora che la finestra comparisse. Ora `logs/terminal-log.txt` resta l'unica
+  copia di ciò che si vedeva a video e continua a essere scritto, e un'eccezione non gestita del
+  thread principale finisce anche in `logs/crash.log` — dove la legge `tools/report.py` — invece
+  di svanire insieme al terminale che non c'è.
+- **`package.ps1` si accorge anche dei file `.bat` nuovi non tracciati da git**, non solo dei
+  `.py`: i due file di avvio sono in prima linea per chi riceve il pacchetto, e uno nuovo
+  sarebbe finito fuori dallo zip senza che nessuno se ne accorgesse fino al doppio clic
+  mancato.
 - **`install.ps1` prepara davvero tutto in un solo passaggio**: oltre a `requirements.txt` installa
   ora anche `requirements-dev.txt` (serve a `pytest` e a `tools/demo/demo_runner.py`, prima andava
   installato a mano) e verifica/installa **ffmpeg** via winget (richiesto solo dal demo runner in

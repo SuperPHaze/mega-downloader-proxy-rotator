@@ -16,6 +16,18 @@ The intended use is downloading files you have the right to access. Public proxi
 
 ---
 
+## 1-bis. Starting the program: two launchers
+
+The installation (`install.bat`) prepares **two** launcher files in the program folder, doing the same thing in two different ways.
+
+**`avvia.bat` is the normal launcher**: it opens the application **with no terminal window**. That is the one to use. The moment it starts you see a black window flash into view and disappear: that is Windows opening a console for any `.bat` file, not the program. To avoid even that flash you can create a Windows shortcut by hand pointing straight at `venv\Scripts\pythonw.exe` with the argument `-m src.main`.
+
+**`avvia-debug.bat` is the backup launcher**: it starts the application **with the terminal visible** and keeps it open if something goes wrong. Use it when the app does not start and you want to see why with your own eyes.
+
+With no terminal, everything that used to be readable on screen only goes into the files under `logs/`: the technical log (`logs/app.log`), the structured log (`logs/events.jsonl`) and the raw copy of the output (`logs/terminal-log.txt`, reset at every launch). A sudden error is captured too: unhandled exceptions end up both in the technical log and in `logs/crash.log`, alongside low-level crashes. **One case only stays invisible**: a failure happening *before* the logging system is up — an incomplete installation, say, or a corrupted program file. That is exactly what `avvia-debug.bat` is there for.
+
+---
+
 ## 2. Three-phase download architecture
 
 Every download session is made up of three phases that operate in parallel once started.
@@ -164,6 +176,22 @@ The change is **immediate and needs no restart**: panels, menus, buttons, dialog
 The translation covers the **whole** interface, including the **error messages** of individual files, which are the part that usually lags behind: errors from the engine travel to the window as a code plus parameters, not as an already-composed sentence, and that is why they can be rendered in either language at drawing time.
 
 **Messages in the log files stay in Italian instead**, whatever the interface language is. That is deliberate: they are diagnostic material and must stay stable over time, otherwise comparing two sessions or looking up an error in an old log would turn into a translation exercise. It applies to `logs/app.log`, `logs/events.jsonl`, `logs/failed_links.log` and to the messages of the CLI mode.
+
+---
+
+## 9-ter. Minimizing: notification area and notices
+
+When you minimize the window the program **asks where to put it**, with a question titled "Minimize": **Notification area** (the icon next to the clock) or **Taskbar** (the way it has always been). The question appears at the moment you minimize and has a **"Remember this choice"** checkbox: tick it and the choice is saved and no longer asked. To go back to being asked every time: **Settings → "On minimize:" → "Ask every time"** menu; the mouse tooltip on that button tells you which choice is in force right now.
+
+**The window close button (the X) does not change: it closes the application**, as it always has and without asking for confirmation. The notification area is a place to *minimize* the window to, not a way to quietly close the program.
+
+While the application is in the notification area it **no longer appears in the taskbar**, and any detail windows left open disappear along with the main window — coming back to their place, just as they were, on restore. From the icon you get back to the window with a **double-click**, or from the right-click menu, which has two entries: **"Show window"** and **"Quit"**. Resting the mouse on the icon shows the session status: how many files are running, how many are completed out of the total, and the overall speed.
+
+The icon also sends **pop-up notices**: on every **completed file**, on every **failed file** (with the reason) and when the **queue is done**. Notices arrive with the window open too, which is why the icon is there from startup and not only while minimized. A failed attempt that will be retried produces no notice at all: you get told when a file is really finished, one way or the other.
+
+An **unrecoverable** error on a file, which with the window open raises a message box, arrives **only** as a pop-up notice while the application is in the notification area: a lone dialog on screen, without even a taskbar entry to get back to it, would be worse than the problem it reports. The error is still written on the file's card and in the status line.
+
+If the notification area is not available — switched off in the Windows settings, or a session without a full graphical shell — **neither the question nor the icon appears**: minimizing behaves exactly as before and a line in the technical log says so.
 
 ---
 

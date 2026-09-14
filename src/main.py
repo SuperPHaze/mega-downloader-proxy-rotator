@@ -9,7 +9,11 @@ from PyQt6.QtWidgets import QApplication
 from src.core import diagnostics
 from src.core.config import APP_VERSION
 from src.core.icon_loader import build_app_icon
-from src.core.logging_setup import install_qt_message_handler, setup_logging
+from src.core.logging_setup import (
+    install_qt_message_handler,
+    log_unhandled_main_exception,
+    setup_logging,
+)
 from src.gui.i18n import TR
 from src.gui.main_window import MainWindow
 
@@ -36,9 +40,13 @@ def main() -> int:
     log.info("Avvio applicazione. Log: %s", log_file)
     diagnostics.log_session_start(APP_VERSION)
 
-    # Hook globale: cattura eccezioni non gestite e le scrive nel log.
+    # Hook globale: cattura eccezioni non gestite e le scrive nel log. Con
+    # l'avvio silenzioso (pythonw) non c'e' console dove guardare, quindi il
+    # traceback va anche in crash.log, accanto ai crash nativi: e' cio' che
+    # legge tools/report.py.
     def excepthook(exc_type, exc_value, exc_tb):
         log.critical("Eccezione non gestita", exc_info=(exc_type, exc_value, exc_tb))
+        log_unhandled_main_exception(exc_type, exc_value, exc_tb)
         sys.__excepthook__(exc_type, exc_value, exc_tb)
 
     sys.excepthook = excepthook
@@ -51,6 +59,13 @@ def main() -> int:
     _set_windows_app_user_model_id()
 
     app = QApplication(sys.argv)
+    # Con l'icona nell'area di notifica la finestra puo' essere NASCOSTA senza
+    # che l'applicazione debba morire: senza questa riga, nascondere l'unica
+    # finestra fa terminare il processo (e' il default di Qt). Effetto
+    # collaterale da tenere a mente: da qui in poi l'uscita non e' piu'
+    # automatica — la X e la voce «Esci» dell'icona passano entrambe da
+    # `MainWindow.closeEvent`, che chiude l'applicazione esplicitamente.
+    app.setQuitOnLastWindowClosed(False)
     icon = build_app_icon()
     app.setWindowIcon(icon)
 

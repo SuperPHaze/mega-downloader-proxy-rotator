@@ -6,7 +6,7 @@ import os
 import shutil
 from pathlib import Path
 
-from PyQt6.QtCore import Qt, QTimer, QUrl
+from PyQt6.QtCore import QEvent, Qt, QTimer, QUrl
 from PyQt6.QtGui import QDesktopServices
 from PyQt6.QtWidgets import (
     QApplication,
@@ -49,17 +49,27 @@ from src.gui.preferences import (
     load_dark_theme,
     load_download_dir,
     load_link_speed_mbps,
+    load_minimize_target,
     load_segment_max_duration_s,
     load_speed_selection_enabled,
     load_speed_selection_min_kbps,
     save_dark_theme,
     save_download_dir,
     save_link_speed_mbps,
+    save_minimize_target,
 )
 from src.gui.proxy_bar import ProxyBar
 from src.gui.speedtest_worker import ProxySpeedTestWorker, SpeedTestWorker
 from src.gui.stats_bar import StatsBar
 from src.gui.stats_panel import StatsPanel
+from src.gui.tray import (
+    MINIMIZE_ASK,
+    MINIMIZE_TRAY,
+    TrayController,
+    ask_minimize_target,
+    resolve_minimize_action,
+    tooltip_text,
+)
 from src.gui import style as _style
 from src.gui.style import LIGHT_QSS, apply_theme
 from src.gui.update_banner import UpdateBanner
@@ -73,7 +83,10 @@ class MainWindow(QMainWindow):
         super().__init__()
         self._refresh_window_title()
         self.resize(1100, 820)
-        self.setWindowIcon(build_app_icon())
+        # Costruita UNA volta e riusata: finestra e icona nell'area di notifica
+        # devono essere la stessa icona, non due letture indipendenti.
+        self._app_icon = build_app_icon()
+        self.setWindowIcon(self._app_icon)
 
         self.session_state = SessionState()
         self.orchestrator: DownloadOrchestrator | None = None
@@ -98,6 +111,18 @@ class MainWindow(QMainWindow):
         self._proxy_speedtest_worker: ProxySpeedTestWorker | None = None
         self._folder_expander: FolderExpandWorker | None = None
         self._expand_dialog: QProgressDialog | None = None
+        # Riduzione a icona: il guardiano evita che una riduzione NOSTRA
+        # (ripristino dall'area di notifica) venga scambiata per una
+        # dell'utente e faccia ricomparire la domanda; il secondo flag evita
+        # di aprire due volte lo stesso dialogo.
+        self._suppress_minimize_prompt = False
+        self._minimize_prompt_open = False
+        # Finestre figlie nascoste insieme alla principale quando si va
+        # nell'area di notifica: vanno rimesse com'erano al ripristino.
+        self._hidden_child_windows: list[QWidget] = []
+        # Avviso «coda completata»: una volta sola per sessione (i job che
+        # terminano dopo un riavvio non devono rifarlo scattare a ripetizione).
+        self._queue_done_notified = False
 
         # LinkPanel: nascosto dall'UI ma funzionale come gestore della lista link.
         self.link_panel = LinkPanel()
@@ -120,6 +145,7 @@ class MainWindow(QMainWindow):
         self.controls = ControlsBar()
         self.controls.set_dark(self._dark_theme)
         self.controls.set_download_dir(load_download_dir())
+        self.controls.set_minimize_target(load_minimize_target())
 
         self.update_banner = UpdateBanner()
         self.update_banner.download_requested.connect(self._on_update_download_requested)
@@ -185,12 +211,26 @@ class MainWindow(QMainWindow):
         self.controls.info_requested.connect(self._open_about_dialog)
         self.controls.experimental_requested.connect(self._open_experimental_dialog)
         self.controls.download_dir_changed.connect(self._on_download_dir_changed)
+        self.controls.minimize_ask_requested.connect(self._on_minimize_ask_requested)
         self.jobs_panel.job_double_clicked.connect(self._open_detail)
         self.jobs_panel.cancel_job_requested.connect(self._on_cancel_job_requested)
         self.jobs_panel.delete_folder_requested.connect(self._on_delete_folder_requested)
         self.jobs_panel.paste_links_requested.connect(self.link_panel.open_paste_dialog)
         self.jobs_panel.restart_job_requested.connect(self._on_restart_job_requested)
         self.jobs_panel.restart_all_failed_requested.connect(self._on_restart_all_failed_requested)
+
+        # Icona nell'area di notifica: creata SEMPRE (quando l'area esiste) e
+        # non solo a finestra nascosta. Serve a due cose che a icona assente
+        # non funzionerebbero: gli avvisi a comparsa — che Pietro vuole a ogni
+        # file, anche a finestra aperta — e il menu «Mostra la finestra /
+        # Esci», che deve essere raggiungibile sempre. Senza area di notifica
+        # l'oggetto nasce inerte e tutto resta come prima.
+        self._tray = TrayController(self._app_icon, self)
+        self._tray.show_window_requested.connect(self._restore_from_tray)
+        self._tray.quit_requested.connect(self.close)
+        self._tray.show()
+        self.jobs_panel.model.aggregates_changed.connect(self._refresh_tray_tooltip)
+        self._refresh_tray_tooltip()
 
         self._maybe_check_updates_on_startup()
         # Misura automatica della banda della linea all'avvio (diretta, fuori
@@ -208,6 +248,150 @@ class MainWindow(QMainWindow):
         self._heartbeat_timer.setInterval(HEARTBEAT_INTERVAL_S * 1000)
         self._heartbeat_timer.timeout.connect(self._on_heartbeat)
         self._heartbeat_timer.start()
+
+    # ---- area di notifica --------------------------------------------------
+
+    def changeEvent(self, event) -> None:  # noqa: N802
+        """Intercetta la riduzione a icona per proporre l'area di notifica.
+
+        Il lavoro vero e' differito al giro successivo del loop eventi: qui
+        la finestra sta ancora cambiando stato, e nasconderla o aprire un
+        dialogo modale dentro il proprio gestore di evento e' il modo piu'
+        rapido per rientrare nella propria logica."""
+        super().changeEvent(event)
+        if event.type() != QEvent.Type.WindowStateChange:
+            return
+        if not self.isMinimized() or self._suppress_minimize_prompt:
+            return
+        QTimer.singleShot(0, self._handle_minimized)
+
+    def _handle_minimized(self) -> None:
+        if not self.isMinimized() or self._minimize_prompt_open:
+            return
+        if not self.isVisible():
+            return          # gia' nell'area di notifica: niente da fare
+        action = resolve_minimize_action(
+            load_minimize_target(), self._tray.is_available()
+        )
+        if action == MINIMIZE_ASK:
+            self._minimize_prompt_open = True
+            try:
+                action, remember = ask_minimize_target(self)
+            finally:
+                self._minimize_prompt_open = False
+            if remember:
+                save_minimize_target(action)
+                self.controls.set_minimize_target(action)
+                log.info("Destinazione della riduzione a icona ricordata: %s", action)
+        if action == MINIMIZE_TRAY:
+            self._hide_to_tray()
+
+    def _hide_to_tray(self) -> None:
+        """Nasconde la finestra: su Windows basta questo perche' sparisca
+        dalla barra delle applicazioni e resti solo l'icona accanto
+        all'orologio. NON si toccano i flag della finestra (`Qt.Tool` e
+        simili): cambiarli a finestra gia' creata ne azzera geometria e
+        stato."""
+        # Le finestre figlie (dettaglio di un job, avanzamento
+        # dell'espansione) NON spariscono da sole quando il padre si nasconde:
+        # misurato, restano sullo schermo. «Nell'area di notifica» deve voler
+        # dire che dell'app non resta niente a video, quindi vanno nascoste
+        # qui e rimesse al ripristino, cosi' com'erano.
+        self._hidden_child_windows = [
+            w for w in self.findChildren(QWidget) if w.isWindow() and w.isVisible()
+        ]
+        for child in self._hidden_child_windows:
+            child.hide()
+        self._suppress_minimize_prompt = True
+        try:
+            self.hide()
+        finally:
+            self._suppress_minimize_prompt = False
+        log.info("Finestra ridotta nell'area di notifica")
+
+    def _restore_from_tray(self) -> None:
+        """Ripristino dall'area di notifica: l'ordine conta — mostrare,
+        portare davanti, dare il fuoco."""
+        self._suppress_minimize_prompt = True
+        self.showNormal()
+        self.raise_()
+        self.activateWindow()
+        for child in self._hidden_child_windows:
+            try:
+                child.show()
+            except RuntimeError:
+                pass        # finestra figlia distrutta nel frattempo
+        self._hidden_child_windows = []
+        # Il guardiano si spegne al giro successivo: il ripristino puo'
+        # produrre un altro WindowStateChange, e non deve valere come una
+        # riduzione chiesta dall'utente.
+        QTimer.singleShot(0, self._clear_minimize_guard)
+
+    def _clear_minimize_guard(self) -> None:
+        self._suppress_minimize_prompt = False
+
+    def _on_minimize_ask_requested(self) -> None:
+        """Voce «Chiedi ogni volta» del menu Impostazioni: rimette la domanda."""
+        save_minimize_target(MINIMIZE_ASK)
+        self.controls.set_minimize_target(MINIMIZE_ASK)
+        self._set_status_t("main_window.minimize_ask_restored")
+
+    def _refresh_tray_tooltip(self) -> None:
+        agg = self.jobs_panel.model.aggregates()
+        self._tray.set_tooltip(
+            tooltip_text(
+                agg["running"], agg["completed"], agg["total"], agg["total_speed"],
+            )
+        )
+
+    def _job_display_name(self, file_id: int) -> str:
+        """Nome da mostrare negli avvisi: quello del file se gia' risolto,
+        altrimenti il progressivo (gli avvisi arrivano anche prima che Mega
+        abbia restituito il nome)."""
+        job = self.jobs_panel.model.get_job(file_id)
+        if job is not None and job.file_name:
+            return job.file_name
+        return t("tray.file_fallback", file=file_id + 1)
+
+    def _notify_completed(self, file_id: int) -> None:
+        self._tray.notify(
+            t("tray.notify_completed_title"),
+            t(
+                "tray.notify_completed_body",
+                name=self._job_display_name(file_id),
+                done=self._completed_files,
+                total=self._expected_files,
+            ),
+        )
+
+    def _notify_failed(self, file_id: int, code: str, params: dict) -> None:
+        self._tray.notify(
+            t("tray.notify_failed_title"),
+            t(
+                "tray.notify_failed_body",
+                name=self._job_display_name(file_id),
+                error=render_error(code, params),
+            ),
+            warning=True,
+        )
+
+    def _maybe_notify_queue_done(self) -> None:
+        """Avviso di coda completata: una volta per sessione, quando ogni job
+        e' arrivato a uno stato terminale (in qualunque modo)."""
+        if self._queue_done_notified:
+            return
+        if self._expected_files <= 0 or self._completed_files < self._expected_files:
+            return
+        self._queue_done_notified = True
+        agg = self.jobs_panel.model.aggregates()
+        self._tray.notify(
+            t("tray.notify_queue_done_title"),
+            t(
+                "tray.notify_queue_done_body",
+                done=agg["completed"],
+                total=self._expected_files,
+            ),
+        )
 
     # ---- diagnostica -------------------------------------------------------
 
@@ -481,6 +665,7 @@ class MainWindow(QMainWindow):
         self._set_status_t("main_window.collecting_proxies")
         self._expected_files = len(links)
         self._completed_files = 0
+        self._queue_done_notified = False
         self.controls.set_running(True)
         self.link_panel.set_running(True)
 
@@ -625,21 +810,30 @@ class MainWindow(QMainWindow):
             done=self._completed_files,
             total=self._expected_files,
         )
+        self._notify_completed(file_id)
         if self._completed_files >= self._expected_files:
             self._set_status_t("main_window.all_completed")
             self.controls.reset()
             self._restore_session_ui()
+        self._maybe_notify_queue_done()
 
     def _on_fatal_error(self, file_id: int, code: str, params: dict) -> None:
         self.jobs_panel.on_fatal(file_id, code, params)
-        QMessageBox.critical(
-            self,
-            t("main_window.fatal_title"),
-            t(
-                "main_window.fatal_body",
-                file=file_id + 1, error=render_error(code, params),
-            ),
-        )
+        # E' l'unico dialogo che compare da solo, senza che l'utente abbia
+        # chiesto niente: con la finestra nascosta nell'area di notifica
+        # resterebbe da solo sullo schermo, senza nemmeno un posto nella barra
+        # delle applicazioni da cui riprenderlo. Nascosti si avvisa con
+        # l'avviso a comparsa qui sotto; l'errore resta comunque scritto sulla
+        # scheda del job e nella riga di stato, quindi non si perde nulla.
+        if self.isVisible():
+            QMessageBox.critical(
+                self,
+                t("main_window.fatal_title"),
+                t(
+                    "main_window.fatal_body",
+                    file=file_id + 1, error=render_error(code, params),
+                ),
+            )
         self._set_status_t(
             "main_window.fatal_status",
             file=file_id + 1,
@@ -647,9 +841,11 @@ class MainWindow(QMainWindow):
         )
         self._session_mark_finished(file_id)
         self._completed_files += 1
+        self._notify_failed(file_id, code, params)
         if self._completed_files >= self._expected_files:
             self.controls.reset()
             self._restore_session_ui()
+        self._maybe_notify_queue_done()
 
     def _on_abandoned(
         self, file_id: int, url: str, attempts: int, code: str, params: dict,
@@ -666,10 +862,12 @@ class MainWindow(QMainWindow):
             file=file_id + 1,
             error={"code": ABANDON_ALIASES.get(code, code), "params": params},
         )
+        self._notify_failed(file_id, ABANDON_ALIASES.get(code, code), params)
         if self._completed_files >= self._expected_files:
             self._set_status_t("main_window.all_terminated")
             self.controls.reset()
             self._restore_session_ui()
+        self._maybe_notify_queue_done()
 
     # ---- cancellazione per-job ------------------------------------------
 
@@ -708,6 +906,7 @@ class MainWindow(QMainWindow):
             self._set_status_t("main_window.all_terminated")
             self.controls.reset()
             self._restore_session_ui()
+        self._maybe_notify_queue_done()
 
     def _on_delete_folder_requested(self, file_id: int) -> None:
         url = self._links_by_id.get(file_id)
@@ -863,6 +1062,10 @@ class MainWindow(QMainWindow):
         self._stats_panel.retranslate()
         self.jobs_panel.retranslate()
         self.link_panel.retranslate()
+        # L'icona nell'area di notifica e' una superficie persistente come i
+        # pannelli: il menu si ritraduce, il suggerimento si riscrive.
+        self._tray.retranslate()
+        self._refresh_tray_tooltip()
         self._retranslate_open_details()
         self._refresh_status()
 
@@ -910,6 +1113,8 @@ class MainWindow(QMainWindow):
             )
             return
         self._completed_files = max(0, self._completed_files - 1)
+        # La coda non e' piu' finita: l'avviso di fine coda deve poter tornare.
+        self._queue_done_notified = False
         self.controls.set_running(True)
         self.link_panel.set_running(True)
         self._set_status_t("main_window.restart_queued", file=file_id + 1)
@@ -930,6 +1135,7 @@ class MainWindow(QMainWindow):
         n_started = self.orchestrator.restart_all_failed(jobs)
         if n_started > 0:
             self._completed_files = max(0, self._completed_files - n_started)
+            self._queue_done_notified = False
             self.controls.set_running(True)
             self.link_panel.set_running(True)
             self._set_status_tn("main_window.restart_all_done", n_started)
@@ -965,8 +1171,26 @@ class MainWindow(QMainWindow):
             self._folder_expander.request_cancel()
             self._folder_expander.wait(3000)
         self._close_expand_dialog()
+        # L'icona nell'area di notifica va smontata PRIMA che il processo
+        # esca: e' un oggetto grafico registrato presso la shell di Windows,
+        # e lasciarlo li' vuol dire lasciare un'icona fantasma finche' non ci
+        # si passa sopra col mouse. Stessa ragione dell'attesa dei thread qui
+        # sopra: cio' che l'app ha montato, l'app lo smonta.
+        self._tray.shutdown()
         # Marcatore di chiusura volontaria: se nel log compare un SESSION
         # START senza questo prima del successivo START, e' stato un crash o
         # un kill esterno (non una chiusura dall'utente).
         diagnostics.log_session_clean_exit()
         super().closeEvent(event)
+        # La X chiude l'APPLICAZIONE, come ha sempre fatto. Con
+        # `setQuitOnLastWindowClosed(False)` (necessario perche' nascondere la
+        # finestra nell'area di notifica non uccida il processo) l'uscita non
+        # e' piu' automatica e va chiesta qui — anche per la voce «Esci»
+        # dell'icona, che passa da `close()` e quindi da questo stesso punto.
+        # La condizione tiene fuori chi NON ha disattivato l'uscita automatica
+        # (il demo runner monta la sua QApplication con il default di Qt e
+        # chiude la finestra a meta' lavoro: non deve trovarsi il processo
+        # spento sotto i piedi).
+        app = QApplication.instance()
+        if app is not None and not app.quitOnLastWindowClosed():
+            app.quit()

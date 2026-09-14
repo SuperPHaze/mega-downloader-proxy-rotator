@@ -79,21 +79,24 @@ if (-not $trackedFiles) {
     exit 1
 }
 
-# ── Guard: file Python nuovi NON tracciati = verrebbero esclusi dallo zip ──
+# ── Guard: file nuovi NON tracciati = verrebbero esclusi dallo zip ──
 # Causa storica di ModuleNotFoundError/ImportError nei pacchetti: un modulo
 # nuovo mai 'git add'-ato non compare in 'git ls-files' e finisce fuori dallo
 # zip, mentre il codice che lo importa (gia' tracciato) viene incluso -> crash
 # al lancio del pacchetto. Meglio fallire QUI, rumorosamente, che spedire uno
 # zip rotto.
+# Valgono anche i .bat: i launcher (avvia.bat, avvia-debug.bat) sono file di
+# primo piano per l'utente finale e uno nuovo, non tracciato, sparirebbe dal
+# pacchetto senza che nessuno se ne accorga fino al doppio clic mancato.
 Push-Location $sourceRoot
 try {
-    $untrackedPy = git ls-files --others --exclude-standard -- '*.py'
+    $untrackedNew = git ls-files --others --exclude-standard -- '*.py' '*.bat'
 } finally {
     Pop-Location
 }
-if ($untrackedPy) {
-    Write-Err (L "Untracked Python files would be EXCLUDED from the package. Run 'git add' on them first:" "File Python non tracciati verrebbero ESCLUSI dal pacchetto. Falli 'git add' prima:")
-    $untrackedPy | ForEach-Object { Write-Host "        $_" -ForegroundColor Yellow }
+if ($untrackedNew) {
+    Write-Err (L "Untracked Python/.bat files would be EXCLUDED from the package. Run 'git add' on them first:" "File Python/.bat non tracciati verrebbero ESCLUSI dal pacchetto. Falli 'git add' prima:")
+    $untrackedNew | ForEach-Object { Write-Host "        $_" -ForegroundColor Yellow }
     exit 1
 }
 

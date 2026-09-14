@@ -16,6 +16,18 @@ L'uso previsto è il download di file di cui si ha il diritto di disporre. I pro
 
 ---
 
+## 1-bis. Avviare il programma: due lanci
+
+L'installazione (`install.bat`) prepara **due** file di avvio nella cartella del programma, che fanno la stessa cosa in due modi diversi.
+
+**`avvia.bat` è il lancio normale**: apre l'applicazione **senza finestra del terminale**. È quello da usare sempre. Nell'istante in cui parte si vede comparire e sparire una finestra nera: è Windows che apre una console per qualunque file `.bat`, non il programma. Per evitare anche quel lampo si può creare a mano un collegamento di Windows che punti direttamente a `venv\Scripts\pythonw.exe` con argomento `-m src.main`.
+
+**`avvia-debug.bat` è il lancio di riserva**: fa partire l'applicazione **con il terminale visibile** e lo tiene aperto se qualcosa va storto. Serve quando l'app non parte e si vuole vedere il perché con i propri occhi.
+
+Senza terminale, tutto ciò che prima si leggeva a video finisce solo nei file dentro `logs/`: il registro tecnico (`logs/app.log`), il registro strutturato (`logs/events.jsonl`) e la copia grezza dell'output (`logs/terminal-log.txt`, riazzerata a ogni avvio). Anche un errore improvviso viene raccolto: le eccezioni non gestite finiscono sia nel registro tecnico sia in `logs/crash.log`, insieme ai crash di basso livello. **Un solo caso resta invisibile**: un guasto che avvenga *prima* che il sistema di registrazione sia attivo — per esempio un'installazione incompleta o un file del programma corrotto. È esattamente il caso per cui esiste `avvia-debug.bat`.
+
+---
+
 ## 2. Architettura del download in tre fasi
 
 Ogni sessione di download si articola in tre fasi che operano in parallelo una volta avviate.
@@ -168,6 +180,22 @@ Il cambio è **immediato e non richiede il riavvio**: pannelli, menu, pulsanti, 
 La traduzione copre **tutta** l'interfaccia, inclusi i **messaggi d'errore** dei singoli file, che sono la parte che di solito resta indietro: gli errori del motore viaggiano fino alla finestra come codice più parametri, non come frase già composta, ed è per questo che si possono rendere in una lingua o nell'altra al momento del disegno.
 
 **I messaggi nei file di log restano invece in italiano**, qualunque sia la lingua dell'interfaccia. È voluto: sono materiale diagnostico e devono restare stabili nel tempo, altrimenti confrontare due sessioni o cercare un errore in un log vecchio diventerebbe un esercizio di traduzione. Vale per `logs/app.log`, `logs/events.jsonl`, `logs/failed_links.log` e per i messaggi della modalità CLI.
+
+---
+
+## 9-ter. Ridurre a icona: area di notifica e avvisi
+
+Riducendo la finestra a icona il programma **chiede dove metterla**, con una domanda intitolata «Riduzione a icona»: **Area di notifica** (l'icona accanto all'orologio) oppure **Barra delle applicazioni** (il comportamento di sempre). La domanda compare nel momento della riduzione e ha una casella **«Ricorda la scelta»**: spuntandola, la scelta viene salvata e non viene più chiesto. Per tornare a farsi chiedere ogni volta: menu **Impostazioni → «Riduzione a icona:» → «Chiedi ogni volta»**; il suggerimento del mouse su quel pulsante dice quale scelta è in vigore adesso.
+
+**Il pulsante di chiusura della finestra (la X) non cambia: chiude l'applicazione**, come ha sempre fatto e senza chiedere conferma. L'area di notifica è un posto dove *ridurre* la finestra, non un modo per chiudere il programma di nascosto.
+
+Quando l'applicazione è nell'area di notifica **non compare più nella barra delle applicazioni**, e insieme alla finestra principale spariscono anche le finestre di dettaglio eventualmente aperte — che tornano al loro posto, così com'erano, al ripristino. Dall'icona si torna alla finestra con un **doppio clic**, oppure dal menu del tasto destro, che ha due voci: **«Mostra la finestra»** ed **«Esci»**. Fermando il mouse sopra l'icona si legge lo stato della sessione: quanti file sono in corso, quanti completati sul totale e la velocità complessiva.
+
+L'icona manda anche **avvisi a comparsa**: a ogni **file completato**, a ogni **file non riuscito** (con il motivo) e a **coda completata**. Gli avvisi arrivano anche a finestra aperta, ed è per questo che l'icona è presente fin dall'avvio e non solo a finestra ridotta. Un tentativo fallito che verrà ripetuto non produce alcun avviso: si viene avvisati quando un file è finito davvero, in un senso o nell'altro.
+
+Un errore **irrimediabile** su un file, che a finestra aperta apre una finestra di avviso, quando l'applicazione è nell'area di notifica arriva **solo** come avviso a comparsa: una finestra di dialogo da sola sullo schermo, senza nemmeno una voce nella barra delle applicazioni da cui riprenderla, sarebbe peggio del problema che segnala. L'errore resta comunque scritto sulla scheda del file e nella riga di stato.
+
+Se l'area di notifica non è disponibile — disattivata nelle impostazioni di Windows, oppure una sessione senza interfaccia grafica completa — **non compaiono né la domanda né l'icona**: la riduzione si comporta esattamente come prima e nel registro tecnico resta una riga che lo dice.
 
 ---
 

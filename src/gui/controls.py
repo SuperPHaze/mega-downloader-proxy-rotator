@@ -1,8 +1,8 @@
 # Barra comandi: Avvia, Pausa/Riprendi, Annulla, Impostazioni (popup),
 # Sperimentale (dialog separato), Aggiungi link, toggle tema, Info.
 # Le opzioni di configurazione (paralleli, limite, pezzo, cartella di download,
-# lingua) sono raggruppate in un QMenu+QWidgetAction persistente, accessibile
-# dal pulsante Impostazioni.
+# riduzione a icona, lingua) sono raggruppate in un QMenu+QWidgetAction
+# persistente, accessibile dal pulsante Impostazioni.
 # I widget sottostanti (concurrency_combo, time_limit_spin, chunk_size_combo)
 # restano attributi della classe: getter e segnali sono invariati.
 # Il pulsante Sperimentale apre ExperimentalFeaturesDialog (gui/experimental_dialog.py),
@@ -53,6 +53,7 @@ class ControlsBar(QWidget):
     info_requested = pyqtSignal()
     experimental_requested = pyqtSignal()
     download_dir_changed = pyqtSignal(str)  # "" = torna al default
+    minimize_ask_requested = pyqtSignal()   # rimetti la domanda alla riduzione
 
     def __init__(self) -> None:
         super().__init__()
@@ -126,6 +127,16 @@ class ControlsBar(QWidget):
         self.download_dir_btn.clicked.connect(self._choose_download_dir)
         self.download_dir_btn.setMinimumWidth(150)
 
+        # Riduzione a icona: dove va la finestra quando la si riduce. Qui c'e'
+        # solo la via per RIMETTERE la domanda ("chiedi ogni volta"): la scelta
+        # vera si fa nel momento della riduzione, dove l'utente ha il contesto.
+        # Il valore corrente arriva da MainWindow (set_minimize_target), come
+        # per la cartella di download: i pannelli non leggono le preferenze.
+        self._minimize_target = "ask"
+        self.minimize_reset_btn = QPushButton()
+        self.minimize_reset_btn.clicked.connect(self._on_minimize_reset)
+        self.minimize_reset_btn.setMinimumWidth(150)
+
         # Lingua dell'interfaccia: "Automatica (<lingua rilevata>)" / Italiano /
         # English. Il dato di ogni voce è la PREFERENZA ('auto'|'it'|'en'), non
         # la lingua effettiva: 'auto' deve restare revocabile.
@@ -154,6 +165,7 @@ class ControlsBar(QWidget):
             ("controls.row_time_limit", self.time_limit_spin),
             ("controls.row_chunk", self.chunk_size_combo),
             ("controls.row_download_dir", self.download_dir_btn),
+            ("controls.row_minimize", self.minimize_reset_btn),
             ("controls.row_language", self.language_combo),
         ):
             _container = QWidget()
@@ -231,6 +243,7 @@ class ControlsBar(QWidget):
         self._refresh_pause_button()
         self._refresh_theme_button()
         self._refresh_download_dir_button()
+        self._refresh_minimize_button()
         self._refresh_language_combo()
 
     def _refresh_language_combo(self) -> None:
@@ -299,6 +312,36 @@ class ControlsBar(QWidget):
     def get_download_dir(self) -> str:
         """Cartella di download scelta ("" = usa il default)."""
         return self._download_dir
+
+    # ---- riduzione a icona -------------------------------------------------
+
+    def set_minimize_target(self, value: str) -> None:
+        """Destinazione corrente della riduzione a icona ("ask"/"tray"/
+        "taskbar"), senza emettere il segnale: serve solo a scrivere il
+        suggerimento e ad accendere il pulsante quando c'e' qualcosa da
+        annullare."""
+        self._minimize_target = str(value or "ask")
+        self._refresh_minimize_button()
+
+    def get_minimize_target(self) -> str:
+        return self._minimize_target
+
+    def _refresh_minimize_button(self) -> None:
+        self.minimize_reset_btn.setText(t("controls.minimize_reset"))
+        key = {
+            "tray": "controls.minimize_tooltip_tray",
+            "taskbar": "controls.minimize_tooltip_taskbar",
+        }.get(self._minimize_target, "controls.minimize_tooltip_ask")
+        self.minimize_reset_btn.setToolTip(t(key))
+        # Con la domanda gia' attiva non c'e' niente da ripristinare: il
+        # pulsante spento dice da solo qual e' lo stato corrente.
+        self.minimize_reset_btn.setEnabled(self._minimize_target != "ask")
+
+    def _on_minimize_reset(self) -> None:
+        # Il popup si chiude prima: la finestra chiamante scrive la riga di
+        # stato, e un menu aperto sopra la nasconderebbe.
+        self._settings_menu.close()
+        self.minimize_ask_requested.emit()
 
     def _on_pause(self) -> None:
         self._paused = not self._paused

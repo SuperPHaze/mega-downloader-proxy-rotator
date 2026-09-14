@@ -67,7 +67,25 @@ STRINGS: dict[str, str | dict[str, str]] = {
     "controls.row_time_limit": "Time limit (min/file):",
     "controls.row_chunk": "Chunk:",
     "controls.row_download_dir": "Download folder:",
+    "controls.row_minimize": "On minimize:",
     "controls.row_language": "Language:",
+
+    # ---- controls bar: minimize target ---------------------------------------
+    "controls.minimize_reset": "Ask every time",
+    "controls.minimize_tooltip_ask": (
+        "When you minimize the window, the program asks every time\n"
+        "where to put it: notification area or taskbar."
+    ),
+    "controls.minimize_tooltip_tray": (
+        "The minimized window now goes to the notification area, next\n"
+        "to the clock, without asking.\n"
+        "Click to be asked every time again."
+    ),
+    "controls.minimize_tooltip_taskbar": (
+        "The minimized window now stays in the taskbar, without\n"
+        "asking.\n"
+        "Click to be asked every time again."
+    ),
 
     # ---- controls bar: language selector -------------------------------------
     "controls.language_auto": "Automatic",
@@ -522,6 +540,29 @@ STRINGS: dict[str, str | dict[str, str]] = {
     # ---- main window: restart refused ---------------------------------------
     "main_window.restart_no_orchestrator": "No active orchestrator",
     "main_window.restart_refused": "Restart refused by the orchestrator",
+
+    # ---- notification area (icon next to the clock) -------------------------
+    "main_window.minimize_ask_restored": (
+        "Next time you minimize the window you will be asked again where to "
+        "put it."
+    ),
+    "tray.menu_show": "Show window",
+    "tray.menu_quit": "Quit",
+    "tray.tooltip_idle": "No downloads running",
+    "tray.tooltip_running": "{running} running · {done}/{total} completed · {speed}",
+    "tray.tooltip_done": "{done}/{total} completed",
+    "tray.ask_title": "Minimize",
+    "tray.ask_body": "Where do you want the window to go?",
+    "tray.ask_tray": "Notification area",
+    "tray.ask_taskbar": "Taskbar",
+    "tray.ask_remember": "Remember this choice",
+    "tray.file_fallback": "File {file}",
+    "tray.notify_completed_title": "Download completed",
+    "tray.notify_completed_body": "{name}  ({done}/{total})",
+    "tray.notify_failed_title": "Download failed",
+    "tray.notify_failed_body": "{name}: {error}",
+    "tray.notify_queue_done_title": "Queue completed",
+    "tray.notify_queue_done_body": "{done}/{total} files downloaded.",
 
     # ---- proxy pool setup ---------------------------------------------------
     "setup.cache_candidates": "Proxy cache: {n} candidates...",
