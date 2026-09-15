@@ -104,6 +104,86 @@ def confirm_already_downloaded(
     return None
 
 
+def dedup_key(url: str) -> str:
+    """Chiave con cui due link si considerano lo STESSO file.
+
+    L'handle Mega quando c'e' (lo stesso file incollato in due forme di URL e'
+    un file solo, ed e' lo stesso criterio dello storico), altrimenti l'URL
+    esatto — che copre i link a cartella non ancora espansi, dove un handle di
+    file da confrontare non esiste.
+    """
+    handle = extract_handle(url)
+    return handle if handle is not None else url.strip()
+
+
+def find_session_duplicates(
+    links: list[str], session_keys: dict[str, str],
+) -> list[tuple[int, str]]:
+    """Quali dei `links` sono gia' presenti nella sessione corrente.
+
+    `session_keys` mappa `dedup_key(url)` -> descrizione gia' RESA del job che
+    lo occupa (in coda / in download / concluso): la funzione non traduce e non
+    tocca Qt, cosi' resta verificabile da sola.
+
+    Ritorna le coppie (indice nel nuovo elenco, descrizione), in ordine.
+    """
+    found: list[tuple[int, str]] = []
+    for i, url in enumerate(links):
+        state = session_keys.get(dedup_key(url))
+        if state is not None:
+            found.append((i, state))
+    return found
+
+
+def confirm_session_duplicates(
+    links: list[str],
+    session_keys: dict[str, str],
+    parent: QWidget | None = None,
+) -> list[str] | None:
+    """Gemello di `confirm_already_downloaded` per la sessione IN CORSO: elenca
+    i link gia' in coda, in download o gia' conclusi e chiede conferma prima di
+    aggiungerli comunque.
+
+    Stesso contratto di ritorno: lista filtrata se si saltano i doppioni, lista
+    intatta se si aggiungono comunque, None se si annulla.
+    """
+    if not links:
+        return list(links)
+    dups = find_session_duplicates(links, session_keys)
+    if not dups:
+        return list(links)
+
+    max_shown = 15
+    lines = [
+        t("link_panel.session_dup_entry", url=links[i], state=state)
+        for i, state in dups[:max_shown]
+    ]
+    if len(dups) > max_shown:
+        lines.append(tn("link_panel.history_more", len(dups) - max_shown))
+
+    box = QMessageBox(parent)
+    box.setWindowTitle(t("link_panel.session_dup_title"))
+    box.setIcon(QMessageBox.Icon.Warning)
+    box.setText(tn("link_panel.session_dup_text", len(dups), total=len(links)))
+    box.setInformativeText("\n".join(lines))
+    skip_btn = box.addButton(
+        t("link_panel.session_dup_skip"), QMessageBox.ButtonRole.AcceptRole
+    )
+    anyway_btn = box.addButton(
+        t("link_panel.session_dup_anyway"), QMessageBox.ButtonRole.DestructiveRole
+    )
+    box.addButton(t("link_panel.history_cancel"), QMessageBox.ButtonRole.RejectRole)
+    box.setDefaultButton(skip_btn)
+    box.exec()
+    clicked = box.clickedButton()
+    if clicked is anyway_btn:
+        return list(links)
+    if clicked is skip_btn:
+        skip = {i for i, _ in dups}
+        return [u for i, u in enumerate(links) if i not in skip]
+    return None
+
+
 class LinkPanel(QWidget):
     # Emesso quando la lista interna cambia dimensione (import, paste, svuota).
     links_count_changed = pyqtSignal(int)
@@ -287,9 +367,11 @@ class LinkPanel(QWidget):
         self._on_paste()
 
     def set_running(self, running: bool) -> None:
-        # Solo import e svuota vengono bloccati durante la sessione.
-        # Il paste rimane sempre accessibile (nuovi link pronti per la
-        # prossima sessione; la barra comandi li incoda tramite open_paste_dialog).
+        # Solo import e svuota vengono bloccati durante la sessione: riempire
+        # la lista del PROSSIMO avvio mentre si scarica confonderebbe.
+        # L'aggiunta resta invece sempre accessibile — a sessione viva la
+        # barra comandi non passa piu' di qui ma accoda a caldo
+        # (`MainWindow._on_add_links_requested`).
         self.import_btn.setEnabled(not running)
         self.clear_btn.setEnabled(not running)
 

@@ -94,6 +94,26 @@ class JobsModel(QObject):
         self._by_id = {j.file_id: i for i, j in enumerate(self._jobs)}
         self.aggregates_changed.emit()
 
+    def append_jobs(self, jobs: list[tuple[int, str]]) -> list[int]:
+        """ACCODA job a quelli esistenti (aggiunta a caldo), senza toccare le
+        righe gia' presenti ne' i loro dati. Ritorna gli identificativi
+        effettivamente aggiunti.
+
+        Gli identificativi arrivano dall'orchestrator, che e' l'unico ad
+        assegnarli: qui non si rinumera nulla. Un identificativo gia' noto
+        viene ignorato — riusarlo sovrascriverebbe la storia di un job vivo.
+        """
+        added: list[int] = []
+        for file_id, url in jobs:
+            if file_id in self._by_id:
+                continue
+            self._jobs.append(Job(file_id=file_id, url=url))
+            self._by_id[file_id] = len(self._jobs) - 1
+            added.append(file_id)
+        if added:
+            self.aggregates_changed.emit()
+        return added
+
     def _notify(self, file_id: int) -> None:
         if file_id not in self._by_id:
             return

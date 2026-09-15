@@ -26,7 +26,7 @@ https://github.com/user-attachments/assets/1ebcd19c-38f5-40b5-86ff-5a1c87154a2d
 
 
 
-![version](https://img.shields.io/badge/version-2.1.0-blue)
+![version](https://img.shields.io/badge/version-2.2.0-blue)
 ![python](https://img.shields.io/badge/python-3.11%E2%80%933.14-blue)
 ![platform](https://img.shields.io/badge/platform-Windows%2010%2F11-lightgrey)
 ![gui](https://img.shields.io/badge/GUI-PyQt6-green)
@@ -56,6 +56,7 @@ A **Windows desktop app** (Python + PyQt6) that downloads files **and entire fol
 - **Resume** of interrupted downloads and **restart** of failed/abandoned/cancelled ones (only the missing fragments are re-fetched).
 - **Configurable per-file time limit**; past the threshold the file is abandoned.
 - **Download history** with a warning for links already downloaded (deduplicated by Mega handle).
+- **Add links to a running session**: new links join the queue without stopping the downloads or redoing the proxy collection; you choose whether to put them at the end or right after the current file, and links already in the session are flagged before they are added.
 - **Mega folder links** (`/folder/`): the folder is expanded into its individual files, saved as a tree under a single folder carrying the original name (see the guide).
 - **Per-fragment watchdog**: drops proxies that are too slow or fail to finish in time.
 - **"Experimental Features" panel** with connections per file, fragment budget, and speed-based selection with configurable threshold (real speed test + throughput-based proxy selection).

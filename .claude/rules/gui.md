@@ -176,6 +176,26 @@ Altre convenzioni dell'area di notifica:
   `_on_language_changed`, come i pannelli. Il dialogo della domanda è modale e creato su
   richiesta: non ne ha bisogno.
 
+## Aggiungere link a sessione in corso
+
+- Il comando **Aggiungi link** e' l'eccezione ai blocchi di `set_running(True)`: resta attivo
+  mentre si scarica (import e svuota no: riempirebbero la lista del PROSSIMO avvio). Il suo gate e'
+  `MainWindow._on_add_links_requested`, che decide fra lista da avviare, aggiunta a caldo e
+  domanda a coda esaurita.
+- **Accodare non e' ricreare.** `jobs_panel.reset(links)` cancella tutto e rinumera: a caldo si usa
+  `append_jobs([(file_id, url), ...])`, che aggiunge righe senza toccare quelle esistenti ne' i
+  loro dati. Gli identificativi arrivano dall'orchestrator, che e' l'unico ad assegnarli.
+- **La contabilita' della sessione si ESTENDE, non si ricrea**: `_links_by_id`,
+  `_session_incomplete` (col salvataggio su disco, altrimenti un riavvio perde i link aggiunti),
+  `_expected_files` e `_queue_done_notified`, che va rimesso a falso o l'avviso di coda completata
+  non arriva piu' per i file aggiunti. Il cronometro si scongela da solo (`SessionClock.update`
+  guarda `all_terminated`), il totale del cruscotto viene dagli aggregati del modello.
+- **Le fasi di rete a caldo non sono modali.** L'espansione di un link cartella aggiunto a sessione
+  viva mostra un `QProgressDialog` NON modale che dichiara che i download proseguono: una modale
+  bloccherebbe proprio i comandi ancora sensati (pausa, annullo, dettaglio dei job). E a caldo non
+  si tocca `set_start_enabled`: Avvia e' gia' disabilitato da `set_running(True)` e riabilitarlo a
+  fine espansione mentirebbe sullo stato della sessione.
+
 ## Thread di GUI e chiusura della finestra
 Oltre ai worker dell'orchestrator, la `MainWindow` possiede dei `QThread` propri per il lavoro di
 rete che non appartiene a una sessione di download: `UpdateCheckWorker`, `SpeedTestWorker`,

@@ -734,6 +734,19 @@ class JobsPanel(QWidget):
         self._apply_filter()
         self._update_visibility()
 
+    def append_jobs(self, jobs: list[tuple[int, str]]) -> None:
+        """Accoda righe a quelle esistenti (aggiunta a caldo a sessione viva).
+
+        Il gemello di `reset()` che NON cancella nulla: le card gia' presenti
+        restano com'erano, coi loro dati. L'ordine resta quello di creazione
+        anche quando i link sono stati messi in TESTA alla coda: la lista e'
+        cronologica, chi sta scaricando lo dice il proprio stato.
+        """
+        for file_id in self.model.append_jobs(jobs):
+            self._add_card(file_id)
+        self._apply_filter()
+        self._update_visibility()
+
     def on_progress(self, file_id: int, _cycle: int, percent: int) -> None:
         self.model.set_progress(file_id, percent)
 

@@ -41,8 +41,14 @@ from src.gui.experimental_dialog import ExperimentalFeaturesDialog
 from src.gui.error_render import ABANDON_ALIASES, render_error, resolve_payloads
 from src.gui.i18n import TR, t, tn
 from src.gui.job_detail_dialog import JobDetailDialog
-from src.gui.jobs_panel import JobsPanel
-from src.gui.link_panel import LinkPanel, confirm_already_downloaded
+from src.gui.jobs_panel import JobsPanel, status_label
+from src.gui.link_panel import (
+    LinkPanel,
+    confirm_already_downloaded,
+    confirm_session_duplicates,
+    dedup_key,
+)
+from src.gui.paste_links_dialog import POSITION_TOP, PasteLinksDialog
 from src.gui.preferences import (
     load_check_updates_on_startup,
     load_connections_per_file,
@@ -111,6 +117,10 @@ class MainWindow(QMainWindow):
         self._proxy_speedtest_worker: ProxySpeedTestWorker | None = None
         self._folder_expander: FolderExpandWorker | None = None
         self._expand_dialog: QProgressDialog | None = None
+        # Posizione scelta per l'espansione in corso: None = espansione che
+        # precede l'avvio, altrimenti e' un'aggiunta a caldo e il flusso
+        # riprende in _add_links_to_session invece che in _start_with_links.
+        self._expansion_position: str | None = None
         # Riduzione a icona: il guardiano evita che una riduzione NOSTRA
         # (ripristino dall'area di notifica) venga scambiata per una
         # dell'utente e faccia ricomparire la domanda; il secondo flag evita
@@ -202,7 +212,7 @@ class MainWindow(QMainWindow):
         self.controls.start_requested.connect(self._on_start)
         self.controls.pause_toggled.connect(self._on_pause)
         self.controls.cancel_requested.connect(self._on_cancel)
-        self.controls.paste_links_requested.connect(self.link_panel.open_paste_dialog)
+        self.controls.paste_links_requested.connect(self._on_add_links_requested)
         self.controls.theme_toggled.connect(self._on_theme_toggle)
         # Cambio lingua a caldo: il singleton TR e' l'unica sorgente (il
         # selettore nel menu Impostazioni chiama TR.set_preference), qui si fa
@@ -215,7 +225,7 @@ class MainWindow(QMainWindow):
         self.jobs_panel.job_double_clicked.connect(self._open_detail)
         self.jobs_panel.cancel_job_requested.connect(self._on_cancel_job_requested)
         self.jobs_panel.delete_folder_requested.connect(self._on_delete_folder_requested)
-        self.jobs_panel.paste_links_requested.connect(self.link_panel.open_paste_dialog)
+        self.jobs_panel.paste_links_requested.connect(self._on_add_links_requested)
         self.jobs_panel.restart_job_requested.connect(self._on_restart_job_requested)
         self.jobs_panel.restart_all_failed_requested.connect(self._on_restart_all_failed_requested)
 
@@ -543,16 +553,160 @@ class MainWindow(QMainWindow):
             return
         self._start_with_links(links)
 
+    # ---- aggiunta di link a una sessione in corso -------------------------
+
+    def _session_is_open(self) -> bool:
+        """C'e' una sessione a cui si possono accodare altri link?"""
+        if self.orchestrator is None:
+            return False
+        return self.jobs_panel.model.aggregates()["total"] > 0
+
+    def _session_queue_drained(self) -> bool:
+        """Ogni job della sessione e' arrivato a uno stato terminale."""
+        return bool(self.jobs_panel.model.aggregates()["all_terminated"])
+
+    def _on_add_links_requested(self) -> None:
+        """Il pulsante «Aggiungi link» ha tre esiti, secondo lo stato.
+
+        Fuori sessione riempie la lista da avviare (il flusso di sempre: i link
+        partono con Avvia). A sessione viva accoda a caldo, senza fermare i
+        download in corso e senza rifare la raccolta dei proxy. A coda esaurita
+        chiede prima se proseguire QUESTA sessione — tenendo elenco,
+        statistiche, cronometro e soprattutto il pool gia' validato — oppure
+        ripartire pulito come un avvio nuovo.
+        """
+        if not self._session_is_open():
+            self.link_panel.open_paste_dialog()
+            return
+        if self._session_queue_drained():
+            choice = self._ask_continue_session()
+            if choice == "cancel":
+                return
+            if choice == "fresh":
+                # Lista del prossimo avvio: e' Avvia a ripartire da zero.
+                self.link_panel.open_paste_dialog()
+                return
+        self._open_hot_add_dialog()
+
+    def _ask_continue_session(self) -> str:
+        """Coda esaurita: proseguire o ricominciare? «continue»/«fresh»/«cancel»."""
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Question)
+        box.setWindowTitle(t("main_window.add_finished_title"))
+        box.setText(t("main_window.add_finished_body"))
+        box.setInformativeText(t("main_window.add_finished_hint"))
+        continue_btn = box.addButton(
+            t("main_window.add_finished_continue"), QMessageBox.ButtonRole.AcceptRole
+        )
+        fresh_btn = box.addButton(
+            t("main_window.add_finished_fresh"), QMessageBox.ButtonRole.DestructiveRole
+        )
+        box.addButton(
+            t("main_window.add_finished_cancel"), QMessageBox.ButtonRole.RejectRole
+        )
+        box.setDefaultButton(continue_btn)
+        box.exec()
+        clicked = box.clickedButton()
+        if clicked is continue_btn:
+            return "continue"
+        if clicked is fresh_btn:
+            return "fresh"
+        return "cancel"
+
+    def _open_hot_add_dialog(self) -> None:
+        dlg = PasteLinksDialog(
+            existing_links=[],  # i duplicati intra-input li gestisce il dialogo
+            allow_duplicates=self.link_panel.allow_dups.isChecked(),
+            parent=self,
+            show_position=True,
+        )
+        if dlg.exec() != PasteLinksDialog.DialogCode.Accepted:
+            return
+        links = dlg.accepted_links()
+        if not links:
+            return
+        position = dlg.selected_position()
+        # Una cartella va prima elencata: e' rete, quindi QThread, e il flusso
+        # riprende in _on_expansion_done conservando la posizione scelta.
+        if any(is_folder_link(u) for u in links):
+            self._begin_folder_expansion(links, hot_position=position)
+            return
+        self._add_links_to_session(links, at_top=position == POSITION_TOP)
+
+    def _session_dup_map(self) -> dict[str, str]:
+        """Chiave di dedup -> stato leggibile del job che la occupa.
+
+        Copre in un colpo solo i tre casi che contano: link gia' in coda, in
+        download o gia' concluso in questa sessione.
+        """
+        out: dict[str, str] = {}
+        for job in self.jobs_panel.model.jobs_iter():
+            out.setdefault(dedup_key(job.url), status_label(job.status))
+        return out
+
+    def _add_links_to_session(self, links: list[str], at_top: bool) -> None:
+        if self.orchestrator is None:
+            return
+        # Due controlli distinti, nello stesso ordine dell'avvio: lo storico
+        # (gia' scaricato in una sessione PASSATA) e poi la sessione corrente.
+        checked = confirm_already_downloaded(links, self)
+        if checked is None:
+            return
+        checked = confirm_session_duplicates(checked, self._session_dup_map(), self)
+        if checked is None:
+            return
+        if not checked:
+            self._set_status_t("main_window.add_nothing")
+            return
+        ids = self.orchestrator.add_jobs(checked, at_top=at_top)
+        if not ids:
+            self._set_status_t("main_window.add_refused")
+            return
+        self._register_added_jobs(ids, checked)
+        self._set_status_tn("main_window.add_done", len(ids))
+
+    def _register_added_jobs(self, ids: list[int], links: list[str]) -> None:
+        """Estende la contabilita' della sessione invece di ricrearla: righe
+        gia' presenti, loro dati e contatori restano dove sono.
+
+        Gli identificativi vengono dall'orchestrator, che e' l'unico ad
+        assegnarli e non ne riusa mai uno: qui si registrano e basta.
+        """
+        pairs = list(zip(ids, links))
+        self.jobs_panel.append_jobs(pairs)
+        for file_id, url in pairs:
+            self._links_by_id[file_id] = url
+            self._session_incomplete[file_id] = url
+        # Senza questo, un riavvio dopo un'aggiunta perde i link aggiunti.
+        self._session_persist()
+        self._expected_files += len(pairs)
+        # La coda non e' piu' finita: l'avviso di fine coda deve poter tornare.
+        self._queue_done_notified = False
+        self.controls.set_running(True)
+        self.link_panel.set_running(True)
+
     # ---- espansione dei link cartella ------------------------------------
 
-    def _begin_folder_expansion(self, links: list[str]) -> None:
+    def _begin_folder_expansion(
+        self, links: list[str], hot_position: str | None = None,
+    ) -> None:
+        """Elenca le cartelle e riprende in `_on_expansion_done`.
+
+        `hot_position` distingue i due usi: None = prima dell'avvio (flusso di
+        sempre), altrimenti e' la posizione scelta per un'aggiunta a caldo e i
+        download stanno proseguendo mentre si elenca.
+        """
         if self._folder_expander is not None and self._folder_expander.isRunning():
             # Il pulsante Avvia e' gia' disabilitato: qui si copre solo il caso
             # di un secondo invio del segnale prima che il thread abbia finito.
             self._set_status_t("main_window.expand_already_running")
             return
         n_folders = sum(1 for u in links if is_folder_link(u))
-        self.controls.set_start_enabled(False)
+        self._expansion_position = hot_position
+        if hot_position is None:
+            self.controls.set_start_enabled(False)
+        # A caldo Avvia e' gia' disabilitato da set_running(True): riabilitarlo
+        # a fine espansione mentirebbe sullo stato della sessione.
         self._set_status_tn("main_window.expand_status", n_folders)
         qc = Qt.ConnectionType.QueuedConnection
         self._folder_expander = FolderExpandWorker(links)
@@ -564,14 +718,23 @@ class MainWindow(QMainWindow):
         # fase Pausa/Annulla della sessione non sono ancora attivi: senza questo
         # l'unico modo di uscire sarebbe chiudere la finestra.
         dlg = QProgressDialog(
-            t("main_window.expand_dialog_text"),
+            t(
+                "main_window.expand_dialog_text_hot" if hot_position is not None
+                else "main_window.expand_dialog_text"
+            ),
             t("main_window.expand_dialog_cancel"),
             0,
             max(1, n_folders),
             self,
         )
         dlg.setWindowTitle(t("main_window.expand_dialog_title"))
-        dlg.setWindowModality(Qt.WindowModality.WindowModal)
+        # A caldo la finestra e' NON modale: i download proseguono e con essi
+        # devono restare raggiungibili Pausa, Annulla e il dettaglio dei job.
+        # Una modale bloccherebbe proprio i comandi ancora sensati.
+        dlg.setWindowModality(
+            Qt.WindowModality.NonModal if hot_position is not None
+            else Qt.WindowModality.WindowModal
+        )
         dlg.setMinimumDuration(0)
         dlg.setAutoClose(False)
         dlg.setAutoReset(False)
@@ -599,7 +762,9 @@ class MainWindow(QMainWindow):
 
     def _on_expansion_failed(self, msg: str) -> None:
         self._close_expand_dialog()
-        self.controls.set_start_enabled(True)
+        if self._expansion_position is None:
+            self.controls.set_start_enabled(True)
+        self._expansion_position = None
         if self._folder_expander is not None and self._folder_expander.is_cancelled():
             # Annullata dall'utente: nessun popup d'errore, non e' un guasto.
             self._set_status_t("main_window.expand_cancelled")
@@ -615,7 +780,10 @@ class MainWindow(QMainWindow):
         self, links: list[str], report: list[str], truncated: int,
     ) -> None:
         self._close_expand_dialog()
-        self.controls.set_start_enabled(True)
+        position = self._expansion_position
+        self._expansion_position = None
+        if position is None:
+            self.controls.set_start_enabled(True)
         # I doppioni e le collisioni di path sono gia' stati risolti dal worker
         # (deduplicate_job_urls), che vede l'insieme completo dei job.
         unique = list(links)
@@ -637,7 +805,10 @@ class MainWindow(QMainWindow):
                 self, t("main_window.expand_report_title"), "\n".join(report),
             )
         self._set_status_tn("main_window.expand_ready", len(unique))
-        self._start_with_links(unique)
+        if position is None:
+            self._start_with_links(unique)
+        else:
+            self._add_links_to_session(unique, at_top=position == POSITION_TOP)
 
     def _start_with_links(self, links: list[str]) -> None:
         links = confirm_already_downloaded(links, self)

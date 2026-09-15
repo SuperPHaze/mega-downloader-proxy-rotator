@@ -13,6 +13,7 @@ from PyQt6.QtWidgets import (
     QDialogButtonBox,
     QHBoxLayout,
     QLabel,
+    QRadioButton,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -24,6 +25,12 @@ from src.gui.style import PALETTE
 
 
 MEGA_PREFIX = "https://mega.nz/"
+
+# Dove finiscono i link aggiunti a una sessione in corso. Valori stabili:
+# li legge `MainWindow` e diventano il parametro `at_top` di
+# `DownloadOrchestrator.add_jobs`.
+POSITION_BOTTOM = "bottom"
+POSITION_TOP = "top"
 
 
 class _NoEnterTextEdit(QTextEdit):
@@ -43,6 +50,7 @@ class PasteLinksDialog(QDialog):
         allow_duplicates: bool,
         parent: QWidget | None = None,
         prefill: list[str] | None = None,
+        show_position: bool = False,
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle(t("paste.title"))
@@ -87,6 +95,28 @@ class PasteLinksDialog(QDialog):
             stats_row.addWidget(lbl)
         stats_row.addStretch(1)
         layout.addLayout(stats_row)
+
+        # Dove mettere i link, chiesto solo quando c'e' una sessione in corso
+        # a cui accodarli: fuori sessione la coda non esiste ancora e la
+        # domanda non avrebbe senso. Sta QUI e non in una seconda finestra
+        # perche' e' la stessa decisione dell'aggiunta, non una successiva.
+        self.pos_bottom: QRadioButton | None = None
+        self.pos_top: QRadioButton | None = None
+        if show_position:
+            pos_lbl = QLabel(t("paste.position_label"))
+            pos_lbl.setStyleSheet("font-size: 9pt;")
+            layout.addWidget(pos_lbl)
+            pos_row = QHBoxLayout()
+            pos_row.setSpacing(14)
+            self.pos_bottom = QRadioButton(t("paste.position_bottom"))
+            self.pos_bottom.setToolTip(t("paste.position_bottom_tooltip"))
+            self.pos_bottom.setChecked(True)
+            self.pos_top = QRadioButton(t("paste.position_top"))
+            self.pos_top.setToolTip(t("paste.position_top_tooltip"))
+            pos_row.addWidget(self.pos_bottom)
+            pos_row.addWidget(self.pos_top)
+            pos_row.addStretch(1)
+            layout.addLayout(pos_row)
 
         # Bottoni: Annulla / Aggiungi N.
         self.buttons = QDialogButtonBox()
@@ -162,3 +192,13 @@ class PasteLinksDialog(QDialog):
     def accepted_links(self) -> list[str]:
         # Lista filtrata: validi e (se non allow_duplicates) non duplicati.
         return list(self._accepted)
+
+    def selected_position(self) -> str:
+        """Dove mettere i link: `POSITION_TOP` o `POSITION_BOTTOM`.
+
+        Senza il selettore (dialogo aperto fuori sessione) vale sempre
+        `POSITION_BOTTOM`: e' l'ordine di inserimento di sempre.
+        """
+        if self.pos_top is not None and self.pos_top.isChecked():
+            return POSITION_TOP
+        return POSITION_BOTTOM

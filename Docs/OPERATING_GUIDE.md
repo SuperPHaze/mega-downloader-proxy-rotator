@@ -157,6 +157,16 @@ The proxy zone also shows two side-by-side bandwidth measurements, distinguished
 
 During a session, the available controls are pause/resume and cancel, both globally and per individual file from the table. Pausing does not lose the proxies: on resume, work continues from where it was suspended. Pausing takes effect **at the boundary of the current piece**: a chunk already in transfer is completed and only then does work suspend (suspending a piece mid-transfer would make the read timeouts expire). Canceling a single file can optionally also remove its already-downloaded data from disk.
 
+**Adding links to a running session.** The **Add links** button stays active while downloading: pasted links join the current session without stopping anything and without redoing the proxy collection, which is the slow part of starting up. Downloads already under way keep going, and the added ones join the **queue**: the number of files downloaded at the same time does not change.
+
+The add window asks **where** to put them: *at the end of the queue* (the default) or *right after the current download*, to jump ahead of the links already waiting. In both cases no download already under way is interrupted.
+
+If any of the links is **already in the session** — queued, downloading or already finished — it is listed with its state and a confirmation is needed to add it anyway. The comparison is by Mega handle, so it recognises the same file even when pasted in a different URL form. It is the same warning, in a distinct form, as the one about files already downloaded in past sessions: both can appear, because they answer two different questions.
+
+If the **queue has already finished** (every download over but the window still open), adding asks first what to do: *Carry on with this session* keeps the list, the statistics, the timer and above all the proxies already validated; *New session* puts the links back in the list and Start begins from scratch, proxy collection included.
+
+A **folder** link added while downloading is listed first, as it is at start-up. In this case the progress window is **not modal** and says so: the downloads under way keep going and pause, cancel and the per-file detail stay reachable.
+
 If the program is closed (or crashes) with downloads not yet completed, on the next launch it offers to **reload the remaining links** with a prompt titled "Restore session" ("The previous session ended with N unfinished links. Do you want to load them back into the list?"). By accepting, the links return to the list and — thanks to the resume described below — restart from the pieces already downloaded: just press Start.
 
 The download list can be filtered with three mutually exclusive buttons — **In progress**, **Completed** and **Not completed** — which together cover every possible state (queued and running jobs fall under "In progress"; failed, cancelled and abandoned ones under "Not completed"). Each button reports in parentheses the number of files in its category, updated in real time, so the makeup of the session is readable at a glance without switching filters.

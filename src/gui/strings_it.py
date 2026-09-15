@@ -188,6 +188,17 @@ STRINGS: dict[str, str | dict[str, str]] = {
     "paste.cancel": "Annulla",
     # Il numero e' un parametro, non un plurale: il testo non cambia forma.
     "paste.add_button": "Aggiungi {n}",
+    # Chiesto solo a sessione in corso: fuori sessione la coda non esiste.
+    "paste.position_label": "Dove mettere i link aggiunti:",
+    "paste.position_bottom": "In fondo alla coda",
+    "paste.position_bottom_tooltip": (
+        "Partono dopo tutti i link gia' in attesa."
+    ),
+    "paste.position_top": "Subito dopo il download in corso",
+    "paste.position_top_tooltip": (
+        "Passano davanti ai link gia' in attesa. I download gia' avviati "
+        "non vengono interrotti."
+    ),
 
     # ---- helper di formattazione condivisi ---------------------------------
     # Le UNITA' non si traducono (MB/s, GB, KB): qui c'e' solo il testo.
@@ -384,6 +395,16 @@ STRINGS: dict[str, str | dict[str, str]] = {
     "link_panel.history_anyway": "Scarica comunque",
     "link_panel.history_cancel": "Annulla",
 
+    # ---- pannello link: avviso "gia' nella sessione in corso" --------------
+    "link_panel.session_dup_title": "Link gia' in questa sessione",
+    "link_panel.session_dup_text": {
+        "one": "{n} link su {total} e' gia' in questa sessione:",
+        "other": "{n} link su {total} sono gia' in questa sessione:",
+    },
+    "link_panel.session_dup_entry": "\u2022 {url} ({state})",
+    "link_panel.session_dup_skip": "Salta i doppioni",
+    "link_panel.session_dup_anyway": "Aggiungi comunque",
+
     # ---- espansione cartelle: righe di report (FolderExpandWorker) ----------
     # Il report e' una lista di righe mostrate in un QMessageBox. Le voci che
     # finiscono con "_suffix" sono clausole opzionali accodate alla riga di
@@ -457,6 +478,10 @@ STRINGS: dict[str, str | dict[str, str]] = {
         "other": "Espansione di {n} cartelle Mega in corso…",
     },
     "main_window.expand_dialog_text": "Lettura delle cartelle Mega in corso…",
+    "main_window.expand_dialog_text_hot": (
+        "Lettura delle cartelle Mega in corso… "
+        "I download in corso proseguono."
+    ),
     "main_window.expand_dialog_cancel": "Annulla",
     "main_window.expand_dialog_title": "Espansione cartelle",
     "main_window.expand_cancelling": "Annullamento dell'espansione…",
@@ -566,6 +591,30 @@ STRINGS: dict[str, str | dict[str, str]] = {
     "main_window.restart_all_done": {
         "one": "Riavviato {n} download.",
         "other": "Riavviati {n} download.",
+    },
+
+    # ---- finestra principale: aggiunta a una sessione in corso --------------
+    "main_window.add_finished_title": "Coda gia' completata",
+    "main_window.add_finished_body": (
+        "Tutti i download di questa sessione sono terminati. "
+        "Vuoi proseguire la stessa sessione?"
+    ),
+    "main_window.add_finished_hint": (
+        "Proseguendo si tengono elenco, statistiche, cronometro e i proxy gia' "
+        "validati. Con una sessione nuova si riparte da zero, raccolta proxy "
+        "compresa."
+    ),
+    "main_window.add_finished_continue": "Prosegui questa sessione",
+    "main_window.add_finished_fresh": "Nuova sessione",
+    "main_window.add_finished_cancel": "Annulla",
+    "main_window.add_nothing": "Nessun link da aggiungere.",
+    "main_window.add_refused": (
+        "Aggiunta non riuscita: la sessione non ha proxy utilizzabili. "
+        "Annulla e riavvia."
+    ),
+    "main_window.add_done": {
+        "one": "Aggiunto {n} link alla sessione in corso.",
+        "other": "Aggiunti {n} link alla sessione in corso.",
     },
 
     # ---- finestra principale: banda dei proxy -------------------------------

@@ -6,6 +6,27 @@ Tutte le modifiche rilevanti del progetto. Formato basato su [Keep a Changelog](
 
 ## [Non rilasciato]
 
+## [2.2.0] — 2026-09-14
+
+### Aggiunto
+- **Aggiungere link a una sessione in corso, senza interrompere i download.** Il pulsante
+  **Aggiungi link** resta attivo mentre si scarica: i nuovi link entrano nella coda della
+  sessione corrente senza fermare i file in corso e senza rifare la raccolta dei proxy, che è
+  la parte lenta dell'avvio. Il numero di file scaricati contemporaneamente non cambia: gli
+  aggiunti aspettano il loro turno.
+- **Scelta della posizione al momento dell'aggiunta**: *in fondo alla coda* oppure *subito dopo
+  il download in corso*, per farli passare davanti ai link già in attesa.
+- **Avviso sui link già presenti nella sessione.** Se un link è già in coda, in download o già
+  concluso, viene elencato con il suo stato e serve una conferma per aggiungerlo comunque. Il
+  confronto è per handle Mega: riconosce lo stesso file anche incollato in una forma di URL
+  diversa.
+- **A coda già finita l'aggiunta chiede cosa fare**: proseguire la stessa sessione — tenendo
+  elenco, statistiche, cronometro e i proxy già validati — oppure ripartire pulito come un
+  avvio nuovo.
+- Un **link a cartella** aggiunto a caldo viene elencato con una finestra di avanzamento **non
+  modale**, che dichiara che i download in corso proseguono: pausa, annullo e dettaglio dei file
+  restano raggiungibili mentre la cartella viene letta.
+
 ## [2.1.0] — 2026-09-14
 
 ### Aggiunto

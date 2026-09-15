@@ -6,6 +6,27 @@ All notable changes to this project. Format based on [Keep a Changelog](https://
 
 ## [Unreleased]
 
+## [2.2.0] — 2026-09-14
+
+### Added
+- **Add links to a running session, without interrupting the downloads.** The **Add links**
+  button stays active while downloading: new links join the queue of the current session
+  without stopping the files under way and without redoing the proxy collection, which is
+  the slow part of starting up. The number of files downloaded at the same time does not
+  change: the added ones wait their turn.
+- **Choice of position when adding**: *at the end of the queue* or *right after the current
+  download*, to jump ahead of the links already waiting.
+- **Warning about links already in the session.** If a link is already queued, downloading
+  or already finished, it is listed with its state and needs a confirmation to be added
+  anyway. The comparison is by Mega handle: it recognises the same file even when pasted in
+  a different URL form.
+- **When the queue has already finished, adding asks what to do**: carry on with the same
+  session — keeping the list, the statistics, the timer and the proxies already
+  validated — or start clean as a new run.
+- A **folder link** added while downloading is listed with a **non-modal** progress window
+  that states that the downloads under way keep going: pause, cancel and the per-file detail
+  stay reachable while the folder is read.
+
 ## [2.1.0] — 2026-09-14
 
 ### Added

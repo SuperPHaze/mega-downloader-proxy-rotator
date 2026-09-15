@@ -96,6 +96,37 @@ Tutti i segnali hanno `file_id: int` come primo parametro per permettere alla GU
 - Il segnale `cancelled` viene emesso nel `finally` di `run()` e solo se `_local_cancelled and not session_state.is_cancelled()`.
 - La formula del path di output di un job (`downloads/<sha1(url)[:12]>_<file_id>/`) e' centralizzata in `worker.job_output_dir(url, file_id)`: usare quella funzione, non duplicare l'hashing.
 
+## Identificativi dei job: mai riusati
+
+- Il `file_id` lo assegna **solo** `DownloadOrchestrator._allocate_file_id()`, un contatore
+  monotono azzerato esclusivamente da `start()` (che apre una sessione nuova, dove anche la GUI
+  ricrea le righe da zero). Nessun altro punto deve calcolarlo, e in particolare **mai** con un
+  `enumerate()` sulla lista corrente: due infornate di link darebbero gli stessi numeri.
+- **Non e' un dettaglio estetico**: il `file_id` entra nel nome della cartella di destinazione
+  (`downloads/<sha1(url)[:12]>_<file_id>/`, vedi `worker.job_output_dir`) ed e' la chiave con cui
+  la GUI indirizza righe, dialoghi di dettaglio e cancellazioni. Riusarne uno fa scrivere due
+  download nello stesso posto e fa aggiornare la riga sbagliata.
+- Il contatore **sopravvive** ad annullamenti e riavvii dei job: `restart_job` riusa di proposito
+  il PROPRIO identificativo (stesso job, stessa cartella, resume dei `.part` gia' scritti), non ne
+  chiede uno nuovo.
+
+## Aggiungere job a una sessione gia' avviata
+
+- `add_jobs(links, at_top=False)` accoda a caldo e ritorna gli identificativi assegnati, cosi' la
+  GUI puo' registrare le righe corrispondenti. `restart_job` e `add_jobs` sono la stessa operazione
+  a meno dell'identificativo: la riattivazione di sessione, ricaricatore e timer sta in
+  `_reactivate_session()`, punto unico condiviso. Se ne nascono due copie, divergono.
+- **Due finestre temporali, non una.** Prima che i worker partano la coda non esiste: e'
+  `_spawn_workers` a COSTRUIRLA da `_pending_jobs`, quindi un link aggiunto mentre il setup
+  raccoglie i proxy va messo li' dentro, non in `_queue` (che verrebbe sovrascritta). Dopo, va
+  nella coda vera. E' il difetto piu' probabile di questa funzione e si manifesta come
+  "ho aggiunto un link e non e' mai partito": `tests/test_orchestrator_add_jobs.py` lo sorveglia.
+- **Niente thread e niente lucchetti.** `add_jobs`, `restart_job`, `cancel_job` e `_on_slot_freed`
+  arrivano tutte dal filo dell'interfaccia tramite segnali accodati: la coda non e' condivisa con
+  altri thread e non va protetta.
+- Quando la coda si svuota, `_on_slot_freed` spegne ricaricatore e timer. Un'aggiunta subito dopo
+  deve rimetterli in moto — e' esattamente quello che fa `_reactivate_session()`.
+
 ## Contratto con SessionState
 - Prima di ogni step potenzialmente lungo: `if session_state.is_cancelled(): return` poi `session_state.wait_if_paused()`.
 - Il worker NON deve mai mettere in pausa o cancellare se stesso — può solo OSSERVARE lo stato.

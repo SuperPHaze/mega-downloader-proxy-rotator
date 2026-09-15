@@ -317,11 +317,28 @@ class DownloadOrchestrator(QObject):
         self._refresher = BackgroundPoolRefresher(self.pool, self.session_state)
         self._workers: list[DownloadWorker] = []
         self._setup: _SetupThread | None = None
-        self._pending_links: list[str] = []
+        # Job gia' identificati ma non ancora passati in coda: esistono solo
+        # nella finestra fra start() e _spawn_workers() (cioe' mentre il setup
+        # raccoglie i proxy). Portano gia' il file_id definitivo, altrimenti
+        # un'aggiunta a caldo in quella finestra riceverebbe identificativi
+        # che _spawn_workers poi rinumera.
+        self._pending_jobs: list[tuple[int, str]] = []
         # Coda dei link non ancora avviati, come (file_id, url).
         # Mantiene il file_id originale per coerenza con le righe del ProgressPanel.
         self._queue: list[tuple[int, str]] = []
         self._active_count = 0
+        # Generatore degli identificativi di job: MONOTONO per tutta la
+        # sessione. Non si riusa mai un file_id, nemmeno dopo annullamenti o
+        # riavvii: entra nel nome della cartella di destinazione
+        # (`<nome>_<file_id>`) ed e' la chiave con cui la GUI indirizza le
+        # righe. Riusarlo farebbe scrivere due download nello stesso posto.
+        self._next_file_id = 0
+        # True da quando _spawn_workers ha costruito la coda: prima di quel
+        # momento l'aggiunta a caldo deve passare da _pending_jobs.
+        self._workers_spawned = False
+        # True se il setup si e' concluso senza proxy utilizzabili: la
+        # sessione e' morta e accodare altro non farebbe partire nulla.
+        self._setup_failed = False
         # Numero di download simultanei. La GUI puo' sovrascriverlo prima di
         # chiamare start(), oppure passarlo come parametro a start().
         self.max_concurrent: int = MAX_CONCURRENT_DOWNLOADS
@@ -526,7 +543,14 @@ class DownloadOrchestrator(QObject):
         })
 
         self.session_state.start()
-        self._pending_links = list(links)
+        # Gli identificativi si assegnano QUI, una volta sola: da start() in
+        # poi nessuno li ricalcola, cosi' un'aggiunta a caldo puo' chiedere i
+        # propri senza rischiare di collidere con quelli gia' consegnati alla
+        # GUI. Per la prima infornata restano 0..n-1, come con enumerate().
+        self._next_file_id = 0
+        self._workers_spawned = False
+        self._setup_failed = False
+        self._pending_jobs = [(self._allocate_file_id(), u) for u in links]
         # F3/F4: passa il cap e i parametri speed test al thread di setup.
         # use_speed_test copre sia speed_selection (throughput+N5) sia
         # speed_admission disaccoppiato (solo ammissione, score+N normale).
@@ -573,7 +597,7 @@ class DownloadOrchestrator(QObject):
         if not self.session_state.is_cancelled():
             self.session_state.cancel()
         self._queue.clear()
-        self._pending_links = []
+        self._pending_jobs = []
         self.stop_background_tasks()
         for w in self._workers:
             if w.isRunning():
@@ -616,6 +640,7 @@ class DownloadOrchestrator(QObject):
             log.info("Orchestrator: setup completato su sessione morta, ignoro")
             return
         if not alive:
+            self._setup_failed = True
             self.pool_failed.emit(setup_text_it("no_valid_proxy", {}))
             self.pool_failed_t.emit("no_valid_proxy", {})
             return
@@ -668,11 +693,17 @@ class DownloadOrchestrator(QObject):
 
     def _on_setup_failed(self, msg: str) -> None:
         log.error("Orchestrator: setup fallito: %s", msg)
+        self._setup_failed = True
         self.pool_failed.emit(msg)
 
     def _spawn_workers(self) -> None:
-        # Riempi la coda con tutti i link e avvia solo i primi N.
-        self._queue = list(enumerate(self._pending_links))
+        # Riempi la coda con tutti i job gia' identificati e avvia solo i
+        # primi N. Gli identificativi arrivano da _pending_jobs, non da un
+        # enumerate() locale: un'aggiunta arrivata mentre il setup era in
+        # corso e' gia' li' dentro, col suo file_id definitivo.
+        self._queue = list(self._pending_jobs)
+        self._pending_jobs = []
+        self._workers_spawned = True
         self._active_count = 0
         log.info(
             "Coda: %d link, max %d concorrenti",
@@ -831,6 +862,91 @@ class DownloadOrchestrator(QObject):
         self.job_cancelled.emit(file_id)
         self._on_slot_freed(file_id)
 
+    def _allocate_file_id(self) -> int:
+        """Prossimo identificativo di job, mai uguale a uno gia' consegnato.
+
+        Azzerato solo da `start()`, che apre una sessione nuova: sopravvive
+        quindi ad annullamenti e riavvii dei singoli job, che riusano il
+        PROPRIO identificativo (stesso job, stessa cartella) e non ne chiedono
+        uno nuovo.
+        """
+        file_id = self._next_file_id
+        self._next_file_id += 1
+        return file_id
+
+    def _reactivate_session(self) -> None:
+        """Rimette in moto cio' che si spegne quando la coda si svuota o la
+        sessione viene annullata: stato di sessione, ricaricatore del pool e i
+        due timer periodici. Idempotente, chiamabile anche a sessione viva.
+
+        Punto UNICO condiviso da `restart_job` e `add_jobs`: sono la stessa
+        operazione a meno dell'identificativo (uno esistente contro uno nuovo),
+        e due copie divergerebbero alla prima modifica.
+        """
+        # Pulisci worker terminati per non accumulare riferimenti.
+        self._workers = [w for w in self._workers if w.isRunning()]
+        # Riattiva sessione se necessario (es. dopo Annulla globale).
+        if self.session_state.is_cancelled():
+            self.session_state.start()
+            self._shutdown_requested = False
+        if not self._workers_spawned:
+            # Il setup sta ancora raccogliendo i proxy: refresher e timer li
+            # avvia _on_setup_ok, che sa anche se veniamo da un hot-start.
+            # Avviarli qui li metterebbe a girare su un pool ancora vuoto.
+            return
+        # Riavvia refresher (idempotente: start() non fa nulla se già vivo).
+        self._refresher.start()
+        if not self._pool_size_timer.isActive():
+            self._pool_size_timer.start()
+        if not self._cache_save_timer.isActive():
+            self._cache_save_timer.start()
+
+    def add_jobs(self, links: list[str], at_top: bool = False) -> list[int]:
+        """Aggiunge link a una sessione GIA' avviata, senza rifare la raccolta
+        dei proxy e senza toccare i download in corso.
+
+        `at_top=True` li mette in testa alla coda (partono appena si libera uno
+        slot), altrimenti in fondo. Ritorna gli identificativi assegnati,
+        nell'ordine dei link, cosi' il chiamante puo' registrare le righe
+        corrispondenti; lista vuota se l'aggiunta e' stata rifiutata.
+
+        Le due finestre temporali sono distinte: prima che i worker siano
+        partiti la coda non esiste ancora (`_spawn_workers` la costruisce da
+        `_pending_jobs`), quindi il link va li' dentro; dopo, va nella coda
+        vera. Tutte le chiamate arrivano dal filo dell'interfaccia via segnali
+        accodati: nessun lucchetto, nessun thread in piu'.
+        """
+        if not links:
+            return []
+        if self._shutdown_requested:
+            log.warning("add_jobs su orchestrator in chiusura: rifiutato")
+            return []
+        if self._setup_failed:
+            log.warning("add_jobs senza proxy validi: rifiutato")
+            return []
+        entries = [(self._allocate_file_id(), url) for url in links]
+        self._reactivate_session()
+        target = self._queue if self._workers_spawned else self._pending_jobs
+        if at_top:
+            target[:0] = entries
+        else:
+            target.extend(entries)
+        log.info(
+            "Aggiunti %d link a sessione in corso (in_testa=%s, avviati=%s, "
+            "attivi=%d, in_coda=%d)",
+            len(entries), at_top, self._workers_spawned,
+            self._active_count, len(self._queue),
+            extra={
+                "event_type": "jobs_added",
+                "n_links": len(entries),
+                "at_top": at_top,
+                "workers_spawned": self._workers_spawned,
+            },
+        )
+        # No-op finche' i worker non sono partiti: ci pensera' _spawn_workers.
+        self._fill_slots()
+        return [fid for fid, _ in entries]
+
     def restart_job(self, file_id: int, url: str) -> bool:
         """Riavvia un singolo job (già in stato terminato). Ritorna False se
         il job è già in coda o in esecuzione, o se l'orchestrator non è pronto."""
@@ -841,18 +957,7 @@ class DownloadOrchestrator(QObject):
             for w in self._workers
         ):
             return False
-        # Pulisci worker terminati per non accumulare riferimenti.
-        self._workers = [w for w in self._workers if w.isRunning()]
-        # Riattiva sessione se necessario (es. dopo Annulla globale).
-        if self.session_state.is_cancelled():
-            self.session_state.start()
-            self._shutdown_requested = False
-        # Riavvia refresher (idempotente: start() non fa nulla se già vivo).
-        self._refresher.start()
-        if not self._pool_size_timer.isActive():
-            self._pool_size_timer.start()
-        if not self._cache_save_timer.isActive():
-            self._cache_save_timer.start()
+        self._reactivate_session()
         self._queue.append((file_id, url))
         self._fill_slots()
         return True

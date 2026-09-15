@@ -22,7 +22,7 @@ https://github.com/user-attachments/assets/275c6fbe-3792-4178-8a75-dc8f4610df3e
 
 
 
-![version](https://img.shields.io/badge/version-2.1.0-blue)
+![version](https://img.shields.io/badge/version-2.2.0-blue)
 ![python](https://img.shields.io/badge/python-3.11%E2%80%933.14-blue)
 ![platform](https://img.shields.io/badge/platform-Windows%2010%2F11-lightgrey)
 ![gui](https://img.shields.io/badge/GUI-PyQt6-green)
@@ -52,6 +52,7 @@ App **desktop per Windows** (Python + PyQt6) che scarica file **e intere cartell
 - **Resume** dei download interrotti e **riavvio** di falliti/abbandonati/annullati (riprende solo i chunk mancanti).
 - **Limite di tempo per file** configurabile; oltre la soglia il file viene abbandonato.
 - **Storico download** con avviso sui link già scaricati (dedup per handle Mega).
+- **Aggiunta di link a sessione in corso**: i nuovi link entrano in coda senza fermare i download né rifare la raccolta dei proxy; si sceglie se metterli in fondo o subito dopo il file in corso, e i link già presenti nella sessione vengono segnalati prima di aggiungerli.
 - **Link a cartella Mega** (`/folder/`): la cartella viene espansa nei singoli file, salvati ad albero sotto un'unica cartella col nome originale (vedi la guida).
 - **Watchdog per chunk**: scarta i proxy troppo lenti o che non finiscono in tempo.
 - **Pannello "Funzioni sperimentali"** con connessioni per file, budget per pezzo e selezione per velocità con soglia configurabile (test di velocità reale + selezione proxy per throughput).

@@ -177,6 +177,17 @@ STRINGS: dict[str, str | dict[str, str]] = {
     ),
     "paste.cancel": "Cancel",
     "paste.add_button": "Add {n}",
+    # Chiesto solo a sessione in corso: fuori sessione la coda non esiste.
+    "paste.position_label": "Where to put the added links:",
+    "paste.position_bottom": "At the end of the queue",
+    "paste.position_bottom_tooltip": (
+        "They start after every link already waiting."
+    ),
+    "paste.position_top": "Right after the current download",
+    "paste.position_top_tooltip": (
+        "They jump ahead of the links already waiting. Downloads already "
+        "under way are not interrupted."
+    ),
 
     # ---- shared formatting helpers ---------------------------------------------
     "format.session_completed": "(completed)",
@@ -361,6 +372,16 @@ STRINGS: dict[str, str | dict[str, str]] = {
     "link_panel.history_anyway": "Download anyway",
     "link_panel.history_cancel": "Cancel",
 
+    # ---- pannello link: avviso "gia' nella sessione in corso" --------------
+    "link_panel.session_dup_title": "Links already in this session",
+    "link_panel.session_dup_text": {
+        "one": "{n} of {total} links is already in this session:",
+        "other": "{n} of {total} links are already in this session:",
+    },
+    "link_panel.session_dup_entry": "\u2022 {url} ({state})",
+    "link_panel.session_dup_skip": "Skip the duplicates",
+    "link_panel.session_dup_anyway": "Add anyway",
+
     # ---- espansione cartelle: righe di report (FolderExpandWorker) ----------
     "folder_expand.cancelled": "Expansion cancelled.",
     "folder_expand.nothing": "No files to download.",
@@ -426,6 +447,10 @@ STRINGS: dict[str, str | dict[str, str]] = {
         "other": "Expanding {n} Mega folders…",
     },
     "main_window.expand_dialog_text": "Reading the Mega folders…",
+    "main_window.expand_dialog_text_hot": (
+        "Reading the Mega folders… "
+        "Downloads under way keep going."
+    ),
     "main_window.expand_dialog_cancel": "Cancel",
     "main_window.expand_dialog_title": "Expanding folders",
     "main_window.expand_cancelling": "Cancelling the expansion…",
@@ -529,6 +554,30 @@ STRINGS: dict[str, str | dict[str, str]] = {
     "main_window.restart_all_done": {
         "one": "Restarted {n} download.",
         "other": "Restarted {n} downloads.",
+    },
+
+    # ---- finestra principale: aggiunta a una sessione in corso --------------
+    "main_window.add_finished_title": "Queue already finished",
+    "main_window.add_finished_body": (
+        "Every download in this session has finished. "
+        "Do you want to carry on with the same session?"
+    ),
+    "main_window.add_finished_hint": (
+        "Carrying on keeps the list, the statistics, the timer and the proxies "
+        "already validated. A new session starts from scratch, proxy collection "
+        "included."
+    ),
+    "main_window.add_finished_continue": "Carry on with this session",
+    "main_window.add_finished_fresh": "New session",
+    "main_window.add_finished_cancel": "Cancel",
+    "main_window.add_nothing": "No link to add.",
+    "main_window.add_refused": (
+        "Could not add: this session has no usable proxies. "
+        "Cancel it and start again."
+    ),
+    "main_window.add_done": {
+        "one": "Added {n} link to the running session.",
+        "other": "Added {n} links to the running session.",
     },
 
     # ---- finestra principale: banda dei proxy -------------------------------

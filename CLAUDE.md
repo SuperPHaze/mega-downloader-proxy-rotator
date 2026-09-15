@@ -75,10 +75,30 @@ src/
 │   ├── worker.py          # DownloadWorker(QThread) — 1 link, N cicli; ramo job-cartella (_folder_job):
 │   │                     #   destinazione ad albero senza `ciclo_N` (_cycle_dir), niente rinomina,
 │   │                     #   resume sul NOME ESATTO del file (la cartella è condivisa con gli altri job); cartella base rinominata da hash a nome file al primo resolve (_current_base_dir aggiornato da _resolved_cb); riceve output_root (cartella download scelta dall'utente); InsufficientDiskSpaceError = abbandono immediato (non retry)
-│   └── orchestrator.py    # DownloadOrchestrator(QObject) — coordina tutto; segnale proxy_stats(discarded, refill_count, seconds_since_last_refill) emesso insieme a pool_size_changed nel poll periodico; propaga output_root ai worker (start(output_root=...)); relay dei canali TIPATI del worker (failed_detail/fatal_detail/abandoned_detail) accanto ai segnali-stringa; `SETUP_TEXTS_IT` + `setup_text_it()` = testo ITALIANO delle 6 righe di stato del setup (serve a log e CLI), emesse su due canali: `setup_status`/`pool_failed` (stringa italiana) e `setup_status_t`/`pool_failed_t` (codice + parametri, per la GUI)
+│   └── orchestrator.py    # DownloadOrchestrator(QObject) — coordina tutto; `add_jobs(links, at_top)`
+│                          #   aggiunge link a una sessione GIA' avviata (ritorna i file_id assegnati) e
+│                          #   `restart_job` riavvia un job terminato: condividono `_reactivate_session()`,
+│                          #   che rimette in moto sessione/ricaricatore/timer (due copie divergerebbero).
+│                          #   Gli identificativi li assegna SOLO `_allocate_file_id()`, monotono per tutta
+│                          #   la sessione (azzerato da `start()`): entrano nel nome della cartella di
+│                          #   destinazione, riusarne uno farebbe scrivere due download nello stesso posto.
+│                          #   `_pending_jobs` porta il file_id definitivo gia' prima che i worker partano,
+│                          #   cosi' un'aggiunta arrivata durante la raccolta dei proxy sopravvive a
+│                          #   `_spawn_workers`, che COSTRUISCE la coda; segnale proxy_stats(discarded, refill_count, seconds_since_last_refill) emesso insieme a pool_size_changed nel poll periodico; propaga output_root ai worker (start(output_root=...)); relay dei canali TIPATI del worker (failed_detail/fatal_detail/abandoned_detail) accanto ai segnali-stringa; `SETUP_TEXTS_IT` + `setup_text_it()` = testo ITALIANO delle 6 righe di stato del setup (serve a log e CLI), emesse su due canali: `setup_status`/`pool_failed` (stringa italiana) e `setup_status_t`/`pool_failed_t` (codice + parametri, per la GUI)
 └── gui/
-    ├── main_window.py     # MainWindow (QMainWindow); _on_start fa da gate: se ci sono link cartella
+    ├── main_window.py     # MainWindow (QMainWindow); `_on_add_links_requested` e' il gate del
+    │                      #   pulsante «Aggiungi link»: fuori sessione riempie la lista da avviare, a
+    │                      #   sessione viva accoda a caldo (`_add_links_to_session` ->
+    │                      #   `orchestrator.add_jobs`), a coda esaurita chiede prima se proseguire o
+    │                      #   ripartire pulito. `_register_added_jobs` ESTENDE la contabilita' (righe,
+    │                      #   `_links_by_id`, `_session_incomplete` col salvataggio su disco,
+    │                      #   `_expected_files`, `_queue_done_notified`) invece di ricrearla come fa
+    │                      #   `_start_with_links`;
+    │                      #   _on_start fa da gate: se ci sono link cartella
     │                      #   avvia FolderExpandWorker e il flusso riprende in _start_with_links;
+    │                      #   `_begin_folder_expansion(links, hot_position)` serve entrambi i casi: a
+    │                      #   caldo la finestra di avanzamento e' NON modale (i download proseguono) e
+    │                      #   Avvia NON va riabilitato a fine espansione;
     │                      #   _delete_folder_job_file elimina il SINGOLO file di un job-cartella
     │                      #   (+ .part + sidecar) e pota le cartelle vuote, mai l'albero condiviso; ripristino sessione all'avvio (prompt "Riprendi sessione precedente?" da session_store, differito con QTimer.singleShot); propaga la cartella download scelta a orchestrator.start(output_root=...) e la usa per il delete cartella; _on_language_changed fa il fan-out della ritraduzione su TUTTE le superfici persistenti (gemello di _on_theme_toggle), riga di stato compresa: _set_status_t/_set_status_tn ricordano chiave+parametri in _status_source e _refresh_status la riscrive, mentre _set_status (grezzo) azzera la memoria;
     │                      #   changeEvent intercetta la RIDUZIONE A ICONA e differisce la decisione con
@@ -88,14 +108,28 @@ src/
     │                      #   sparisce da solo: misurato), _restore_from_tray le rimette com'erano;
     │                      #   closeEvent smonta l'icona (fantasma nell'area di notifica) e chiude
     │                      #   l'APPLICAZIONE — serve perché main.py disattiva setQuitOnLastWindowClosed
-    ├── link_panel.py      # gestore lista link (nascosto nell'UI, API get_links/set_links/open_paste_dialog); i suoi widget non si vedono, ma i dialoghi che apre sì (import da file, avviso «già scaricati»); i18n: t()/tn() + retranslate(), contatore link al singolare/plurale
-    ├── paste_links_dialog.py # dialog modale incolla/edita lista link; contatori Validi/Non validi/Duplicati/Cartelle (i18n: t("paste.*"), conteggi come parametro {n})
-    ├── jobs_model.py      # JobsModel (QObject) + Job (throughput/file_name/output_path); NON formatta testo:
+    ├── link_panel.py      # gestore lista link (nascosto nell'UI, API get_links/set_links/open_paste_dialog);
+    │                      #   `confirm_already_downloaded` (storico dei download PASSATI) e
+    │                      #   `confirm_session_duplicates` (sessione IN CORSO) sono due controlli distinti
+    │                      #   e possono comparire tutti e due: rispondono a domande diverse. Il confronto
+    │                      #   passa da `dedup_key()` = handle Mega, con ripiego sull'URL esatto per le
+    │                      #   cartelle non espanse; `find_session_duplicates` e' puro (niente Qt); i suoi widget non si vedono, ma i dialoghi che apre sì (import da file, avviso «già scaricati»); i18n: t()/tn() + retranslate(), contatore link al singolare/plurale
+    ├── paste_links_dialog.py # dialog modale incolla/edita lista link; contatori Validi/Non validi/Duplicati/Cartelle (i18n: t("paste.*"), conteggi come parametro {n});
+    │                      #   con `show_position=True` chiede anche DOVE mettere i link (POSITION_TOP/
+    │                      #   POSITION_BOTTOM, letti da `selected_position()`): solo a sessione in corso,
+    │                      #   perche' fuori sessione la coda non esiste ancora
+    ├── jobs_model.py      # JobsModel (QObject) + Job (throughput/file_name/output_path);
+    │                      #   `append_jobs()` e' il gemello di `reset()` che ACCODA senza cancellare
+    │                      #   (aggiunta a caldo) e non rinumera nulla: gli id arrivano dall'orchestrator.
+    │                      #   NON formatta testo:
     │                      #   la cronologia e' (ts, livello, CHIAVE `job_log.*`, parametri) e `Job.last_error` e'
     │                      #   il payload (codice, parametri) di E1 — rende chi disegna, quindi niente `retranslate()`.
     │                      #   Non e' piu' un QAbstractTableModel: senza view a tabella, `HEADERS`/`data()`/`headerData()`
     │                      #   e le costanti `COL_*` erano superficie morta (testo utente solo all'apparenza) e sono state rimosse
-    ├── jobs_panel.py      # lista job a righe-card (QScrollArea + _JobCard widget per riga); filtri a pulsanti esclusivi (QButtonGroup), senza etichetta; ogni pulsante mostra il conteggio file per categoria ("In corso (N)"/"Completati (N)"/"Non completati (N)"), aggiornato da _update_filter_counts su aggregates_changed; i18n: retranslate() ricasca su _EmptyState e su ogni _JobCard; le card rendono l'ultimo errore dal PAYLOAD del modello con error_render.render_error(), e on_abandoned applica ABANDON_ALIASES al confine col segnale
+    ├── jobs_panel.py      # lista job a righe-card (QScrollArea + _JobCard widget per riga);
+    │                      #   `append_jobs()` aggiunge card senza toccare quelle esistenti (l'ordine resta
+    │                      #   cronologico anche per i link messi in TESTA alla coda: chi sta scaricando lo
+    │                      #   dice il proprio stato); filtri a pulsanti esclusivi (QButtonGroup), senza etichetta; ogni pulsante mostra il conteggio file per categoria ("In corso (N)"/"Completati (N)"/"Non completati (N)"), aggiornato da _update_filter_counts su aggregates_changed; i18n: retranslate() ricasca su _EmptyState e su ogni _JobCard; le card rendono l'ultimo errore dal PAYLOAD del modello con error_render.render_error(), e on_abandoned applica ABANDON_ALIASES al confine col segnale
     ├── job_detail_dialog.py # dialog non-modale dettaglio job (doppio clic); UNICO dialogo PERSISTENTE del progetto:
     │                      #   ha `retranslate()` ed e' nel fan-out di `_on_language_changed`. `_refresh(force=True)` e'
     │                      #   obbligatorio al cambio lingua: il ridisegno normale salta log e tabella IP quando il NUMERO
@@ -189,6 +223,13 @@ uccida il processo: da lì in poi l'uscita è ESPLICITA e passa tutta da `MainWi
 5. A ogni ciclo: `ProxyPool.get_next()` → `MegaClient(proxy).get_egress_ip()` → se `PARALLEL_CONNECTIONS_PER_FILE > 1` (default 10) usa `ParallelMegaDownloader.download()`, altrimenti `MegaClient.download()`.
 6. Worker emette `progress / ip_logged / cycle_completed / failed / fatal_error / completed_info / all_done / cancelled / abandoned / throughput` → `JobsPanel` (via `JobsModel`). Su `completed_info` l'orchestrator persiste lo storico in `download_history.log` e lo riemette alla GUI per aggiornare nome file e path nelle card.
 7. Worker controlla `is_cancelled()` / `wait_if_paused()` su un `_EffectiveSessionState` che combina `SessionState` globale + flag locale (cancellazione per-job).
+7-bis. **Aggiunta a caldo**: il pulsante «Aggiungi link» resta attivo durante la sessione.
+   `MainWindow._on_add_links_requested` → (eventuale `FolderExpandWorker`, non modale) →
+   `_add_links_to_session` → `DownloadOrchestrator.add_jobs(links, at_top)`, che assegna
+   identificativi NUOVI e li mette in coda (o in `_pending_jobs`, se il setup sta ancora
+   raccogliendo i proxy) senza toccare i worker vivi. La GUI registra le righe con
+   `_register_added_jobs`. Il numero di file in parallelo NON cambia: gli aggiunti aspettano
+   il loro turno.
 8. Cancellazione per-job: utente clicca la X rossa in colonna 0 → `JobsPanel.cancel_job_requested` → `MainWindow` → `DownloadOrchestrator.cancel_job(file_id)`. Se in coda viene rimosso, se in corso `worker.request_cancel()` setta il flag locale e il worker esce al prossimo checkpoint emettendo `cancelled`. La cartella di lavoro (`downloads/<nome_file>_<file_id>/` dopo il rename, oppure `downloads/<sha1>_<file_id>/` se il rename non è ancora avvenuto) viene rimossa lato GUI dopo la terminazione del worker, leggendo `output_path` dal model.
 
 ## Convenzioni

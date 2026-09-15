@@ -161,6 +161,16 @@ La zona proxy mostra anche due misure di banda affiancate, distinte per colore. 
 
 Durante una sessione i controlli disponibili sono pausa/ripresa e annullo, sia globali sia per singolo file dalla tabella. La pausa non comporta la perdita dei proxy: alla ripresa il lavoro riparte dal punto in cui era stato sospeso. La pausa agisce **al confine del pezzo in corso**: un chunk già in trasferimento viene portato a termine e solo dopo il lavoro si sospende (sospendere un pezzo a metà farebbe scadere i timeout di lettura). L'annullo di un singolo file può, a scelta, rimuoverne anche i dati già scaricati dal disco.
 
+**Aggiungere link a sessione in corso.** Il pulsante **Aggiungi link** resta attivo mentre si scarica: i link incollati entrano nella sessione corrente senza fermare nulla e senza rifare la raccolta dei proxy, che è la parte lenta dell'avvio. I download già partiti proseguono, e quelli aggiunti si mettono **in coda**: il numero di file scaricati contemporaneamente non cambia.
+
+La finestra di aggiunta chiede **dove** metterli: *in fondo alla coda* (predefinito) oppure *subito dopo il download in corso*, per farli passare davanti ai link già in attesa. In entrambi i casi nessun download già avviato viene interrotto.
+
+Se qualcuno dei link è **già presente nella sessione** — in coda, in download o già concluso — viene elencato con il suo stato e serve una conferma per aggiungerlo lo stesso. Il confronto è per handle Mega, quindi riconosce lo stesso file anche se incollato in una forma di URL diversa. È lo stesso avviso, in forma distinta, di quello sui file già scaricati in sessioni passate: possono comparire tutti e due, perché rispondono a due domande diverse.
+
+Se la **coda è già finita** (tutti i download conclusi ma la finestra ancora aperta), l'aggiunta chiede prima cosa fare: *Prosegui questa sessione* tiene elenco, statistiche, cronometro e soprattutto i proxy già validati; *Nuova sessione* rimette i link nella lista e con Avvia si riparte da zero, raccolta proxy compresa.
+
+Un link a **cartella** aggiunto a caldo viene prima elencato, come all'avvio. La finestra di avanzamento in questo caso **non è modale** e lo dichiara: i download in corso proseguono e restano raggiungibili pausa, annullo e il dettaglio dei file.
+
 Se il programma viene chiuso (o va in crash) con dei download non ancora completati, alla riapertura propone di **ricaricare i link rimasti** con una richiesta intitolata «Ripristina sessione» («La sessione precedente si è chiusa con N link non completati. Vuoi ricaricarli nella lista?»). Accettando, i link tornano nella lista e — grazie al resume descritto sotto — ripartono dai pezzi già scaricati: basta premere Avvia.
 
 La lista dei download può essere filtrata con tre pulsanti a selezione esclusiva — **In corso**, **Completati** e **Non completati** — che insieme coprono tutti gli stati possibili (i job in coda e in corso ricadono in «In corso»; falliti, annullati e abbandonati in «Non completati»). Ogni pulsante riporta tra parentesi il numero di file nella sua categoria, aggiornato in tempo reale: così la composizione della sessione è leggibile a colpo d'occhio senza cambiare filtro.
