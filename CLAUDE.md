@@ -30,6 +30,10 @@ src/
 │   │                     #   `log_unhandled_main_exception()` porta in crash.log anche le eccezioni non
 │   │                     #   gestite del thread PRINCIPALE (gemello di `_threading_excepthook`): senza
 │   │                     #   console è l'unico posto dove il traceback resta, e lo legge `tools/report.py`
+│   │                     #   `reset_log_file(path)` azzera un log TENUTO APERTO (su Windows
+│   │                     #   `unlink` su un file aperto fallisce): chiude il flusso del canale,
+│   │                     #   tronca e riapre; `terminal-log.txt` si tronca IN POSTO perché
+│   │                     #   `_TeeStream` ha catturato quell'oggetto file. Lo usa `maintenance.py`
 │   ├── failed_log.py      # logger JSONL dei link abbandonati
 │   ├── download_history.py # storico JSONL download completati + extract_handle
 │   ├── sources_stats.py   # logger JSONL metriche per-fonte
@@ -47,6 +51,14 @@ src/
 │   │                     #   (`/file/<n>`, `/folder/<n>`, legacy `#F!id!key!node`) e la forma INTERNA dei
 │   │                     #   job-cartella. Ordine di match dal più specifico al più generico.
 │   │                     #   `extract_handle` vive qui (download_history vi delega)
+│   ├── maintenance.py     # manutenzione: MISURA (survey/survey_all: quanti file, quante voci,
+│   │                     #   quanto spazio) e CANCELLA (clear/clear_items) i dati lasciati su
+│   │                     #   disco — storico, stato di sessione, cartella download, log. Non sa
+│   │                     #   nulla della GUI. `SESSION_LOCKED_ITEMS` = le due voci che NON si
+│   │                     #   azzerano a sessione viva. Fuori perimetro di proposito:
+│   │                     #   `preferences.json` (l'app lo riscriverebbe), `crash.log` e la
+│   │                     #   telemetria, e la cache proxy (vive in `src/proxy/`, che core non
+│   │                     #   può importare: la chiama la finestra, con `delete_proxy_cache`)
 │   ├── session_store.py   # persistenza JSON dei link NON completati della sessione (save/load/clear, mai solleva) per il prompt "Riprendi sessione precedente?" all'avvio; i .part fanno il resume a livello byte
 │   └── proxy_url.py       # build_proxy_url/build_proxies_dict: schema URL in base al campo protocol (http/socks4/socks5 -> socks5h) + prefisso user:pass@ opzionale se il proxy porta credenziali, solo stdlib, usato da proxy/ e downloader/; include anche cache_bust_url() (parametro query anti-cache per gli speed test) e sustained_throughput_bps() (misura pura del throughput: finestra del corpo con fallback alla finestra completa sul burst-da-buffer, evita le "bande impossibili")
 ├── proxy/
@@ -76,6 +88,9 @@ src/
 │   │                     #   destinazione ad albero senza `ciclo_N` (_cycle_dir), niente rinomina,
 │   │                     #   resume sul NOME ESATTO del file (la cartella è condivisa con gli altri job); cartella base rinominata da hash a nome file al primo resolve (_current_base_dir aggiornato da _resolved_cb); riceve output_root (cartella download scelta dall'utente); InsufficientDiskSpaceError = abbandono immediato (non retry)
 │   └── orchestrator.py    # DownloadOrchestrator(QObject) — coordina tutto; `add_jobs(links, at_top)`
+│                          #   `has_active_workers()` dice se un thread di download è ancora VIVO (non è
+│                          #   lo stato dei job: dopo l'annullo globale sono già tutti annullati mentre i
+│                          #   .part si scrivono ancora) — lo chiede la finestra Manutenzione;
 │                          #   aggiunge link a una sessione GIA' avviata (ritorna i file_id assegnati) e
 │                          #   `restart_job` riavvia un job terminato: condividono `_reactivate_session()`,
 │                          #   che rimette in moto sessione/ricaricatore/timer (due copie divergerebbero).
@@ -106,6 +121,11 @@ src/
     │                      #   cambiando stato): _handle_minimized chiede o applica la preferenza,
     │                      #   _hide_to_tray nasconde finestra E finestre figlie (il dettaglio di un job non
     │                      #   sparisce da solo: misurato), _restore_from_tray le rimette com'erano;
+    │                      #   `_open_maintenance_dialog` apre la finestra Manutenzione passandole le due
+    │                      #   cose che solo la finestra principale sa: la cartella di download configurata
+    │                      #   e `_session_is_running()` — che è `has_active_workers()` OR job non tutti
+    │                      #   terminati, perché l'annullo globale marca i job all'istante ma i thread
+    │                      #   escono al checkpoint dopo e fino a lì scrivono ancora sui .part;
     │                      #   closeEvent smonta l'icona (fantasma nell'area di notifica) e chiude
     │                      #   l'APPLICAZIONE — serve perché main.py disattiva setQuitOnLastWindowClosed
     ├── link_panel.py      # gestore lista link (nascosto nell'UI, API get_links/set_links/open_paste_dialog);
@@ -151,6 +171,11 @@ src/
     ├── proxy_bar.py       # (i18n: retranslate() ricasca su ogni _MetricCard, che tiene la CHIAVE dell'etichetta) ProxyBar: zona proxy in stile "conservativo" — griglia 2x4 di card compatte su due righe (vivi/validazione/scartati/ricariche/ultimo refill/banda/banda proxy; min width 112px = etichetta più lunga non tagliata al resize) + colonna verticale di pulsanti "↻ Banda" (speed test linea diretta), "↻ Banda proxy" (speed test attraverso il pool live, abilitato solo con proxy vivi) e "Reset cache"; popolata da pool_size_changed/setup_progress/proxy_stats dell'orchestrator. Card "Banda" verde (accent_ok) vs "Banda proxy" blu (accent_info) per differenziare le due misure
     ├── speedtest_worker.py # SpeedTestWorker (banda linea diretta, senza proxy) + ProxySpeedTestWorker (banda aggregata del pool live, uno stream per proxy campionato, resiliente ai proxy lenti/caduti); entrambi QThread, emettono finished_test(mbit, ok)
     ├── controls.py        # barra comandi: Avvia/Pausa/Annulla/Paralleli/Incolla/Tema/Info; menu Impostazioni con Paralleli/Limite/Pezzo/"Cartella download:" (QFileDialog, getter get_download_dir, segnale download_dir_changed) + "Lingua:" (QComboBox Automatica/Italiano/English → TR.set_preference); PRIMO pannello migrato a i18n: testi via t("controls.*") e retranslate() per il cambio a caldo
+    │                      #   + "Manutenzione:" (pulsante «Azzera dati…» → segnale maintenance_requested,
+    │                      #   apre MaintenanceDialog). NB: `set_running(True)` disabilita il pulsante
+    │                      #   Impostazioni, quindi a sessione VIVA il menu — e con esso la manutenzione —
+    │                      #   non è raggiungibile: il rifiuto per voce serve dopo un Annulla globale,
+    │                      #   quando i comandi tornano attivi ma i worker stanno ancora scrivendo
     ├── experimental_dialog.py # ExperimentalFeaturesDialog: 3 controlli con descrizione breve inline e icona "i" (QToolButton) → QMessageBox estesa: "Connessioni per file" (spinbox), "Budget per pezzo (s)" (spinbox), "Selezione per velocità" (checkbox + spinbox soglia KB/s); tutti persistono in preferences.json; i18n: t("experimental.*"), le descrizioni brevi/estese stanno nei dizionari
     ├── folder_expand_worker.py # FolderExpandWorker(QThread): espande i link cartella prima dell'avvio; le righe di report passano da t()/tn() (clausole opzionali autonome: separatore incluso nella chiave)
     │                      #   (rete fuori dal thread GUI); i link non-cartella passano invariati e
@@ -165,6 +190,14 @@ src/
     │                      #   ed è nel fan-out di `_on_language_changed`. I valori di `MINIMIZE_TARGETS`
     │                      #   sono ripetuti in `preferences.py` (importarli sarebbe un ciclo): li tiene
     │                      #   allineati `tests/test_tray.py`
+    ├── maintenance_dialog.py # MaintenanceDialog: finestra «Manutenzione» (modale, creata su
+    │                      #   richiesta: legge i testi alla costruzione, niente retranslate()).
+    │                      #   Cinque caselle TUTTE non spuntate, conteggio+spazio reali accanto a
+    │                      #   ognuna, elenco riga per riga prima di cancellare col predefinito su
+    │                      #   ANNULLA, resoconto nella finestra + riga INFO nel log. La misura e la
+    │                      #   cancellazione stanno in `core/maintenance.py`; la sola cache proxy
+    │                      #   passa da `delete_proxy_cache()`, la funzione che esiste già.
+    │                      #   `session_running` arriva da MainWindow._session_is_running()
     ├── preferences.py     # carica/salva preferenze utente (tema, lingua GUI ("auto"/"it"/"en"), check aggiornamenti all'avvio, selezione per velocità abilitata + soglia KB/s, stats_panel_expanded, download_dir, minimize_target "ask"/"tray"/"taskbar") in preferences.json
     ├── i18n.py            # motore di traduzione GUI: Translator(QObject) con language_changed(str), singleton di modulo TR (come CURRENT_PALETTE), t(key, **params) e tn(key, n, **params); risolve "auto" dal locale (QLocale → prefisso → it, altrimenti en), persiste via preferences, installa qtbase_<lang>.qm via QLibraryInfo. Chiave mancante in EN → testo IT + WARNING una volta sola; mai eccezione
     ├── strings_it.py      # dizionario piatto IT — è la FONTE del testo utente; INNESTA `ERROR_TEXTS_IT` di
@@ -183,6 +216,11 @@ tools/
 ├── monitor_speed.py       # CLI polling cartella downloads/
 ├── analyze_telemetry.py   # analizzatore offline della telemetria scatola nera (sola lettura): CSV + report HTML/MD + export AI; --link-mbit per la % di linea usata
 ├── report.py              # report HTML diagnostico (sola lettura) da logs/events.jsonl + logs/crash.log
+├── pulizia-preferenze.py  # reset dello stato utente da riga di comando (--yes/--dry-run), a
+│                          #   programma chiuso. Copre le due voci che la GUI NON tocca di
+│                          #   proposito (`preferences.json`, `branding_cache.json`) più le voci
+│                          #   condivise, che delega a `core/maintenance.py`: una sola logica di
+│                          #   cancellazione, non due copie che divergono
 └── demo/
     └── demo_runner.py     # genera video demo + galleria bilingue (IT/EN) per il sito e le release:
                             #   pilota la MainWindow vera via slot Qt reali (nessun mouse simulato),
@@ -258,6 +296,12 @@ uccida il processo: da lì in poi l'uscita è ESPLICITA e passa tutta da `MainWi
 - Pool cooldown vs penalize: il rate-limit 403/509 dal CDN Mega chiama `pool.cooldown(proxy)`, NON `penalize(hard=True)` — lo score non viene toccato (la reputazione resta intatta) ma il proxy è escluso sia da `get_next()` sia dal conteggio `size()`/`_count_alive_unlocked()` per `PROXY_COOLDOWN_SECONDS` (90s), poi torna selezionabile e contato. Se contasse come vivo mentre è a riposo, `size() > 0` farebbe saltare `refill_blocking(force=False)` anche quando il pool è di fatto inutilizzabile (starvation osservata con quasi tutti i proxy in cooldown insieme).
 - URL del proxy (schema): costruire SEMPRE con `build_proxy_url`/`build_proxies_dict` (`core/proxy_url.py`), mai con un f-string a mano — è l'unico punto che sa come mappare `protocol` (http/socks4/socks5) sullo schema giusto (socks5 → `socks5h://`, DNS risolto lato proxy). Richiede la dipendenza `PySocks` (in `requirements.txt`) perché `requests` parli gli schemi `socks4://`/`socks5h://`.
 - Sessioni: prima di creare un nuovo `DownloadOrchestrator` chiamare SEMPRE `shutdown()` su quello precedente (teardown worker/refresher/timer); se ritorna False non avviare e mantenere il riferimento (distruggere QThread vivi = crash).
+- **Cancellare dati dell'utente**: si passa SEMPRE da `core/maintenance.py` (misura + cancella,
+  senza sapere nulla della GUI) e dalle tre regole della superficie — nessuna voce attiva per
+  default, elenco esatto di cio' che sparisce PRIMA di procedere, riga nel log DOPO. Un log
+  tenuto aperto non si cancella da fuori (su Windows `unlink` fallisce): si tronca con
+  `logging_setup.reset_log_file`. Chi cancella file su disco chiede prima `_session_is_running()`:
+  con un worker vivo, cartella download e log NON si toccano.
 - Comunicazione GUI↔worker SOLO via PyQt signals (mai chiamate dirette dalla GUI ai worker).
 - `SessionState` è l'UNICA fonte di verità per pausa/annullo.
 - Nuovo proxy source → aggiungere voce in `proxy/sources.py` (campo opzionale `"protocol"`: http/socks4/socks5, default http) + parser dedicato in `scraper.py` se serve un nuovo `kind`.

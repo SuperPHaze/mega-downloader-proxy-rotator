@@ -176,6 +176,39 @@ Altre convenzioni dell'area di notifica:
   `_on_language_changed`, come i pannelli. Il dialogo della domanda è modale e creato su
   richiesta: non ne ha bisogno.
 
+## Cancellare dati dell'utente (superficie distruttiva)
+
+Vale per la finestra Manutenzione (`gui/maintenance_dialog.py`), per l'eliminazione della cartella
+di un job e per qualunque comando futuro che tolga roba dal disco. Il precedente da non ripetere e'
+`tools/pulizia-preferenze.py` prima di questo giro: cancellava senza lasciare traccia.
+
+- **Nessuna voce attiva per default.** Le caselle nascono tutte non spuntate e il pulsante che
+  cancella resta spento finche' non c'e' una selezione. Il pulsante **predefinito e' quello che NON
+  cancella**: un invio distratto deve chiudere, non distruggere.
+- **Si misura prima e si elenca prima.** Accanto a ogni voce va il conteggio e lo spazio REALI letti
+  dal disco all'apertura, e prima di procedere si mostra riga per riga cosa sparira', con i nomi dei
+  file e le dimensioni. Cio' che l'utente legge dev'essere esattamente cio' che viene cancellato:
+  e' un test, non un'intenzione (`tests/test_maintenance_dialog.py`).
+- **Una riga nel log dopo.** Ogni azzeramento lascia un INFO con voci toccate, elementi rimossi e
+  byte liberati. Il resoconto sta anche NELLA finestra: un popup che si chiude non e' una traccia.
+- **Un fallimento non ferma gli altri.** Si prosegue con le voci rimanenti e il resoconto dice quale
+  non e' riuscita e perche' (`str(exc)` del sistema: viene da una libreria, resta uguale nelle due
+  lingue, la cornice tradotta la mette chi disegna).
+- **Una voce vuota o bloccata non si puo' selezionare**, e il motivo si legge («niente da
+  cancellare», «bloccato: sessione in corso»). Il solo grigio non basta — con il foglio di stile del
+  progetto `QCheckBox { color: text }` vale anche da disabilitata, quindi la casella spenta non si
+  distingue da sola.
+- **La logica di cancellazione non vive nella GUI**: sta in `core/maintenance.py`, che misura e
+  cancella senza sapere nulla dell'interfaccia (e che usa anche lo strumento da riga di comando: due
+  copie divergerebbero). La finestra decide *cosa* e *se*, non *come*.
+- **Con un download vivo non si tocca il disco.** `MainWindow._session_is_running()` mette in or i
+  job non terminati e `orchestrator.has_active_workers()`: l'annullo globale marca tutti i job
+  all'istante, ma i thread escono al checkpoint successivo e fino a li' scrivono ancora sui `.part`.
+  Cancellarli sotto il worker produce errori a catena e penalizza proxy innocenti.
+- **Fuori perimetro per scelta**: `preferences.json` (l'app lo tiene in memoria e lo riscriverebbe
+  subito: si otterrebbe uno stato incoerente), `logs/crash.log` e `logs/telemetry/` (diagnostica,
+  servono proprio quando qualcosa e' andato storto). Restano allo strumento da riga di comando.
+
 ## Aggiungere link a sessione in corso
 
 - Il comando **Aggiungi link** e' l'eccezione ai blocchi di `set_running(True)`: resta attivo

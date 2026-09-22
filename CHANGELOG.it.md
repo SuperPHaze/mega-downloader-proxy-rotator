@@ -6,6 +6,30 @@ Tutte le modifiche rilevanti del progetto. Formato basato su [Keep a Changelog](
 
 ## [Non rilasciato]
 
+### Aggiunto
+- **Finestra «Manutenzione», per azzerare i dati che il programma lascia su disco.** Si apre da
+  **Impostazioni → «Manutenzione:» → «Azzera dati…»** e copre cinque voci: storico dei download,
+  stato della sessione da riprendere, cartella dei download, log e statistiche delle fonti, cache
+  dei proxy. Accanto a ogni voce c'è il **conteggio e lo spazio reali** letti dal disco in quel
+  momento (quante voci ha lo storico, quanti link sono in sospeso, quanti file e quanti frammenti
+  `.part` ci sono, quanto occupano i log), e quello che si legge è esattamente quello che sparisce.
+- **Nessuna casella spuntata all'apertura, elenco prima di cancellare, resoconto dopo.** Premuto il
+  pulsante, una seconda finestra elenca riga per riga i file che verranno cancellati con le loro
+  dimensioni, e il pulsante predefinito è **Annulla**. A operazione fatta, il resoconto di cosa è
+  stato azzerato e di quanto spazio è stato liberato resta nella finestra e finisce anche nel log
+  dell'applicazione. Se una voce non riesce, le altre proseguono e il resoconto dice quale e perché.
+- **Cartella dei download e log non si azzerano a sessione in corso**: la finestra li mostra
+  disattivati e spiega il motivo (cancellare un file mentre viene scritto manda in errore i
+  download e penalizza i proxy). Storico e stato della sessione restano invece azzerabili anche
+  mentre si scarica. Il blocco vale anche nei secondi dopo un **Annulla** globale, finché i
+  download non hanno davvero smesso di scrivere.
+
+### Modificato
+- Le **impostazioni** (`preferences.json`) restano fuori dalla finestra di proposito: il programma
+  le tiene in memoria e le riscriverebbe subito, lasciando uno stato incoerente. Per quelle resta
+  lo strumento da riga di comando `tools/pulizia-preferenze.py`, che ora usa le **stesse funzioni**
+  della finestra Manutenzione invece di una copia propria della logica.
+
 ## [2.2.0] — 2026-09-14
 
 ### Aggiunto

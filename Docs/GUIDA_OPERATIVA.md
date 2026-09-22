@@ -238,6 +238,28 @@ Una **suite di diagnostica passiva**, sempre attiva, integra questi log: traceba
 
 ---
 
+## 11-bis. Azzerare i dati: la finestra Manutenzione
+
+Il programma lascia su disco cinque cose: i file scaricati, lo storico dei download, lo stato della sessione da riprendere, i log e la cache dei proxy. Si azzerano dal menu **Impostazioni → «Manutenzione:» → «Azzera dati…»**, che apre una finestra dedicata.
+
+La finestra elenca le cinque voci con, accanto a ciascuna, **il conteggio e lo spazio reali letti dal disco in quel momento** — quante voci contiene lo storico, quanti link sono rimasti in sospeso, quanti file e quanti frammenti `.part` ci sono nella cartella dei download, quanto occupano i log. Nessuna casella è spuntata all'apertura: si scelgono le voci una per una. Una voce che non ha niente da cancellare è disattivata e lo dice («niente da cancellare»).
+
+Cosa comporta ogni voce:
+
+- **Storico dei download** (`logs/download_history.log`): è ciò che alimenta l'avviso «già scaricato». Azzerandolo il programma non riconosce più i file presi in passato e non avvisa più se si reinserisce lo stesso link. Il controllo continua a funzionare, semplicemente non riconosce più nulla.
+- **Stato della sessione** (`session_state.json`): al prossimo avvio non verrà più proposto il ripristino dei link rimasti in sospeso. I file già a metà sul disco restano dove sono e il resume a livello di byte continua a funzionare.
+- **Cartella dei download**: svuota la cartella di download configurata (quella scelta da **Impostazioni → «Cartella download:»**, o la predefinita). È la voce più distruttiva: quello che sparisce va riscaricato da capo. La cartella stessa resta in piedi.
+- **Log e statistiche delle fonti**: `app.log` e i suoi archivi, `events.jsonl` e i suoi archivi, `terminal-log.txt`, le metriche per-fonte dei proxy e il registro dei link abbandonati. Servono solo alla diagnostica: azzerandoli non si perde nessun download. Restano fuori, di proposito, `logs/crash.log` e la telemetria in `logs/telemetry/`, che servono proprio quando qualcosa è andato storto.
+- **Cache dei proxy** (`proxy_cache.json`): il prossimo avvio rifà la raccolta da zero e sarà quindi più lento. Non si perde nessun dato. È la stessa operazione del pulsante **«Reset cache»** nella zona proxy del cruscotto.
+
+**Prima di cancellare** compare una seconda finestra che elenca riga per riga ciò che sparirà, con i nomi dei file e le loro dimensioni; il pulsante predefinito è **Annulla**, non quello che cancella. **Dopo**, la finestra mostra un resoconto di cosa è stato azzerato e di quanto spazio è stato liberato, e la stessa informazione finisce nel log dell'applicazione. Se una voce non riesce (per esempio un file bloccato da un altro programma), le altre proseguono comunque e il resoconto dice quale ha fallito e perché.
+
+**Con una sessione di download in corso** la cartella dei download e i log **non si possono azzerare**: la finestra li mostra disattivati e spiega il motivo. Non è una raccomandazione — cancellare un file `.part` mentre il programma ci sta scrivendo manda in errore i download in corso e penalizza i proxy innocenti. Storico e stato della sessione restano invece azzerabili anche a sessione attiva, perché nessuno li sta scrivendo in quel momento. Il blocco resta attivo anche nei secondi successivi a un **Annulla** globale, finché i download non hanno davvero smesso di scrivere.
+
+**Cosa non si azzera dalla GUI, e perché.** Le impostazioni (`preferences.json`) restano fuori: il programma le tiene in memoria e le riscriverebbe subito dopo la cancellazione, lasciando uno stato incoerente fra ciò che è a video e ciò che è su disco. Per quelle c'è lo strumento da riga di comando `tools/pulizia-preferenze.py`, che azzera anche `branding_cache.json` e va usato a programma chiuso (`python tools/pulizia-preferenze.py`, con `--dry-run` per vedere prima cosa farebbe). Usa le stesse funzioni della finestra Manutenzione, quindi cancella esattamente le stesse cose negli stessi posti.
+
+---
+
 ## 12. Parametri principali e default
 
 I valori sotto sono i default di fabbrica; quelli regolabili sono indicati nelle note.

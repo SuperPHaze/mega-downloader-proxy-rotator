@@ -580,6 +580,18 @@ class DownloadOrchestrator(QObject):
         self._pool_size_timer.stop()
         self._cache_save_timer.stop()
 
+    def has_active_workers(self) -> bool:
+        """C'e' almeno un worker ancora VIVO (thread non terminato)?
+
+        NON e' la stessa cosa di «la coda ha job non terminati»: dopo un
+        annullo globale la GUI marca subito tutti i job come annullati, ma i
+        thread escono al proprio checkpoint successivo e fino a quel momento
+        stanno ancora scrivendo sui `.part`. Chi sta per cancellare file su
+        disco (la finestra Manutenzione) deve guardare QUESTO, non lo stato
+        dei job.
+        """
+        return any(w.isRunning() for w in self._workers)
+
     def shutdown(self, timeout_ms: int = 10_000) -> bool:
         """Teardown completo dell'orchestrator: da chiamare PRIMA di crearne
         uno nuovo o alla chiusura dell'app.

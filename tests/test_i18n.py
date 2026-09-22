@@ -740,10 +740,16 @@ def test_no_italian_plural_entry_repeats_itself():
     )
     # Restano solo le voci in cui la parola italiana e' davvero invariabile
     # («1 file», «1 link»): li' il singolare corretto COINCIDE col plurale.
+    # Le tre `maintenance.detail_*` sono lo stesso caso: contano «file» e
+    # «link». Dove la parola italiana si flette davvero — «voce/voci»,
+    # «frammento/frammenti» — le due forme sono distinte e non stanno qui.
     assert identiche == [
         "folder_expand.ok_line",
         "link_panel.history_more",
         "link_panel.import_done_body",
+        "maintenance.detail_downloads",
+        "maintenance.detail_logs",
+        "maintenance.detail_session",
     ], identiche
 
 

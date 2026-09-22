@@ -54,6 +54,7 @@ class ControlsBar(QWidget):
     experimental_requested = pyqtSignal()
     download_dir_changed = pyqtSignal(str)  # "" = torna al default
     minimize_ask_requested = pyqtSignal()   # rimetti la domanda alla riduzione
+    maintenance_requested = pyqtSignal()     # apri la finestra Manutenzione
 
     def __init__(self) -> None:
         super().__init__()
@@ -146,6 +147,14 @@ class ControlsBar(QWidget):
         self.language_combo.setMinimumWidth(150)
         self.language_combo.currentIndexChanged.connect(self._on_language_selected)
 
+        # Manutenzione: apre la finestra che azzera storico, stato di sessione,
+        # cartella dei download, log e cache dei proxy. Qui c'e' solo la porta:
+        # l'elenco di cio' che sparisce e le conferme stanno nella finestra
+        # (gui/maintenance_dialog.py), che e' l'unico posto in cui si cancella.
+        self.maintenance_btn = QPushButton()
+        self.maintenance_btn.clicked.connect(self._on_maintenance)
+        self.maintenance_btn.setMinimumWidth(150)
+
         # Pulsante Impostazioni: apre il popup con i controlli.
         self._settings_btn = QPushButton()
         self._settings_btn.clicked.connect(self._show_settings_menu)
@@ -167,6 +176,7 @@ class ControlsBar(QWidget):
             ("controls.row_download_dir", self.download_dir_btn),
             ("controls.row_minimize", self.minimize_reset_btn),
             ("controls.row_language", self.language_combo),
+            ("controls.row_maintenance", self.maintenance_btn),
         ):
             _container = QWidget()
             _hl = QHBoxLayout(_container)
@@ -235,6 +245,8 @@ class ControlsBar(QWidget):
         self._settings_btn.setToolTip(t("controls.settings_tooltip"))
         self._experimental_btn.setToolTip(t("controls.experimental_tooltip"))
         self.language_combo.setToolTip(t("controls.language_tooltip"))
+        self.maintenance_btn.setText(t("controls.maintenance_button"))
+        self.maintenance_btn.setToolTip(t("controls.maintenance_tooltip"))
 
         for _key, _lbl in self._settings_labels.items():
             _lbl.setText(t(_key))
@@ -342,6 +354,15 @@ class ControlsBar(QWidget):
         # stato, e un menu aperto sopra la nasconderebbe.
         self._settings_menu.close()
         self.minimize_ask_requested.emit()
+
+    # ---- manutenzione ------------------------------------------------------
+
+    def _on_maintenance(self) -> None:
+        # Come per la cartella di download: il popup si chiude PRIMA di aprire
+        # una finestra modale, altrimenti si annidano due cicli di eventi sul
+        # menu.
+        self._settings_menu.close()
+        self.maintenance_requested.emit()
 
     def _on_pause(self) -> None:
         self._paused = not self._paused

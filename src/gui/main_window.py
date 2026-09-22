@@ -42,6 +42,7 @@ from src.gui.error_render import ABANDON_ALIASES, render_error, resolve_payloads
 from src.gui.i18n import TR, t, tn
 from src.gui.job_detail_dialog import JobDetailDialog
 from src.gui.jobs_panel import JobsPanel, status_label
+from src.gui.maintenance_dialog import MaintenanceDialog
 from src.gui.link_panel import (
     LinkPanel,
     confirm_already_downloaded,
@@ -222,6 +223,7 @@ class MainWindow(QMainWindow):
         self.controls.experimental_requested.connect(self._open_experimental_dialog)
         self.controls.download_dir_changed.connect(self._on_download_dir_changed)
         self.controls.minimize_ask_requested.connect(self._on_minimize_ask_requested)
+        self.controls.maintenance_requested.connect(self._open_maintenance_dialog)
         self.jobs_panel.job_double_clicked.connect(self._open_detail)
         self.jobs_panel.cancel_job_requested.connect(self._on_cancel_job_requested)
         self.jobs_panel.delete_folder_requested.connect(self._on_delete_folder_requested)
@@ -420,6 +422,21 @@ class MainWindow(QMainWindow):
         dlg = ExperimentalFeaturesDialog(self)
         dlg.exec()
 
+    def _open_maintenance_dialog(self) -> None:
+        """Apre la finestra che azzera i dati su disco.
+
+        Due informazioni le sa solo la finestra principale e vanno passate:
+        se c'e' una sessione con job ancora vivi (le voci distruttive vengono
+        RIFIUTATE, non solo sconsigliate) e quale cartella di download e'
+        configurata — quella dell'utente, non per forza la predefinita."""
+        download_dir = self.controls.get_download_dir()
+        dlg = MaintenanceDialog(
+            self,
+            session_running=self._session_is_running(),
+            output_root=Path(download_dir) if download_dir else None,
+        )
+        dlg.exec()
+
     def _on_update_download_requested(self) -> None:
         QDesktopServices.openUrl(QUrl(repo_url()))
 
@@ -564,6 +581,28 @@ class MainWindow(QMainWindow):
     def _session_queue_drained(self) -> bool:
         """Ogni job della sessione e' arrivato a uno stato terminale."""
         return bool(self.jobs_panel.model.aggregates()["all_terminated"])
+
+    def _session_is_running(self) -> bool:
+        """Qualcuno sta ancora scrivendo su disco per conto della sessione?
+
+        E' la domanda della manutenzione, che rifiuta di cancellare file
+        finche' un worker li sta toccando, e ha DUE risposte da mettere in or:
+
+        - i job non sono tutti terminati (sessione normale in corso);
+        - oppure ci sono ancora worker vivi. Serve perche' l'annullo globale
+          marca TUTTI i job come annullati all'istante, mentre i thread escono
+          al proprio checkpoint successivo: in quella finestra i `.part`
+          vengono ancora scritti, e guardare solo lo stato dei job direbbe di
+          sì a un `rmtree`.
+
+        Diverso anche da `_session_is_open()`: a coda esaurita la sessione
+        esiste ancora — elenco, statistiche e pool restano — ma nessuno
+        scrive piu'."""
+        if self.orchestrator is None:
+            return False
+        if self.orchestrator.has_active_workers():
+            return True
+        return self._session_is_open() and not self._session_queue_drained()
 
     def _on_add_links_requested(self) -> None:
         """Il pulsante «Aggiungi link» ha tre esiti, secondo lo stato.

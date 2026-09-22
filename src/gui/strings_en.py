@@ -69,6 +69,14 @@ STRINGS: dict[str, str | dict[str, str]] = {
     "controls.row_download_dir": "Download folder:",
     "controls.row_minimize": "On minimize:",
     "controls.row_language": "Language:",
+    "controls.row_maintenance": "Maintenance:",
+
+    # ---- controls bar: maintenance -------------------------------------------
+    "controls.maintenance_button": "Clear data…",
+    "controls.maintenance_tooltip": (
+        "Clear the download history, the saved session, the download folder,\n"
+        "the logs and the proxy cache. Lists what goes and asks for confirmation."
+    ),
 
     # ---- controls bar: minimize target ---------------------------------------
     "controls.minimize_reset": "Ask every time",
@@ -239,6 +247,95 @@ STRINGS: dict[str, str | dict[str, str]] = {
     "proxy_bar.cache_title": "Proxy cache",
     "proxy_bar.cache_deleted": "Proxy cache deleted.",
     "proxy_bar.cache_absent": "No cache to delete.",
+
+    # ---- Maintenance window --------------------------------------------------
+    "maintenance.title": "Maintenance",
+    "maintenance.intro": (
+        "Clear the data the program has left on disk. Nothing is selected: "
+        "pick the entries, check the list you will be shown and confirm. "
+        "This cannot be undone."
+    ),
+    "maintenance.preferences_note": (
+        "Settings (preferences.json) cannot be cleared from here: the program "
+        "keeps them in memory and would write them straight back. For those, "
+        "use the command-line tool tools/pulizia-preferenze.py."
+    ),
+    "maintenance.locked_note": (
+        "A download session is running: the download folder and the logs "
+        "cannot be cleared right now. Deleting a file while it is being "
+        "written breaks the downloads in progress and penalises the proxies."
+    ),
+    "maintenance.locked_tooltip": (
+        "Not available while a download session is running."
+    ),
+
+    "maintenance.item_history": "Download history",
+    "maintenance.item_session": "Saved session",
+    "maintenance.item_downloads": "Download folder",
+    "maintenance.item_logs": "Logs and source statistics",
+    "maintenance.item_proxy_cache": "Proxy cache",
+
+    "maintenance.warn_history": (
+        "This is what feeds the «already downloaded» check: clear it "
+        "and the program will no longer recognise files taken in the past, "
+        "nor warn you when you paste the same link again."
+    ),
+    "maintenance.warn_session": (
+        "On the next start you will no longer be offered to resume the links "
+        "left pending. Files already half-written on disk stay where they are."
+    ),
+    "maintenance.warn_downloads": (
+        "Deletes the downloaded files and the half-finished fragments: "
+        "whatever goes has to be downloaded again from scratch. This is the "
+        "most destructive entry."
+    ),
+    "maintenance.warn_logs": (
+        "app.log, events.jsonl, terminal-log.txt, the source statistics and "
+        "the abandoned links. They only serve to work out what happened: "
+        "clearing them loses no download."
+    ),
+    "maintenance.warn_proxy_cache": (
+        "The next start will collect the proxies from scratch, so it will be "
+        "slower. No data is lost."
+    ),
+
+    "maintenance.detail_empty": "nothing to clear",
+    "maintenance.detail_locked": "{detail} · locked: session running",
+    "maintenance.detail_history": {
+        "one": "{n} entry · {size}",
+        "other": "{n} entries · {size}",
+    },
+    "maintenance.detail_session": {
+        "one": "{n} pending link · {size}",
+        "other": "{n} pending links · {size}",
+    },
+    "maintenance.detail_downloads": {
+        "one": "{n} file · {parts} · {size}",
+        "other": "{n} files · {parts} · {size}",
+    },
+    "maintenance.detail_logs": {
+        "one": "{n} file · {size}",
+        "other": "{n} files · {size}",
+    },
+    "maintenance.count_parts": {
+        "one": "{n} .part fragment",
+        "other": "{n} .part fragments",
+    },
+
+    "maintenance.confirm_title": "Confirm clearing?",
+    "maintenance.confirm_intro": (
+        "The following will be deleted. This cannot be undone."
+    ),
+    "maintenance.confirm_line": "{item} — {detail}",
+    "maintenance.confirm_file": "{name} ({size})",
+    "maintenance.confirm_button": "Clear",
+    "maintenance.cancel_button": "Cancel",
+    "maintenance.close": "Close",
+
+    "maintenance.report_ok": "{item}: cleared, {size} freed.",
+    "maintenance.report_failed": "{item}: failed — {error}",
+    "maintenance.report_failed_title": "Clearing failed",
+    "maintenance.report_total": "Total space freed: {size}.",
 
     # ---- Statistics panel (StatsPanel) ---------------------------------------------
     "stats_panel.title": "Statistics",

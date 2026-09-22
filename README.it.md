@@ -60,6 +60,7 @@ App **desktop per Windows** (Python + PyQt6) che scarica file **e intere cartell
 - **Interfaccia** a schede con cruscotto compatto a 3 zone (velocità, download, proxy) — gauge radiale di velocità (% del picco di sessione), barra segmentata per lo stato dei download, card compatte per lo stato del pool proxy — filtri job a pulsanti con conteggio dei file per stato (in corso/completati/non completati), tema chiaro/scuro, pausa/ripresa/annullo globali e per singolo job.
 - **Interfaccia bilingue italiano/inglese**: al primo avvio segue la lingua del sistema, poi si sceglie dal menu Impostazioni (Automatica / Italiano / English) e il cambio è immediato, senza riavviare. È tradotta tutta l'interfaccia, messaggi d'errore compresi; i messaggi nei file di log restano in italiano perché servono alla diagnosi.
 - **Icona nell'area di notifica**: riducendo la finestra si sceglie (una volta o per sempre) se mandarla accanto all'orologio o lasciarla nella barra delle applicazioni; avvisi a comparsa a ogni file completato, a ogni errore e a coda completata. La X chiude il programma, come sempre.
+- **Manutenzione dei dati su disco**: da Impostazioni si azzerano storico dei download, sessione salvata, cartella dei download, log e cache dei proxy. Ogni voce mostra quanto occupa davvero, niente è pre-selezionato, l'elenco di ciò che sparisce viene mostrato prima di cancellare e con un download in corso le voci pericolose sono disattivate.
 - **Modalità CLI** per macchine headless.
 
 ## ⚡ Installazione rapida (Windows 10/11)

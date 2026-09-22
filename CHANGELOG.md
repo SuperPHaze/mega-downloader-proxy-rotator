@@ -6,6 +6,30 @@ All notable changes to this project. Format based on [Keep a Changelog](https://
 
 ## [Unreleased]
 
+### Added
+- **"Maintenance" window, to clear the data the program leaves on disk.** It opens from
+  **Settings → "Maintenance:" → "Clear data…"** and covers five entries: download history, saved
+  session to resume, download folder, logs and source statistics, proxy cache. Next to each entry
+  is the **real count and size** read from disk at that moment (how many entries the history holds,
+  how many links are pending, how many files and `.part` fragments there are, how much the logs
+  take up), and what you read is exactly what goes.
+- **Nothing ticked when it opens, a list before deleting, a report afterwards.** Once you press the
+  button, a second window lists line by line the files that will be deleted with their sizes, and
+  the default button is **Cancel**. When it is done, the report of what was cleared and how much
+  space was freed stays in the window and also goes into the application log. If one entry fails,
+  the others go ahead and the report says which one and why.
+- **The download folder and the logs cannot be cleared while a session is running**: the window
+  shows them disabled and explains why (deleting a file while it is being written breaks the
+  downloads and penalises the proxies). The history and the saved session stay clearable even while
+  downloading. The block also applies in the seconds after a global **Cancel**, until the downloads
+  have really stopped writing.
+
+### Changed
+- The **settings** (`preferences.json`) are deliberately left out of the window: the program keeps
+  them in memory and would write them straight back, leaving an inconsistent state. For those there
+  is still the command-line tool `tools/pulizia-preferenze.py`, which now uses the **same
+  functions** as the Maintenance window instead of its own copy of the logic.
+
 ## [2.2.0] — 2026-09-14
 
 ### Added
@@ -148,7 +172,7 @@ All notable changes to this project. Format based on [Keep a Changelog](https://
 ## [1.20.0] — 2026-07-02
 
 ### Added
-- **Choosable download folder from the GUI.** Under **Settings → "Cartella download:"** you can
+- **Choosable download folder from the GUI.** Under **Settings → "Download folder:"** you can
   pick where files are saved; the choice is remembered across sessions. If you pick nothing, the
   default folder is used (the program's `downloads/`). If the chosen folder isn't writable, the
   program warns you and reverts to the default.

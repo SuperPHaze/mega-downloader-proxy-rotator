@@ -74,6 +74,14 @@ STRINGS: dict[str, str | dict[str, str]] = {
     "controls.row_download_dir": "Cartella download:",
     "controls.row_minimize": "Riduzione a icona:",
     "controls.row_language": "Lingua:",
+    "controls.row_maintenance": "Manutenzione:",
+
+    # ---- barra comandi: manutenzione ---------------------------------------
+    "controls.maintenance_button": "Azzera dati…",
+    "controls.maintenance_tooltip": (
+        "Azzera storico, stato della sessione, cartella dei download, log e\n"
+        "cache dei proxy. Elenca cosa sparisce e chiede conferma."
+    ),
 
     # ---- barra comandi: riduzione a icona ----------------------------------
     "controls.minimize_reset": "Chiedi ogni volta",
@@ -250,6 +258,106 @@ STRINGS: dict[str, str | dict[str, str]] = {
     "proxy_bar.cache_title": "Cache proxy",
     "proxy_bar.cache_deleted": "Cache proxy cancellata.",
     "proxy_bar.cache_absent": "Nessuna cache da cancellare.",
+
+    # ---- finestra Manutenzione ---------------------------------------------
+    # Qui si cancellano dati dell'utente: i testi devono dire cosa sparisce e
+    # cosa si perde, prima e non dopo. Nessuna casella e' spuntata all'apertura
+    # e il pulsante che conferma non e' quello predefinito (vedi rules/gui.md).
+    "maintenance.title": "Manutenzione",
+    "maintenance.intro": (
+        "Azzera i dati che il programma ha lasciato su disco. Niente è "
+        "selezionato: scegli le voci, controlla l'elenco che ti verrà mostrato "
+        "e conferma. L'operazione non è annullabile."
+    ),
+    "maintenance.preferences_note": (
+        "Le impostazioni (preferences.json) non si azzerano da qui: il "
+        "programma le tiene in memoria e le riscriverebbe subito. Per quelle "
+        "serve lo strumento da riga di comando tools/pulizia-preferenze.py."
+    ),
+    "maintenance.locked_note": (
+        "C'è una sessione di download in corso: la cartella dei download e i "
+        "log non si possono azzerare adesso. Cancellare un file mentre viene "
+        "scritto manda in errore i download in corso e penalizza i proxy."
+    ),
+    "maintenance.locked_tooltip": (
+        "Non disponibile con una sessione di download in corso."
+    ),
+
+    # Nomi delle voci (la chiave si compone come "maintenance.item_<voce>":
+    # le voci vengono da core/maintenance.py).
+    "maintenance.item_history": "Storico dei download",
+    "maintenance.item_session": "Stato della sessione",
+    "maintenance.item_downloads": "Cartella dei download",
+    "maintenance.item_logs": "Log e statistiche delle fonti",
+    "maintenance.item_proxy_cache": "Cache dei proxy",
+
+    # Avvisi: cosa si perde azzerando la voce.
+    "maintenance.warn_history": (
+        "È ciò che alimenta il controllo «già scaricato»: azzerandolo il "
+        "programma non riconoscerà più i file presi in passato e non ti "
+        "avviserà se reinserisci lo stesso link."
+    ),
+    "maintenance.warn_session": (
+        "Al prossimo avvio non verrà più proposto il ripristino dei link "
+        "rimasti in sospeso. I file già a metà sul disco restano dove sono."
+    ),
+    "maintenance.warn_downloads": (
+        "Cancella i file scaricati e i frammenti a metà: quello che sparisce "
+        "va riscaricato da capo. È la voce più distruttiva."
+    ),
+    "maintenance.warn_logs": (
+        "app.log, events.jsonl, terminal-log.txt, le statistiche delle fonti "
+        "e i link abbandonati. Servono solo a capire cosa è successo: "
+        "azzerandoli non si perde nessun download."
+    ),
+    "maintenance.warn_proxy_cache": (
+        "Il prossimo avvio rifarà la raccolta dei proxy da zero, quindi sarà "
+        "più lento. Non si perde nessun dato."
+    ),
+
+    # Riga di dettaglio sotto ogni voce: conteggio reale + spazio occupato,
+    # letti dal disco all'apertura della finestra.
+    "maintenance.detail_empty": "niente da cancellare",
+    # Clausola di blocco: si innesta sul dettaglio della voce, che resta
+    # visibile (il conteggio serve anche quando non si puo' cancellare).
+    "maintenance.detail_locked": "{detail} · bloccato: sessione in corso",
+    "maintenance.detail_history": {
+        "one": "{n} voce · {size}",
+        "other": "{n} voci · {size}",
+    },
+    "maintenance.detail_session": {
+        "one": "{n} link in sospeso · {size}",
+        "other": "{n} link in sospeso · {size}",
+    },
+    "maintenance.detail_downloads": {
+        "one": "{n} file · {parts} · {size}",
+        "other": "{n} file · {parts} · {size}",
+    },
+    "maintenance.detail_logs": {
+        "one": "{n} file · {size}",
+        "other": "{n} file · {size}",
+    },
+    "maintenance.count_parts": {
+        "one": "{n} frammento .part",
+        "other": "{n} frammenti .part",
+    },
+
+    # Seconda finestra: l'elenco esatto di cio' che sparisce.
+    "maintenance.confirm_title": "Confermi l'azzeramento?",
+    "maintenance.confirm_intro": (
+        "Verrà cancellato quanto segue. L'operazione non è annullabile."
+    ),
+    "maintenance.confirm_line": "{item} — {detail}",
+    "maintenance.confirm_file": "{name} ({size})",
+    "maintenance.confirm_button": "Azzera",
+    "maintenance.cancel_button": "Annulla",
+    "maintenance.close": "Chiudi",
+
+    # Resoconto, nella finestra e nel log.
+    "maintenance.report_ok": "{item}: azzerato, {size} liberati.",
+    "maintenance.report_failed": "{item}: non riuscito — {error}",
+    "maintenance.report_failed_title": "Azzeramento non riuscito",
+    "maintenance.report_total": "Spazio liberato in tutto: {size}.",
 
     # ---- pannello Statistiche (StatsPanel) ---------------------------------
     "stats_panel.title": "Statistiche",

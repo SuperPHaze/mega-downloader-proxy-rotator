@@ -290,6 +290,123 @@ def setup_logging(level: int = logging.DEBUG) -> Path:
     return _LOG_FILE
 
 
+def _iter_file_handlers():
+    """Ogni `FileHandler` installato nel processo: quelli del root (app.log,
+    events.jsonl) e quelli dei logger dedicati JSONL (`download_history`,
+    `failed_links`, `proxy_sources_stats`), che nascono pigri alla prima
+    scrittura e sono quindi presenti solo in certe sessioni."""
+    seen: set[int] = set()
+    loggers = [logging.getLogger()]
+    # La lista dei logger cambia mentre la si scorre (un modulo puo' crearne
+    # uno), quindi si fotografa prima.
+    for name in list(logging.root.manager.loggerDict):
+        candidate = logging.root.manager.loggerDict.get(name)
+        if isinstance(candidate, logging.Logger):
+            loggers.append(candidate)
+    for logger in loggers:
+        for handler in list(getattr(logger, "handlers", [])):
+            if isinstance(handler, logging.FileHandler) and id(handler) not in seen:
+                seen.add(id(handler))
+                yield handler
+
+
+def _truncate_handler_file(handler: logging.FileHandler) -> None:
+    """Chiude il flusso del canale, tronca il file e lo riapre.
+
+    E' l'unico modo di azzerare un log MENTRE l'applicazione lo tiene aperto:
+    su Windows `unlink` su un file aperto fallisce con errore di permessi.
+    Il flusso si riapre subito, ma anche se la riapertura fallisse il canale
+    si ricucirebbe da solo: `FileHandler.emit()` riapre quando
+    `self.stream is None` e la modalita' non e' `"w"`."""
+    handler.acquire()
+    try:
+        stream = handler.stream
+        if stream is not None:
+            try:
+                stream.flush()
+            except Exception:
+                pass
+            try:
+                stream.close()
+            except Exception:
+                pass
+            handler.stream = None
+        Path(handler.baseFilename).write_bytes(b"")
+        try:
+            handler.stream = handler._open()
+        except OSError:
+            handler.stream = None   # riaperto dal primo emit() utile
+    finally:
+        handler.release()
+
+
+def _truncate_terminal_log() -> bool:
+    """Azzera `terminal-log.txt` SENZA chiudere l'handle di modulo.
+
+    Qui il flusso non si puo' chiudere e riaprire come per i canali di
+    logging: `_TeeStream` ha catturato *questo* oggetto file, e sostituirlo
+    lascerebbe il tee a scrivere su un file chiuso (cioe' a perdere l'output
+    per il resto della sessione). Si tronca in posto: il file e' aperto in
+    modalita' `"w"`, quindi dopo il troncamento la prossima scrittura riparte
+    da zero."""
+    handle = _terminal_log_file_handle
+    if handle is None or handle.closed:
+        return False
+    try:
+        handle.flush()
+        handle.truncate(0)
+        handle.seek(0)
+        return True
+    except (OSError, ValueError):
+        return False
+
+
+def reset_log_file(path: Path) -> int:
+    """Azzera un file di log e ritorna i byte liberati.
+
+    Un file TENUTO APERTO dall'applicazione (app.log, events.jsonl,
+    download_history.log e gli altri JSONL, terminal-log.txt) viene troncato
+    attraverso il proprio canale e resta scrivibile: l'applicazione continua a
+    loggare senza accorgersene. Un file che nessuno tiene aperto (un archivio
+    ruotato come `app.log.1`) viene cancellato direttamente.
+
+    Propaga `OSError` se l'azzeramento fallisce: chi chiama deve poter dire
+    all'utente quale voce non e' riuscita.
+    """
+    target = Path(path)
+    try:
+        size = target.stat().st_size
+    except OSError:
+        size = 0
+    try:
+        resolved = target.resolve()
+    except OSError:
+        resolved = target
+
+    if resolved == _TERMINAL_LOG_FILE.resolve() and _truncate_terminal_log():
+        return size
+
+    held = False
+    for handler in _iter_file_handlers():
+        base = getattr(handler, "baseFilename", None)
+        if not base:
+            continue
+        try:
+            if Path(base).resolve() != resolved:
+                continue
+        except OSError:
+            continue
+        _truncate_handler_file(handler)
+        held = True
+
+    if held:
+        return size
+
+    if target.exists():
+        target.unlink()
+    return size
+
+
 def install_qt_message_handler() -> None:
     """Instrada i messaggi interni di Qt (warning/critical/fatal) sul logger
     Python invece di lasciarli solo sulla console. Import di PyQt6 locale

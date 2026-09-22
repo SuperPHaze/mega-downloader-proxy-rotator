@@ -63,6 +63,10 @@ CONTRATTI_INTERNI = {
         "core/logging_setup.py",
         "nessun descrittore: processo senza console (pythonw)",
     ),
+    # Chiave di manutenzione non prevista: la passa il codice, non l'utente —
+    # le voci sono una costante del modulo (`maintenance.ITEMS`). Se un utente
+    # vedesse questo messaggio sarebbe un bug nostro, non un errore d'uso.
+    ("core/maintenance.py", "voce di manutenzione sconosciuta: {}"),
 }
 
 

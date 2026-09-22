@@ -234,6 +234,28 @@ A **passive diagnostics suite**, always on, complements these logs: native crash
 
 ---
 
+## 11-bis. Clearing data: the Maintenance window
+
+The program leaves five things on disk: the downloaded files, the download history, the saved session to resume, the logs and the proxy cache. They are cleared from the **Settings → "Maintenance:" → "Clear data…"** menu, which opens a dedicated window.
+
+The window lists the five entries with, next to each one, **the real count and size read from disk at that moment** — how many entries the history holds, how many links are still pending, how many files and how many `.part` fragments are in the download folder, how much the logs take up. Nothing is ticked when the window opens: entries are picked one by one. An entry with nothing to clear is disabled and says so ("nothing to clear").
+
+What each entry costs you:
+
+- **Download history** (`logs/download_history.log`): this is what feeds the "already downloaded" warning. Clear it and the program no longer recognises files taken in the past, nor warns you when you paste the same link again. The check keeps working, it simply recognises nothing any more.
+- **Saved session** (`session_state.json`): on the next start you will no longer be offered to resume the links left pending. Files already half-written on disk stay where they are and byte-level resume keeps working.
+- **Download folder**: empties the configured download folder (the one picked under **Settings → "Download folder:"**, or the default). This is the most destructive entry: whatever goes has to be downloaded again from scratch. The folder itself stays in place.
+- **Logs and source statistics**: `app.log` and its archives, `events.jsonl` and its archives, `terminal-log.txt`, the per-source proxy metrics and the abandoned-links log. They only serve diagnostics: clearing them loses no download. Deliberately left out are `logs/crash.log` and the telemetry under `logs/telemetry/`, which are needed precisely when something has gone wrong.
+- **Proxy cache** (`proxy_cache.json`): the next start collects the proxies from scratch and will therefore be slower. No data is lost. It is the same operation as the **"Reset cache"** button in the dashboard's proxy area.
+
+**Before deleting**, a second window lists line by line what will go, with file names and sizes; the default button is **Cancel**, not the one that deletes. **Afterwards**, the window shows a report of what was cleared and how much space was freed, and the same information goes into the application log. If one entry fails (a file locked by another program, say), the others go ahead anyway and the report says which one failed and why.
+
+**While a download session is running**, the download folder and the logs **cannot be cleared**: the window shows them disabled and explains why. It is not a recommendation — deleting a `.part` file while the program is writing to it breaks the downloads in progress and penalises innocent proxies. The history and the saved session stay clearable even during an active session, because nothing is writing them at that moment. The block stays on for the seconds after a global **Cancel** too, until the downloads have really stopped writing.
+
+**What cannot be cleared from the GUI, and why.** The settings (`preferences.json`) stay out: the program keeps them in memory and would write them straight back after the deletion, leaving an inconsistent state between what is on screen and what is on disk. For those there is the command-line tool `tools/pulizia-preferenze.py`, which also clears `branding_cache.json` and is meant to be used with the program closed (`python tools/pulizia-preferenze.py`, with `--dry-run` to see what it would do first). It uses the same functions as the Maintenance window, so it deletes exactly the same things in the same places.
+
+---
+
 ## 12. Key parameters and defaults
 
 The values below are factory defaults; the configurable ones are noted accordingly.

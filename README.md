@@ -64,6 +64,7 @@ A **Windows desktop app** (Python + PyQt6) that downloads files **and entire fol
 - **Tabbed interface** with a compact 3-zone dashboard (speed, downloads, proxy) — a radial speed gauge (% of session peak), a segmented bar for download status, compact cards for proxy pool status — button-based job filters showing the file count per state (in progress/completed/not completed), light/dark theme, global and per-job pause/resume/cancel.
 - **Bilingual Italian/English interface**: on first launch it follows the system language, then you choose it from the Settings menu (Automatic / Italiano / English) and the change is immediate, with no restart. The whole interface is translated, error messages included; messages in the log files stay in Italian because they are there for diagnostics.
 - **Notification area icon**: when you minimize the window you choose — once, or for good — whether to send it next to the clock or leave it in the taskbar; pop-up notices on every completed file, on every error and when the queue is done. The X still closes the program, as always.
+- **Disk data maintenance**: from Settings you can clear the download history, the saved session, the download folder, the logs and the proxy cache. Each entry shows how much it actually takes up, nothing is pre-selected, the list of what will go is shown before anything is deleted, and while a download is running the dangerous entries are disabled.
 - **CLI mode** for headless machines.
 
 ## ⚡ Quick install (Windows 10/11)
