@@ -6,6 +6,8 @@ Tutte le modifiche rilevanti del progetto. Formato basato su [Keep a Changelog](
 
 ## [Non rilasciato]
 
+## [2.3.0] — 2026-09-22
+
 ### Aggiunto
 - **Finestra «Manutenzione», per azzerare i dati che il programma lascia su disco.** Si apre da
   **Impostazioni → «Manutenzione:» → «Azzera dati…»** e copre cinque voci: storico dei download,

@@ -6,6 +6,8 @@ All notable changes to this project. Format based on [Keep a Changelog](https://
 
 ## [Unreleased]
 
+## [2.3.0] — 2026-09-22
+
 ### Added
 - **"Maintenance" window, to clear the data the program leaves on disk.** It opens from
   **Settings → "Maintenance:" → "Clear data…"** and covers five entries: download history, saved
