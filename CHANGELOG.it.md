@@ -9,6 +9,41 @@ Tutte le modifiche rilevanti del progetto. Formato basato su [Keep a Changelog](
 ## [2.3.0] — 2026-09-22
 
 ### Aggiunto
+- **Icona nell'area di notifica, accanto all'orologio.** Riducendo la finestra a icona il
+  programma chiede dove metterla — **area di notifica** oppure **barra delle applicazioni**,
+  com'era prima — e la finestra di domanda ha una casella **«Ricorda la scelta»**. Dall'icona:
+  doppio clic per riaprire la finestra, menu con **«Mostra la finestra»** ed **«Esci»**,
+  suggerimento del mouse con lo stato della sessione (file in corso, completati, velocità).
+  Quando l'app è nell'area di notifica non compare più nella barra delle applicazioni, e con lei
+  spariscono anche le finestre di dettaglio aperte (tornano al ripristino, come stavano). Nuovi
+  **avvisi a comparsa**: a ogni file completato, a ogni file non riuscito e a coda completata.
+  Il pulsante di chiusura della finestra (la X) resta quello di sempre: chiude l'applicazione.
+  Se l'area di notifica non è disponibile, nessuna domanda e nessuna icona: la riduzione resta
+  quella di prima.
+- **Menu Impostazioni → «Riduzione a icona:»**, con il pulsante **«Chiedi ogni volta»**: rimette
+  la domanda dopo che è stata messa a tacere con «Ricorda la scelta». Il suggerimento del mouse
+  dice qual è la scelta attualmente in vigore.
+- **Avvio senza finestra del terminale.** `avvia.bat` ora lancia il programma con `pythonw.exe`:
+  nessuna finestra nera che resta aperta accanto all'applicazione. Il nuovo **`avvia-debug.bat`**
+  fa l'opposto e mantiene il terminale visibile: è il lancio di riserva da usare quando l'app non
+  parte e si vuole vedere perché. `install.ps1` crea entrambi i file.
+- **Aggiungere link a una sessione in corso, senza interrompere i download.** Il pulsante
+  **Aggiungi link** resta attivo mentre si scarica: i nuovi link entrano nella coda della
+  sessione corrente senza fermare i file in corso e senza rifare la raccolta dei proxy, che è
+  la parte lenta dell'avvio. Il numero di file scaricati contemporaneamente non cambia: gli
+  aggiunti aspettano il loro turno.
+- **Scelta della posizione al momento dell'aggiunta**: *in fondo alla coda* oppure *subito dopo
+  il download in corso*, per farli passare davanti ai link già in attesa.
+- **Avviso sui link già presenti nella sessione.** Se un link è già in coda, in download o già
+  concluso, viene elencato con il suo stato e serve una conferma per aggiungerlo comunque. Il
+  confronto è per handle Mega: riconosce lo stesso file anche incollato in una forma di URL
+  diversa.
+- **A coda già finita l'aggiunta chiede cosa fare**: proseguire la stessa sessione — tenendo
+  elenco, statistiche, cronometro e i proxy già validati — oppure ripartire pulito come un
+  avvio nuovo.
+- Un **link a cartella** aggiunto a caldo viene elencato con una finestra di avanzamento **non
+  modale**, che dichiara che i download in corso proseguono: pausa, annullo e dettaglio dei file
+  restano raggiungibili mentre la cartella viene letta.
 - **Finestra «Manutenzione», per azzerare i dati che il programma lascia su disco.** Si apre da
   **Impostazioni → «Manutenzione:» → «Azzera dati…»** e copre cinque voci: storico dei download,
   stato della sessione da riprendere, cartella dei download, log e statistiche delle fonti, cache
@@ -32,66 +67,19 @@ Tutte le modifiche rilevanti del progetto. Formato basato su [Keep a Changelog](
   lo strumento da riga di comando `tools/pulizia-preferenze.py`, che ora usa le **stesse funzioni**
   della finestra Manutenzione invece di una copia propria della logica.
 
-## [2.2.0] — 2026-09-14
-
-### Aggiunto
-- **Aggiungere link a una sessione in corso, senza interrompere i download.** Il pulsante
-  **Aggiungi link** resta attivo mentre si scarica: i nuovi link entrano nella coda della
-  sessione corrente senza fermare i file in corso e senza rifare la raccolta dei proxy, che è
-  la parte lenta dell'avvio. Il numero di file scaricati contemporaneamente non cambia: gli
-  aggiunti aspettano il loro turno.
-- **Scelta della posizione al momento dell'aggiunta**: *in fondo alla coda* oppure *subito dopo
-  il download in corso*, per farli passare davanti ai link già in attesa.
-- **Avviso sui link già presenti nella sessione.** Se un link è già in coda, in download o già
-  concluso, viene elencato con il suo stato e serve una conferma per aggiungerlo comunque. Il
-  confronto è per handle Mega: riconosce lo stesso file anche incollato in una forma di URL
-  diversa.
-- **A coda già finita l'aggiunta chiede cosa fare**: proseguire la stessa sessione — tenendo
-  elenco, statistiche, cronometro e i proxy già validati — oppure ripartire pulito come un
-  avvio nuovo.
-- Un **link a cartella** aggiunto a caldo viene elencato con una finestra di avanzamento **non
-  modale**, che dichiara che i download in corso proseguono: pausa, annullo e dettaglio dei file
-  restano raggiungibili mentre la cartella viene letta.
-
-## [2.1.0] — 2026-09-14
-
-### Aggiunto
-- **Icona nell'area di notifica, accanto all'orologio.** Riducendo la finestra a icona il
-  programma chiede dove metterla — **area di notifica** oppure **barra delle applicazioni**,
-  com'era prima — e la finestra di domanda ha una casella **«Ricorda la scelta»**. Dall'icona:
-  doppio clic per riaprire la finestra, menu con **«Mostra la finestra»** ed **«Esci»**,
-  suggerimento del mouse con lo stato della sessione (file in corso, completati, velocità).
-  Quando l'app è nell'area di notifica non compare più nella barra delle applicazioni, e con lei
-  spariscono anche le finestre di dettaglio aperte (tornano al ripristino, come stavano). Nuovi
-  **avvisi a comparsa**: a ogni file completato, a ogni file non riuscito e a coda completata.
-  Il pulsante di chiusura della finestra (la X) resta quello di sempre: chiude l'applicazione.
-  Se l'area di notifica non è disponibile, nessuna domanda e nessuna icona: la riduzione resta
-  quella di prima.
-- **Menu Impostazioni → «Riduzione a icona:»**, con il pulsante **«Chiedi ogni volta»**: rimette
-  la domanda dopo che è stata messa a tacere con «Ricorda la scelta». Il suggerimento del mouse
-  dice qual è la scelta attualmente in vigore.
-- **Avvio senza finestra del terminale.** `avvia.bat` ora lancia il programma con `pythonw.exe`:
-  nessuna finestra nera che resta aperta accanto all'applicazione. Il nuovo **`avvia-debug.bat`**
-  fa l'opposto e mantiene il terminale visibile: è il lancio di riserva da usare quando l'app non
-  parte e si vuole vedere perché. `install.ps1` crea entrambi i file.
-
 ### Corretto
-- **Icona dell'applicazione caricata in modo esplicito a tutte le sue dimensioni.** Il file
-  `assets/icon.ico` ne contiene sette (16, 24, 32, 48, 64, 128, 256 pixel): ora vengono lette e
-  registrate una per una, invece di lasciare al lettore di immagini la scelta di quante
-  esporne. Il ripiego al `.png` scatta anche quando il `.ico` esiste ma non è leggibile (prima
-  il controllo si affidava a un dettaglio interno della libreria grafica), e l'avviso nel log
-  quando non si carica nulla è ora coperto da un test.
 - **Avvio silenzioso senza console: la cattura dell'output non si rompe più.** Senza terminale
   `sys.stdout`/`sys.stderr` non esistono, e la prima riga di log avrebbe fatto cadere il
   programma prima ancora che la finestra comparisse. Ora `logs/terminal-log.txt` resta l'unica
   copia di ciò che si vedeva a video e continua a essere scritto, e un'eccezione non gestita del
   thread principale finisce anche in `logs/crash.log` — dove la legge `tools/report.py` — invece
   di svanire insieme al terminale che non c'è.
-- **`package.ps1` si accorge anche dei file `.bat` nuovi non tracciati da git**, non solo dei
-  `.py`: i due file di avvio sono in prima linea per chi riceve il pacchetto, e uno nuovo
-  sarebbe finito fuori dallo zip senza che nessuno se ne accorgesse fino al doppio clic
-  mancato.
+- **Icona dell'applicazione caricata in modo esplicito a tutte le sue dimensioni.** Il file
+  `assets/icon.ico` ne contiene sette (16, 24, 32, 48, 64, 128, 256 pixel): ora vengono lette e
+  registrate una per una, invece di lasciare al lettore di immagini la scelta di quante
+  esporne. Il ripiego al `.png` scatta anche quando il `.ico` esiste ma non è leggibile (prima
+  il controllo si affidava a un dettaglio interno della libreria grafica), e l'avviso nel log
+  quando non si carica nulla è ora coperto da un test.
 - **`install.ps1` prepara davvero tutto in un solo passaggio**: oltre a `requirements.txt` installa
   ora anche `requirements-dev.txt` (serve a `pytest` e a `tools/demo/demo_runner.py`, prima andava
   installato a mano) e verifica/installa **ffmpeg** via winget (richiesto solo dal demo runner in
@@ -99,6 +87,10 @@ Tutte le modifiche rilevanti del progetto. Formato basato su [Keep a Changelog](
   Nuovo flag `-Minimal` per chi vuole solo l'app di base, senza dipendenze di test/strumenti né
   ffmpeg. Lo smoke test finale ora genera la lista dei moduli da un inventario reale delle
   dipendenze invece di una lista fissa nel codice.
+- **`package.ps1` si accorge anche dei file `.bat` nuovi non tracciati da git**, non solo dei
+  `.py`: i due file di avvio sono in prima linea per chi riceve il pacchetto, e uno nuovo
+  sarebbe finito fuori dallo zip senza che nessuno se ne accorgesse fino al doppio clic
+  mancato.
 
 ## [2.0.0] — 2026-08-21
 

@@ -9,6 +9,39 @@ All notable changes to this project. Format based on [Keep a Changelog](https://
 ## [2.3.0] — 2026-09-22
 
 ### Added
+- **Notification area icon, next to the clock.** When you minimize the window the program asks
+  where to put it — **notification area** or **taskbar**, the way it used to be — and the question
+  has a **"Remember this choice"** checkbox. From the icon: double-click to reopen the window, a
+  menu with **"Show window"** and **"Quit"**, and a mouse tooltip with the session status (files
+  running, completed, speed). While the app is in the notification area it no longer appears in the
+  taskbar, and any open detail windows go with it (they come back, as they were, on restore). New
+  **pop-up notices**: on every completed file, on every failed file and when the queue is done.
+  The window close button (the X) is unchanged: it closes the application. If the notification area
+  is not available, no question and no icon: minimizing behaves exactly as before.
+- **Settings menu → "On minimize:"**, with the **"Ask every time"** button: it brings the question
+  back after it was silenced with "Remember this choice". The mouse tooltip tells you which choice
+  is currently in force.
+- **Startup with no terminal window.** `avvia.bat` now launches the program with `pythonw.exe`: no
+  black window left open next to the application. The new **`avvia-debug.bat`** does the opposite
+  and keeps the terminal visible: it is the backup launcher to use when the app does not start and
+  you want to see why. `install.ps1` creates both files.
+- **Add links to a running session, without interrupting the downloads.** The **Add links**
+  button stays active while downloading: new links join the queue of the current session
+  without stopping the files under way and without redoing the proxy collection, which is
+  the slow part of starting up. The number of files downloaded at the same time does not
+  change: the added ones wait their turn.
+- **Choice of position when adding**: *at the end of the queue* or *right after the current
+  download*, to jump ahead of the links already waiting.
+- **Warning about links already in the session.** If a link is already queued, downloading
+  or already finished, it is listed with its state and needs a confirmation to be added
+  anyway. The comparison is by Mega handle: it recognises the same file even when pasted in
+  a different URL form.
+- **When the queue has already finished, adding asks what to do**: carry on with the same
+  session — keeping the list, the statistics, the timer and the proxies already
+  validated — or start clean as a new run.
+- A **folder link** added while downloading is listed with a **non-modal** progress window
+  that states that the downloads under way keep going: pause, cancel and the per-file detail
+  stay reachable while the folder is read.
 - **"Maintenance" window, to clear the data the program leaves on disk.** It opens from
   **Settings → "Maintenance:" → "Clear data…"** and covers five entries: download history, saved
   session to resume, download folder, logs and source statistics, proxy cache. Next to each entry
@@ -32,51 +65,18 @@ All notable changes to this project. Format based on [Keep a Changelog](https://
   is still the command-line tool `tools/pulizia-preferenze.py`, which now uses the **same
   functions** as the Maintenance window instead of its own copy of the logic.
 
-## [2.2.0] — 2026-09-14
-
-### Added
-- **Add links to a running session, without interrupting the downloads.** The **Add links**
-  button stays active while downloading: new links join the queue of the current session
-  without stopping the files under way and without redoing the proxy collection, which is
-  the slow part of starting up. The number of files downloaded at the same time does not
-  change: the added ones wait their turn.
-- **Choice of position when adding**: *at the end of the queue* or *right after the current
-  download*, to jump ahead of the links already waiting.
-- **Warning about links already in the session.** If a link is already queued, downloading
-  or already finished, it is listed with its state and needs a confirmation to be added
-  anyway. The comparison is by Mega handle: it recognises the same file even when pasted in
-  a different URL form.
-- **When the queue has already finished, adding asks what to do**: carry on with the same
-  session — keeping the list, the statistics, the timer and the proxies already
-  validated — or start clean as a new run.
-- A **folder link** added while downloading is listed with a **non-modal** progress window
-  that states that the downloads under way keep going: pause, cancel and the per-file detail
-  stay reachable while the folder is read.
-
-## [2.1.0] — 2026-09-14
-
-### Added
-- **Notification area icon, next to the clock.** When you minimize the window the program asks
-  where to put it — **notification area** or **taskbar**, the way it used to be — and the question
-  has a **"Remember this choice"** checkbox. From the icon: double-click to reopen the window, a
-  menu with **"Show window"** and **"Quit"**, and a mouse tooltip with the session status (files
-  running, completed, speed). While the app is in the notification area it no longer appears in the
-  taskbar, and any open detail windows go with it (they come back, as they were, on restore). New
-  **pop-up notices**: on every completed file, on every failed file and when the queue is done.
-  The window close button (the X) is unchanged: it closes the application. If the notification area
-  is not available, no question and no icon: minimizing behaves exactly as before.
-- **Settings menu → "On minimize:"**, with the **"Ask every time"** button: it brings the question
-  back after it was silenced with "Remember this choice". The mouse tooltip tells you which choice
-  is currently in force.
-- **Startup with no terminal window.** `avvia.bat` now launches the program with `pythonw.exe`: no
-  black window left open next to the application. The new **`avvia-debug.bat`** does the opposite
-  and keeps the terminal visible: it is the backup launcher to use when the app does not start and
-  you want to see why. `install.ps1` creates both files.
-
 ### Fixed
-- **`package.ps1` also notices new untracked `.bat` files**, not just `.py` ones: the two
-  launchers are front and centre for whoever receives the package, and a new one would have
-  fallen out of the zip with nobody noticing until the double-click that did nothing.
+- **Silent startup with no console: output capture no longer breaks.** With no terminal,
+  `sys.stdout`/`sys.stderr` do not exist, and the first log line would have brought the program
+  down before the window even appeared. Now `logs/terminal-log.txt` remains the only copy of what
+  used to be on screen and keeps being written, and an unhandled exception on the main thread also
+  ends up in `logs/crash.log` — where `tools/report.py` reads it — instead of vanishing along with
+  the terminal that is not there.
+- **Application icon loaded explicitly at all of its sizes.** The `assets/icon.ico` file contains
+  seven of them (16, 24, 32, 48, 64, 128, 256 pixels): they are now read and registered one by one,
+  instead of leaving it to the image reader to decide how many to expose. The `.png` fallback also
+  kicks in when the `.ico` exists but cannot be read (the check used to rely on an internal detail
+  of the graphics library), and the log warning for "nothing loaded" is now covered by a test.
 - **`install.ps1` really does set everything up in one pass**: besides `requirements.txt` it now
   also installs `requirements-dev.txt` (needed by `pytest` and `tools/demo/demo_runner.py`, which
   previously had to be installed by hand) and checks/installs **ffmpeg** via winget (needed only by
@@ -84,17 +84,9 @@ All notable changes to this project. Format based on [Keep a Changelog](https://
   is unavailable). New `-Minimal` flag for those who want just the base app, with no test/tool
   dependencies and no ffmpeg. The final smoke test now builds the module list from a real inventory
   of the dependencies instead of a fixed list in the code.
-- **Application icon loaded explicitly at all of its sizes.** The `assets/icon.ico` file contains
-  seven of them (16, 24, 32, 48, 64, 128, 256 pixels): they are now read and registered one by one,
-  instead of leaving it to the image reader to decide how many to expose. The `.png` fallback also
-  kicks in when the `.ico` exists but cannot be read (the check used to rely on an internal detail
-  of the graphics library), and the log warning for "nothing loaded" is now covered by a test.
-- **Silent startup with no console: output capture no longer breaks.** With no terminal,
-  `sys.stdout`/`sys.stderr` do not exist, and the first log line would have brought the program
-  down before the window even appeared. Now `logs/terminal-log.txt` remains the only copy of what
-  used to be on screen and keeps being written, and an unhandled exception on the main thread also
-  ends up in `logs/crash.log` — where `tools/report.py` reads it — instead of vanishing along with
-  the terminal that is not there.
+- **`package.ps1` also notices new untracked `.bat` files**, not just `.py` ones: the two
+  launchers are front and centre for whoever receives the package, and a new one would have
+  fallen out of the zip with nobody noticing until the double-click that did nothing.
 
 ## [2.0.0] — 2026-08-21
 
