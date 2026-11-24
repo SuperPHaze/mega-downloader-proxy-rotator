@@ -47,3 +47,37 @@ def test_load_filters_non_string_entries(monkeypatch, tmp_path):
         json.dumps({"schema": 1, "urls": ["a", 5, "", None, "b"]}), encoding="utf-8"
     )
     assert session_store.load() == ["a", "b"]
+
+
+def test_restore_matches_individual_copies_and_reserves_removed_ids(monkeypatch, tmp_path):
+    _use_tmp(monkeypatch, tmp_path)
+    session_store.save({4: "one", 11: "duplicate", 7: "duplicate", 12: "removed"}, next_id=19)
+    jobs, following = session_store.restore_jobs(["duplicate", "new", "one", "duplicate", "duplicate"], tmp_path)
+    assert list(jobs.items()) == [(11, "duplicate"), (19, "new"), (4, "one"),
+                                  (7, "duplicate"), (20, "duplicate")]
+    assert following == 21
+    # Complete the highest ID and close again. Its number remains reserved.
+    session_store.save({4: "one"}, next_id=following)
+    assert session_store.restore_jobs(["one", "later"], tmp_path) == ({4: "one", 21: "later"}, 22)
+
+
+def test_restore_legacy_partial_only_for_unique_directory(monkeypatch, tmp_path):
+    from src.downloader.worker import job_output_dir
+
+    _use_tmp(monkeypatch, tmp_path)
+    session_store.save(["one", "many", "dup", "dup"])
+    for url, fid in [("one", 4), ("many", 1), ("many", 2), ("dup", 6), ("dup", 7)]:
+        cycle = job_output_dir(url, fid, tmp_path) / "ciclo_1"
+        cycle.mkdir(parents=True)
+        (cycle / "sample.part").write_bytes(b"partial")
+    jobs, following = session_store.restore_jobs(["dup", "one", "many", "dup"], tmp_path)
+    assert jobs == {8: "dup", 4: "one", 9: "many", 10: "dup"}
+    assert following == 11
+    assert (job_output_dir("one", 4, tmp_path) / "ciclo_1" / "sample.part").read_bytes() == b"partial"
+
+
+def test_malformed_identity_metadata_preserves_legacy_urls(monkeypatch, tmp_path):
+    path = _use_tmp(monkeypatch, tmp_path)
+    for bad_ids in [[4, 4], [False, 2], [2**64, 8], [9], [[], 3]]:
+        path.write_text(json.dumps({"schema": 1, "urls": ["a", "b"], "file_ids": bad_ids}))
+        assert session_store.restore_jobs(["a", "b"], tmp_path) == ({0: "a", 1: "b"}, 2)

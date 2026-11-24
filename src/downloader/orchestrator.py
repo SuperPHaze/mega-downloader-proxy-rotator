@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import unicodedata
 from datetime import datetime
 from pathlib import Path
 
@@ -45,6 +46,8 @@ from src.core.config import (
 )
 from src.core.download_history import extract_handle, record_completed
 from src.core.failed_log import log_failed_link
+from src.core.file_naming import folder_job_output_dir, sanitize_file_name
+from src.core.mega_links import parse_folder_job_url
 from src.core.sources_stats import log_validation_result
 from src.core.state import SessionState
 from src.downloader.worker import DownloadWorker
@@ -327,6 +330,7 @@ class DownloadOrchestrator(QObject):
         # Mantiene il file_id originale per coerenza con le righe del ProgressPanel.
         self._queue: list[tuple[int, str]] = []
         self._active_count = 0
+        self._active_folder_paths: dict[int, str] = {}
         # Generatore degli identificativi di job: MONOTONO per tutta la
         # sessione. Non si riusa mai un file_id, nemmeno dopo annullamenti o
         # riavvii: entra nel nome della cartella di destinazione
@@ -400,6 +404,8 @@ class DownloadOrchestrator(QObject):
         speed_admission_bps: int | None = None,
         link_capacity_mbit: float | None = None,
         output_root: Path | None = None,
+        file_ids: list[int] | None = None,
+        next_file_id: int = 0,
     ) -> None:
         if concurrency is not None:
             self.max_concurrent = max(1, int(concurrency))
@@ -543,14 +549,14 @@ class DownloadOrchestrator(QObject):
         })
 
         self.session_state.start()
-        # Gli identificativi si assegnano QUI, una volta sola: da start() in
-        # poi nessuno li ricalcola, cosi' un'aggiunta a caldo puo' chiedere i
-        # propri senza rischiare di collidere con quelli gia' consegnati alla
-        # GUI. Per la prima infornata restano 0..n-1, come con enumerate().
-        self._next_file_id = 0
+        # A new queue starts at zero. A restored queue keeps its original IDs
+        # and reserves the high-water mark, including already completed jobs.
+        entries = enumerate(links) if file_ids is None else zip(file_ids, links, strict=True)
+        self._pending_jobs = list(entries)
+        highest_id = max((fid for fid, _ in self._pending_jobs), default=-1)
+        self._next_file_id = max(next_file_id, highest_id + 1)
         self._workers_spawned = False
         self._setup_failed = False
-        self._pending_jobs = [(self._allocate_file_id(), u) for u in links]
         # F3/F4: passa il cap e i parametri speed test al thread di setup.
         # use_speed_test copre sia speed_selection (throughput+N5) sia
         # speed_admission disaccoppiato (solo ammissione, score+N normale).
@@ -731,10 +737,25 @@ class DownloadOrchestrator(QObject):
         self._fill_slots()
 
     def _fill_slots(self) -> None:
-        # Avvia worker finche' restano slot liberi e link in coda.
+        # Folder jobs share an output tree. A second writer must not change
+        # the .part between verification and rename, or through an open handle.
+        busy = set(self._active_folder_paths.values())
         while self._active_count < self.max_concurrent and self._queue:
-            file_id, link = self._queue.pop(0)
-            self._launch_worker(file_id, link)
+            for index, (file_id, link) in enumerate(self._queue):
+                job = parse_folder_job_url(link)
+                if job is not None:
+                    directory = folder_job_output_dir(job.rel_path, self.output_root)
+                    name = sanitize_file_name(job.file_name, fallback=f"mega_{job.node_handle}")
+                    path = unicodedata.normalize("NFC", str(directory / name)).casefold()
+                    if path in busy:
+                        continue
+                    busy.add(path)
+                    self._active_folder_paths[file_id] = path
+                self._queue.pop(index)
+                self._launch_worker(file_id, link)
+                break
+            else:
+                return
 
     def _launch_worker(self, file_id: int, link: str) -> None:
         log.info(
@@ -796,6 +817,7 @@ class DownloadOrchestrator(QObject):
         self._on_slot_freed(worker.file_id)
 
     def _on_slot_freed(self, file_id: int) -> None:
+        self._active_folder_paths.pop(file_id, None)
         self._active_count = max(0, self._active_count - 1)
         if self.speed_selection_enabled:
             low, high = self._compute_adaptive_thresholds()

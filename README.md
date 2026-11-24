@@ -44,7 +44,7 @@ A **Windows desktop app** (Python + PyQt6) that downloads files **and entire fol
 
 ## ✨ What makes it different
 
-- **Built for Mega** — public-link resolution and AES decryption are built in (no dependency on `mega.py`).
+- **MEGA file integrity** — after AES decryption, the app checks the byte count and the file authentication code (MAC) before completing the download.
 - **Validated, scored pool of free proxies** — scraped from dozens of sources (around 70), two-stage validation (optionally three with a speed test), per-proxy reputation, on-disk cache, background regeneration.
 - **A different proxy for every fragment** — rotation is per-fragment, not per-file: if a proxy dies, you lose at most one fragment.
 - **Granular resume** — completed fragments survive crashes, proxy changes, and changes to the number of connections.
@@ -116,7 +116,6 @@ Headless CLI:
 - Free proxies have a high death rate: it's normal for validation to discard most of them.
 - Speed depends on the proxies: typically from tens to a few hundred KB/s.
 - Mega may rate-limit the same file even from different IPs (403/509 from the CDN): temporarily blocked proxies are put to rest and reused (details in the [guide](Docs/OPERATING_GUIDE.md)).
-- File MAC verification is not yet implemented (planned).
 
 ## 🛡️ Disclaimer
 

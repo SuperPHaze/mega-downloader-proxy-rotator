@@ -175,6 +175,7 @@ def _finta_finestra():
     win.jobs_panel = _FakePanel()
     win.controls = _FakeFlag()
     win.link_panel = _FakeFlag()
+    win._next_file_id = 1
     win._links_by_id = {0: FILE_A}
     win._session_incomplete = {0: FILE_A}
     win._expected_files = 1

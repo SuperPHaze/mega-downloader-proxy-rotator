@@ -3,11 +3,10 @@
 # Niente piu' mega.py: usa MegaPublicClient (resolve URL + decifratura
 # attributi) + requests con `proxies=` nativo per il transfer dal CDN.
 # Decifratura AES-CTR a blocchi durante lo streaming, scrittura diretta
-# sul file finale (niente temp file, niente WinError 32).
+# sul .part, verifica del MAC e rinomina a file chiusi.
 from __future__ import annotations
 
 import logging
-import os
 import time
 from concurrent.futures import CancelledError
 from pathlib import Path
@@ -24,6 +23,7 @@ from src.core.config import (
 from src.core.disk import ensure_free_space, has_complete_file
 from src.core.errors import UserFacingRuntimeError
 from src.core.proxy_url import build_proxies_dict, build_proxy_url
+from src.downloader.file_integrity import matches_file_mac, promote_verified
 from src.downloader.mega_api import MegaApiError, MegaPublicClient
 from src.downloader.mega_crypto import a32_to_str
 
@@ -88,6 +88,7 @@ class MegaClient:
         cdn_url = info["cdn_url"]
         k = info["k"]
         iv = info["iv"]
+        meta_mac = info["meta_mac"]
         final_path = output_dir / file_name
         # Pattern .part + rename atomico: il client seriale non ha resume,
         # ma un download interrotto non deve mai lasciare un file con il nome
@@ -105,7 +106,8 @@ class MegaClient:
             except Exception:
                 pass
 
-        if reuse_existing and has_complete_file(final_path, file_size):
+        if (reuse_existing and has_complete_file(final_path, file_size)
+                and matches_file_mac(final_path, file_size, k, iv, meta_mac, should_abort)):
             if progress_callback:
                 progress_callback(100)
             return final_path
@@ -167,7 +169,7 @@ class MegaClient:
                 "download_incomplete", downloaded=downloaded, expected=file_size
             )
         # Download verificato: promuovi il .part al nome finale.
-        os.replace(part_path, final_path)
+        promote_verified(part_path, final_path, file_size, k, iv, meta_mac, should_abort)
         if progress_callback:
             try:
                 progress_callback(100)

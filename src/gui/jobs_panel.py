@@ -726,11 +726,11 @@ class JobsPanel(QWidget):
 
     # ---- slot pubblici (stesso contratto di JobsPanel precedente) --------
 
-    def reset(self, links: list[str]) -> None:
+    def reset(self, links: list[str] | dict[int, str]) -> None:
         self._clear_cards()
         self.model.reset(links)
-        for i in range(len(links)):
-            self._add_card(i)
+        for job in self.model.jobs_iter():
+            self._add_card(job.file_id)
         self._apply_filter()
         self._update_visibility()
 

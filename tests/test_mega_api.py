@@ -161,6 +161,7 @@ def test_folder_job_resolve_uses_node_in_payload_and_folder_in_query():
     assert info["handle"] == "NODE1"
     assert info["cdn_url"] == "http://cdn/x"
     assert info["file_size"] == 42
+    assert info["meta_mac"] == bytes.fromhex("0000000700000008")
 
 
 def test_folder_job_file_name_comes_from_the_job_not_from_the_attributes():

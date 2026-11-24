@@ -326,3 +326,22 @@ def test_thread_exit_without_a_terminal_signal_releases_its_slot(qt_app, monkeyp
     assert orch._workers[0].wait(3000)
     qt_app.processEvents()
     assert orch._active_count == 0
+
+
+def test_folder_writers_for_one_destination_wait_until_publication(qt_app, monkeypatch):
+    from src.core.mega_links import build_folder_job_url
+
+    tree = ("Archive", "photo.jpg")
+    first = build_folder_job_url("SHARE1", "NODE1", "key1", tree, 123)
+    second = build_folder_job_url("SHARE2", "NODE2", "key2", tree, 123)
+    orch, launched = _make(monkeypatch, [first, second, "independent"], concurrency=2)
+    orch._spawn_workers()
+    assert launched == [(0, first), (2, "independent")]
+    assert orch.add_jobs([first]) == [3]
+    orch._on_slot_freed(2)
+    assert _queue_ids(orch) == [1, 3]
+    orch._on_slot_freed(0)
+    assert launched[-1] == (1, second)
+    assert _queue_ids(orch) == [3]
+    orch._on_slot_freed(1)
+    assert launched[-1] == (3, first)

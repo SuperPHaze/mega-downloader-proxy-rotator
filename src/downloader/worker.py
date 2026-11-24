@@ -3,9 +3,9 @@
 # (o finche' la sessione viene annullata o l'utente preme Cancel).
 from __future__ import annotations
 
-import hashlib
 import logging
 import time
+from concurrent.futures import CancelledError
 from pathlib import Path
 
 from PyQt6.QtCore import QThread, pyqtSignal
@@ -21,11 +21,14 @@ from src.core.disk import InsufficientDiskSpaceError, has_complete_file
 from src.core.errors import error_payload, format_it
 from src.core.file_naming import (
     final_output_dir,
+    job_url_hash,
     folder_job_output_dir,
     sanitize_file_name,
 )
 from src.core.mega_links import parse_folder_job_url
 from src.core.state import SessionState
+from src.downloader.file_integrity import FileIntegrityError, matches_file_mac
+from src.downloader.mega_crypto import a32_to_str, base64_to_a32, derive_file_key
 from src.downloader.mega_client import MegaClient, MegaCryptoDependencyError
 from src.downloader.parallel_client import ParallelMegaDownloader
 from src.proxy.pool import ProxyPool
@@ -40,8 +43,7 @@ def job_output_dir(
     # che il nome file sia noto. Dopo il primo resolve viene rinominato in
     # final_output_dir() a trasferimento concluso.
     # `output_root` = cartella di download scelta dall'utente (None = default).
-    file_hash = hashlib.sha1(mega_url.encode("utf-8")).hexdigest()[:12]
-    return (output_root or OUTPUT_DIR) / f"{file_hash}_{file_id}"
+    return (output_root or OUTPUT_DIR) / f"{job_url_hash(mega_url)}_{file_id}"
 
 
 class _EffectiveSessionState:
@@ -263,6 +265,20 @@ class DownloadWorker(QThread):
         self._current_base_dir = destination
         self._last_final_path = (destination / relative).resolve()
 
+    def _verified_folder_file(self, target: Path) -> bool:
+        job = self._folder_job
+        if job.size is None or not has_complete_file(target, job.size):
+            return False
+        try:
+            raw = base64_to_a32(job.node_key_b64)
+            key, iv = derive_file_key(raw)
+            return matches_file_mac(target, job.size, key, iv, a32_to_str(raw[6:8]),
+                                    self._effective_state.should_abort_transfer)
+        except (CancelledError, OSError, ValueError):
+            # The ordinary path handles cancellation, resolves old jobs without a
+            # known size, and reports unreadable files or invalid keys.
+            return False
+
     def _run_cycle_until_success(self, cycle: int) -> bool:
         attempt = 0
         # Flag per evitare re-emissioni di file_resolved a ogni retry/re-resolve.
@@ -279,7 +295,7 @@ class DownloadWorker(QThread):
             # Per i job-cartella il nome e la dimensione sono già noti. Per
             # quelli singoli li controlla il client appena risolti i metadati.
             target = cycle_dir / self._folder_file_name
-            if has_complete_file(target, self._folder_job.size):
+            if self._verified_folder_file(target):
                 self._last_final_path = target.resolve()
                 self.progress.emit(self.file_id, cycle, 100)
                 self.cycle_completed.emit(self.file_id, cycle)
@@ -420,7 +436,7 @@ class DownloadWorker(QThread):
                             self.file_id, float(bps), dl, tot
                         ),
                         resolved_callback=_resolved_cb,
-                        reuse_existing=self._folder_job is None,
+                        reuse_existing=self._folder_job is None or self._folder_job.size is None,
                         file_id=self.file_id,
                     )
                 else:
@@ -432,7 +448,7 @@ class DownloadWorker(QThread):
                             self.file_id, float(bps), dl, tot
                         ),
                         resolved_callback=_resolved_cb,
-                        reuse_existing=self._folder_job is None,
+                        reuse_existing=self._folder_job is None or self._folder_job.size is None,
                         should_abort=self._effective_state.should_abort_transfer,
                     )
                 abs_path = final_path.resolve() if final_path is not None else cycle_dir.resolve()
@@ -460,26 +476,26 @@ class DownloadWorker(QThread):
                 self.fatal_error.emit(self.file_id, msg)
                 self.fatal_detail.emit(self.file_id, "config_error", params)
                 return False
-            except InsufficientDiskSpaceError as exc:
-                # Errore d'AMBIENTE (disco pieno): ritentare non libera spazio.
-                # Abbandona subito con un motivo chiaro invece di bruciare i
-                # tentativi; il proxy è innocente, niente penalità.
+            except (InsufficientDiskSpaceError, FileIntegrityError) as exc:
+                # A full disk or rejected file needs user action, not another proxy.
                 log.error("[file %d] ciclo %d tentativo %d: %s",
                           self.file_id, cycle, attempt, exc)
-                params = {"error": str(exc), "cause": error_payload(exc)}
-                msg = format_it("disk_full_short", params)
+                if isinstance(exc, FileIntegrityError):
+                    params = exc.params
+                    msg = format_it("file_mac_mismatch", params)
+                    self._emit_failed(cycle, attempt, "file_mac_mismatch", params)
+                else:
+                    params = {"error": str(exc), "cause": error_payload(exc)}
+                    msg = format_it("disk_full_short", params)
+                    self._emit_failed(cycle, attempt, "disk_full_short", params)
                 self._last_error_msg = msg
                 telemetry.event(
                     "file_abandoned", file_id=self.file_id,
                     attempts=self._total_attempts, last_error=msg,
                 )
-                self._emit_failed(cycle, attempt, "disk_full_short", params)
-                self.abandoned.emit(
-                    self.file_id, self.mega_url, self._total_attempts, msg,
-                )
+                self.abandoned.emit(self.file_id, self.mega_url, self._total_attempts, msg)
                 self.abandoned_detail.emit(
-                    self.file_id, self.mega_url, self._total_attempts,
-                    "disk_full_short", params,
+                    self.file_id, self.mega_url, self._total_attempts, *self._last_error_detail,
                 )
                 return False
             except Exception as exc:

@@ -5,6 +5,8 @@
 #   2. il check di resume, che deve guardare il NOME ESATTO del file e non
 #      "un file finale qualsiasi" — la cartella e' condivisa con gli altri
 #      file dello stesso albero.
+import base64
+
 import pytest
 from PyQt6.QtWidgets import QApplication
 
@@ -23,7 +25,10 @@ def _qapp():
 
 
 def _worker(rel_path, output_root, file_id=0, size=None):
-    url = build_folder_job_url("FID", "NODE1", "S2VZ", rel_path, size)
+    # Reference tags from the MEGA webclient for b"x" and b"z" * 5000.
+    tag = bytes.fromhex("0700ae13c1f14afe" if size == 5000 else "db060d45dcaaeb74")
+    key = base64.urlsafe_b64encode((bytes(8) + tag) * 2).decode().rstrip("=")
+    url = build_folder_job_url("FID", "NODE1", key, rel_path, size)
     w = DownloadWorker(file_id, url, ProxyPool(), SessionState(), output_root=output_root)
     w.run = None  # non deve mai partire davvero
     return w
@@ -111,7 +116,7 @@ def test_resume_does_not_fire_because_a_sibling_file_is_complete(tmp_path):
 
 def test_resume_fires_when_our_exact_file_is_there(tmp_path):
     w, _ = _prepare(
-        tmp_path, ("Cartella", "mio.bin"), existing_names=("altro.bin", "mio.bin"),
+        tmp_path, ("Cartella", "mio.bin"), existing_names=("altro.bin", "mio.bin"), size=1,
     )
     emitted = []
     w.cycle_completed.connect(lambda fid, c: emitted.append((fid, c)))
@@ -181,8 +186,17 @@ def test_truncated_file_is_redownloaded(tmp_path):
     assert w._run_cycle_until_success(1) is False
 
 
-def test_job_without_size_keeps_the_historical_behaviour(tmp_path):
-    # Forma vecchia del job (nessuna dimensione): vale la presenza del file.
+def test_job_without_size_requires_resolving_the_length(tmp_path):
     w, base = _prepare(tmp_path, ("Foto", "IMG_1.jpg"), size=None)
-    (base / "IMG_1.jpg").write_bytes(b"z" * 7)
-    assert w._run_cycle_until_success(1) is True
+    (base / "IMG_1.jpg").write_bytes(b"x")
+    w._get_proxy_blocking = lambda: None
+    w._sleep_interruptible = lambda _s: True
+    assert w._run_cycle_until_success(1) is False
+
+
+def test_folder_job_rejects_same_size_file_from_another_share(tmp_path):
+    w, base = _prepare(tmp_path, ("Foto", "IMG_1.jpg"), size=5000)
+    (base / "IMG_1.jpg").write_bytes(b"y" * 5000)
+    w._get_proxy_blocking = lambda: None
+    w._sleep_interruptible = lambda _s: True
+    assert w._run_cycle_until_success(1) is False

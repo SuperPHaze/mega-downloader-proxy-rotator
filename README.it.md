@@ -40,7 +40,7 @@ App **desktop per Windows** (Python + PyQt6) che scarica file **e intere cartell
 
 ## ✨ Perché è diversa
 
-- **Specifica per Mega** — resolve del link pubblico e decifratura AES integrati (nessuna dipendenza da `mega.py`).
+- **Integrità dei file MEGA** — dopo la decifratura AES, l’app verifica la dimensione e il codice di autenticazione (MAC) prima di completare il download.
 - **Pool di proxy gratuiti validato e con punteggio** — scraping da decine di fonti (circa 70), validazione a due stadi (opzionalmente a tre con test di velocità), reputazione per proxy, cache su disco, rigenerazione in background.
 - **Un proxy diverso per ogni chunk** — la rotazione è per-chunk, non per-file: se un proxy cade, perdi al massimo un chunk.
 - **Resume granulare** — i chunk completati sopravvivono a crash, cambio proxy e cambio numero di connessioni.
@@ -112,7 +112,6 @@ CLI senza interfaccia:
 - I proxy gratuiti hanno mortalità elevata: è normale che la validazione ne scarti la maggior parte.
 - La velocità dipende dai proxy: tipicamente da decine a poche centinaia di KB/s.
 - Mega può applicare rate-limit allo stesso file anche da IP diversi (403/509 dal CDN): i proxy temporaneamente bloccati vengono messi a riposo e riusati (dettagli nella [guida](Docs/GUIDA_OPERATIVA.md)).
-- Verifica MAC del file scaricato non ancora implementata (pianificata).
 
 ## 🛡️ Disclaimer
 

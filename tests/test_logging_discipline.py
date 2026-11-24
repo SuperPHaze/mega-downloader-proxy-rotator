@@ -73,9 +73,9 @@ def test_parallel_chunk_exhausted_retries_logs_warning_not_error(tmp_path, monke
     monkeypatch.setattr(
         downloader,
         "_resolve_cdn",
-        lambda *a, **kw: (
-            "FILEHANDLE", [0, 0, 0, 0], [0, 0],
-            "http://cdn.example/test", 16, "testfile.bin",
+        lambda *a, **kw: dict(
+            handle="FILEHANDLE", k=(0, 0, 0, 0), iv=(0, 0, 0, 0), meta_mac=bytes(8),
+            cdn_url="http://cdn.example/test", file_size=16, file_name="testfile.bin",
         ),
     )
 

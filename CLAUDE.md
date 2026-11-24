@@ -59,7 +59,7 @@ src/
 │   │                     #   `preferences.json` (l'app lo riscriverebbe), `crash.log` e la
 │   │                     #   telemetria, e la cache proxy (vive in `src/proxy/`, che core non
 │   │                     #   può importare: la chiama la finestra, con `delete_proxy_cache`)
-│   ├── session_store.py   # persistenza JSON dei link NON completati della sessione (save/load/clear, mai solleva) per il prompt "Riprendi sessione precedente?" all'avvio; i .part fanno il resume a livello byte
+│   ├── session_store.py   # sessione JSON con URL, file_ids e prossimo ID libero. Ripristina anche le vecchie liste di URL nella destinazione scelta
 │   └── proxy_url.py       # build_proxy_url/build_proxies_dict: schema URL in base al campo protocol (http/socks4/socks5 -> socks5h) + prefisso user:pass@ opzionale se il proxy porta credenziali, solo stdlib, usato da proxy/ e downloader/; include anche cache_bust_url() (parametro query anti-cache per gli speed test) e sustained_throughput_bps() (misura pura del throughput: finestra del corpo con fallback alla finestra completa sul burst-da-buffer, evita le "bande impossibili")
 ├── proxy/
 │   ├── sources.py         # 74 fonti pubbliche (4 html, 64 plain, 6 json/jsonl); per protocollo: 52 http, 16 socks5, 6 socks4 (campo opzionale "protocol" per fonte)
@@ -82,6 +82,7 @@ src/
 │   │                     #   (nome di radice distinto per share), cap MEGA_FOLDER_MAX_FILES
 │   │                     #   (loggato, mai silenzioso). `build_folder_expansion` è puro rispetto alla
 │   │                     #   rete (testabile con nodi fabbricati)
+│   ├── file_integrity.py  # meta-MAC MEGA sui byte in chiaro, con cancellazione e rinomina dopo la verifica
 │   ├── mega_client.py     # MegaClient seriale (single-stream via proxy); check spazio disco (ensure_free_space) prima del transfer
 │   ├── parallel_client.py # ParallelMegaDownloader (coda chunk a dimensione fissa, HTTP Range N parallele); check disco pre-allocazione; file da 0 byte gestito a parte; Retry-After onorato su 403/509/429; should_abort passato al re-resolve
 │   ├── worker.py          # DownloadWorker(QThread) — 1 link, N cicli; ramo job-cartella (_folder_job):
@@ -291,7 +292,7 @@ uccida il processo: da lì in poi l'uscita è ESPLICITA e passa tutta da `MainWi
   (`cause=error_payload(exc)`, o `children=[...]` per una lista) accanto al suo `str(exc)`:
   senza, la GUI in inglese incastona una frase italiana dentro una cornice inglese — e il
   controllo di fedeltà non lo vede, perché in italiano il testo coincide comunque.
-- Downloader: pattern `.part` + rename atomico. Si scarica SEMPRE su `<nome>.part` (sidecar `.progress.json` riferito al `.part`, include `chunk_size` per validare compatibilità del resume); `os.replace` sul nome finale solo a download completo e verificato. La ripresa controlla nome e dimensione del file atteso. Un registro di avanzamento vale solo per un parziale presente della dimensione prevista. I `.part` non vanno mai cancellati al cleanup (servono al resume: i chunk completati restano scritti e vengono skippati al retry).
+- Downloader: pattern `.part` + rename atomico. Si scarica SEMPRE su `<nome>.part` (sidecar `.progress.json` riferito al `.part`, include `chunk_size` per validare compatibilità del resume); `os.replace` sul nome finale solo a download completo e verificato. La ripresa controlla nome, dimensione e MAC del file atteso. Un registro di avanzamento vale solo per un parziale presente della dimensione prevista. Un errore di MAC invalida il registro e il parziale. Pausa, annullo e fallimento della rinomina conservano i checkpoint validi.
 - Pool scoring: i call-site devono registrare anche i successi (`record_success` su segmento completato / IP check ok) e usare `penalize(hard=True)` solo per 503 dal CDN; errori transitori (timeout, throughput basso, connection error) → `penalize(hard=False)`. Mai usare `mark_dead` (alias deprecato).
 - Pool cooldown vs penalize: il rate-limit 403/509 dal CDN Mega chiama `pool.cooldown(proxy)`, NON `penalize(hard=True)` — lo score non viene toccato (la reputazione resta intatta) ma il proxy è escluso sia da `get_next()` sia dal conteggio `size()`/`_count_alive_unlocked()` per `PROXY_COOLDOWN_SECONDS` (90s), poi torna selezionabile e contato. Se contasse come vivo mentre è a riposo, `size() > 0` farebbe saltare `refill_blocking(force=False)` anche quando il pool è di fatto inutilizzabile (starvation osservata con quasi tutti i proxy in cooldown insieme).
 - URL del proxy (schema): costruire SEMPRE con `build_proxy_url`/`build_proxies_dict` (`core/proxy_url.py`), mai con un f-string a mano — è l'unico punto che sa come mappare `protocol` (http/socks4/socks5) sullo schema giusto (socks5 → `socks5h://`, DNS risolto lato proxy). Richiede la dipendenza `PySocks` (in `requirements.txt`) perché `requests` parli gli schemi `socks4://`/`socks5h://`.

@@ -31,7 +31,8 @@ paths: ["src/downloader/**/*.py"]
 - `mega.py` NON è più una dipendenza. Le primitive crypto (`mega_crypto.py`) e l'API pubblica (`mega_api.py`) sono vendorizzate localmente.
 - `MegaPublicClient` (in `mega_api.py`) risolve un link pubblico Mega via API `cs?g=1` ritornando handle, URL CDN, dimensione, nome file decifrato. Usa `requests.Session` per-istanza con `session.proxies` nativi: nessun monkey-patch globale, nessun `threading.local`. Retry esplicito su `-3` (EAGAIN) bounded a 5 tentativi.
 - `mega_crypto.py` espone solo helper puri (no I/O, no stato globale): `base64_to_a32`, `a32_to_str`, `base64_url_decode`, `decrypt_attr` (AES-CBC sugli attributi), `derive_file_key` (split chiave a 8 word → k+iv per AES-CTR del payload).
-- `MegaClient` (in `mega_client.py`) usa `MegaPublicClient` per il resolve e `requests.get(stream=True)` per il transfer; decifra a blocchi con AES-CTR direttamente sul file finale (nessun temp file, nessun WinError 32 da gestire).
+- I client seriale e parallelo scrivono sul `.part`. `file_integrity.promote_verified` verifica dimensione e meta-MAC MEGA prima di `os.replace`. Un MAC errato invalida prima il checkpoint e poi il parziale. Il riavvio esplicito ritenta da zero. Un annullo durante la verifica conserva entrambi.
+- Anche il riuso di un file finale richiede dimensione e MAC. I blocchi di autenticazione seguono il formato MEGA e sono indipendenti dai range HTTP configurati.
 - L'import di `pycryptodome` resta locale dentro `MegaClient.download()` / `ParallelMegaDownloader.download()` per non rallentare l'avvio della GUI.
 - Se l'import di `Crypto` fallisce, sollevare `MegaCryptoDependencyError` (errore d'ambiente permanente, non transitorio): il worker lo cattura PRIMA di `Exception` e non chiama `mark_dead()` sul proxy innocente.
 
@@ -44,10 +45,7 @@ paths: ["src/downloader/**/*.py"]
 - Forma interna del job (costruita/riconosciuta SOLO da `core/mega_links.py`):
   `https://mega.nz/folder/<folder_id>/file/<node>?p=<b64url(rel_path)>&s=<byte>#<chiave_8_word>`.
   Il job resta una STRINGA: `session_store`, `download_history` e `worker` non cambiano contratto.
-  `&s=` e' la dimensione attesa: il worker la confronta con quella del file gia' presente prima
-  di dichiararlo completo. Senza, un file OMONIMO lasciato da un'altra cartella Mega (nell'albero
-  il path e' stabile fra le sessioni) verrebbe scambiato per il nostro e il download risulterebbe
-  completato senza aver scaricato niente. `&s=` e' opzionale in lettura (job vecchio stile).
+  `&s=` contiene la dimensione attesa. Quando è presente, il worker può verificare il file locale con la chiave del nodo senza accedere alla rete. Per i job precedenti senza `&s=` il client richiede la dimensione al resolver prima di riusare il file.
 - Richiesta `g` per un nodo di cartella: `n` ha DUE significati diversi nella stessa chiamata —
   handle del NODO nel payload, id della CARTELLA nella query (`_api_request(..., extra_params)`).
   Non è un refuso: documentarlo se si tocca quel codice.
@@ -98,10 +96,8 @@ Tutti i segnali hanno `file_id: int` come primo parametro per permettere alla GU
 
 ## Identificativi dei job: mai riusati
 
-- Il `file_id` lo assegna **solo** `DownloadOrchestrator._allocate_file_id()`, un contatore
-  monotono azzerato esclusivamente da `start()` (che apre una sessione nuova, dove anche la GUI
-  ricrea le righe da zero). Nessun altro punto deve calcolarlo, e in particolare **mai** con un
-  `enumerate()` sulla lista corrente: due infornate di link darebbero gli stessi numeri.
+- La coda iniziale associa ciascun URL al proprio ID. `session_store` salva gli ID dei job incompleti e il primo ID libero. Al ripristino abbina ogni occorrenza di un URL al suo ID. L'orchestrator e la GUI ricevono la stessa mappa. Le aggiunte a caldo usano il contatore monotono di `DownloadOrchestrator`.
+- Se due job di cartella hanno la stessa destinazione, il secondo attende la fine del primo. Le altre destinazioni possono avanzare.
 - **Non e' un dettaglio estetico**: il `file_id` entra nel nome della cartella di destinazione
   (`downloads/<sha1(url)[:12]>_<file_id>/`, vedi `worker.job_output_dir`) ed e' la chiave con cui
   la GUI indirizza righe, dialoghi di dettaglio e cancellazioni. Riusarne uno fa scrivere due

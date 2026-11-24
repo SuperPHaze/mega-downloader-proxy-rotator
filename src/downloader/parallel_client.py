@@ -11,8 +11,6 @@
 #
 # Limiti noti:
 # - I chunk vanno allineati a 16 byte (block size AES). Forzato in _split_chunks.
-# - La verifica MAC del file non viene fatta (richiederebbe un pass seriale
-#   sull'intero file). Confidiamo nella correttezza dei chunk CDN.
 # - Se mega.py cambia API privata (_parse_url, _api_request, crypto helpers)
 #   il client si rompe in modo esplicito.
 from __future__ import annotations
@@ -57,6 +55,7 @@ from src.core.disk import ensure_free_space, has_complete_file
 from src.core.errors import UserFacingRuntimeError, error_payload
 from src.core.proxy_url import build_proxies_dict as _proxies_dict
 from src.core.state import SessionState
+from src.downloader.file_integrity import matches_file_mac, promote_verified
 from src.downloader.mega_api import MegaPublicClient
 from src.downloader.mega_crypto import a32_to_str
 from src.downloader.mega_client import MegaCryptoDependencyError
@@ -232,9 +231,10 @@ class ParallelMegaDownloader:
         ).hexdigest()[:12]
         self._file_id = file_id
         _t0 = time.monotonic()
-        file_handle, k, iv, cdn_url, file_size, file_name = self._resolve_cdn(
-            mega_url, resolver_proxy,
-        )
+        info = self._resolve_cdn(mega_url, resolver_proxy)
+        file_handle, cdn_url = info["handle"], info["cdn_url"]
+        file_size, file_name = info["file_size"], info["file_name"]
+        k, iv, meta_mac = info["k"], info["iv"], info["meta_mac"]
         telemetry.event(
             "file_resolved",
             file_id=file_id, url_hash=self._url_hash,
@@ -251,8 +251,7 @@ class ParallelMegaDownloader:
         final_path = output_dir / file_name
         # Pattern .part + rename atomico: si scrive SEMPRE su `<nome>.part`;
         # il nome finale viene creato solo a download completo e verificato
-        # (os.replace). L'esistenza del nome finale e' l'UNICO marker di
-        # completamento usato dal check di resume del worker.
+        # (os.replace). Prima del riuso si ricontrollano dimensione e MAC.
         part_path = final_path.with_suffix(final_path.suffix + ".part")
         log.info(
             "[parallel] resolve ok: name=%s size=%d cdn_host=%s",
@@ -265,7 +264,8 @@ class ParallelMegaDownloader:
             except Exception:
                 pass
 
-        if reuse_existing and has_complete_file(final_path, file_size):
+        if (reuse_existing and has_complete_file(final_path, file_size)
+                and matches_file_mac(final_path, file_size, k, iv, meta_mac, self._verification_cancelled)):
             if progress_callback:
                 progress_callback(100)
             return final_path
@@ -276,8 +276,8 @@ class ParallelMegaDownloader:
         # e termina, mantenendo l'invariante "esiste il nome finale = completo".
         if file_size == 0:
             _progress_path(part_path).unlink(missing_ok=True)
-            part_path.unlink(missing_ok=True)
-            final_path.write_bytes(b"")
+            part_path.write_bytes(b"")
+            promote_verified(part_path, final_path, 0, k, iv, meta_mac, self._verification_cancelled)
             if progress_callback:
                 progress_callback(100)
             log.info("[parallel] file da 0 byte: creato vuoto %s", final_path)
@@ -457,7 +457,7 @@ class ParallelMegaDownloader:
             )
 
         # Se il rename fallisce, i byte e il loro registro restano riprendibili.
-        os.replace(part_path, final_path)
+        promote_verified(part_path, final_path, file_size, k, iv, meta_mac, self._verification_cancelled)
         try:
             _progress_path(part_path).unlink(missing_ok=True)
         except OSError:
@@ -877,6 +877,11 @@ class ParallelMegaDownloader:
             error=str(last_exc),
         )
 
+    def _verification_cancelled(self) -> bool:
+        if self.session_state is not None:
+            self.session_state.wait_if_paused()
+        return self._should_abort_resolve()
+
     def _should_abort_resolve(self) -> bool:
         """Cancellazione cooperativa per il resolver Mega: True se è scattato
         l'abort locale della coda o la cancellazione di sessione. Passato a
@@ -900,8 +905,7 @@ class ParallelMegaDownloader:
         return False
 
     def _resolve_cdn(self, mega_url: str, resolver_proxy: dict):
-        """Risolve un link Mega pubblico ritornando (file_handle, k, iv,
-        cdn_url, file_size, file_name). Usato sia al primo download che ai
+        """Risolve metadati, URL CDN e chiave del file. Usato al primo download e ai
         re-resolve quando la URL CDN scade (403/509/503).
 
         Usa il `resolver_proxy` passato per la chiamata API; se fallisce, il
@@ -912,11 +916,7 @@ class ParallelMegaDownloader:
             timeout=max(PROXY_TIMEOUT * 4, 30),
             should_abort=self._should_abort_resolve,
         )
-        info = client.resolve_public_url(mega_url)
-        return (
-            info["handle"], info["k"], info["iv"],
-            info["cdn_url"], info["file_size"], info["file_name"],
-        )
+        return client.resolve_public_url(mega_url)
 
     def _refresh_cdn_url(self, current_url: str) -> str | None:
         """Ri-risolve la URL CDN se quella corrente e' scaduta/throttled.
@@ -958,7 +958,7 @@ class ParallelMegaDownloader:
                     return None
                 _rr_tried += 1
                 try:
-                    _, _, _, new_url, _, _ = self._resolve_cdn(self._mega_url, proxy)
+                    new_url = self._resolve_cdn(self._mega_url, proxy)["cdn_url"]
                     self._cdn_url = new_url
                     log.info("[parallel] nuova CDN URL ottenuta: %s",
                              new_url.split("/")[2] if "://" in new_url else "?")

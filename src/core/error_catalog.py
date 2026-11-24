@@ -59,6 +59,7 @@ ERROR_TEXTS_IT: dict[str, str] = {
     ),
 
     # ---- downloader/mega_client.py ----------------------------------------
+    "file_mac_mismatch": "Verifica di integrità MEGA fallita. Riavvia il download per scaricare una nuova copia.",
     "download_incomplete": "download incompleto: {downloaded}/{expected} byte",
     # Due testi diversi per la stessa causa (mega_client e parallel_client):
     # restano due codici finche' non si decide di unificarli, che sarebbe un
