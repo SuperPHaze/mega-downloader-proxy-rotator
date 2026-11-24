@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import logging
+import sys
 
 from PyQt6.QtCore import QObject, pyqtSignal
 from PyQt6.QtGui import QAction, QIcon
@@ -86,9 +87,11 @@ def ask_minimize_target(parent: QWidget | None) -> tuple[str, bool]:
     box.setIcon(QMessageBox.Icon.Question)
     box.setWindowTitle(t("tray.ask_title"))
     box.setText(t("tray.ask_body"))
-    tray_btn = box.addButton(t("tray.ask_tray"), QMessageBox.ButtonRole.AcceptRole)
+    tray_label = "tray.ask_menu_bar" if sys.platform == "darwin" else "tray.ask_tray"
+    taskbar_label = "tray.ask_dock" if sys.platform == "darwin" else "tray.ask_taskbar"
+    tray_btn = box.addButton(t(tray_label), QMessageBox.ButtonRole.AcceptRole)
     taskbar_btn = box.addButton(
-        t("tray.ask_taskbar"), QMessageBox.ButtonRole.RejectRole
+        t(taskbar_label), QMessageBox.ButtonRole.RejectRole
     )
     box.setDefaultButton(taskbar_btn)
     remember = QCheckBox(t("tray.ask_remember"))

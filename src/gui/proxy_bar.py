@@ -1,16 +1,7 @@
-# Zona proxy "conservativa": griglia 2x4 di card compatte su due righe (Vivi,
-# Validazione, Scartati, Ricariche, Ultimo refill, Banda, Banda proxy), niente
-# sparkline. Popolata da segnali dell'orchestrator (pool_size_changed,
-# setup_progress, proxy_stats).
-#
-# i18n: superficie PERSISTENTE con cascata. retranslate() riscrive i propri
-# testi e ricasca su ogni _MetricCard, esattamente come refresh_theme() ->
-# restyle(). Ogni card tiene la CHIAVE della propria etichetta, non il testo:
-# e' quello che le permette di ritradursi da sola.
+"""Misure e comandi della connessione nei dettagli della sessione."""
 from __future__ import annotations
 
 from PyQt6.QtCore import pyqtSignal
-from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
     QFrame,
     QGridLayout,
@@ -42,41 +33,28 @@ class _MetricCard(QFrame):
     def __init__(self, label_key: str) -> None:
         super().__init__()
         self._label_key = label_key
-        # Min width sufficiente a mostrare su UNA riga l'etichetta più lunga
-        # ("VALIDAZIONE" ~99px @7pt) più i margini: così, disposte su due righe
-        # (griglia 2×4), le etichette non vengono MAI tagliate.
-        self.setMinimumWidth(112)
+        self._color_key = "text"
         v = QVBoxLayout(self)
-        v.setContentsMargins(5, 3, 5, 3)
-        v.setSpacing(1)
-
-        self._label = QLabel(t(label_key).upper())
-        self._label.setFont(QFont("Segoe UI", 7))
-        v.addWidget(self._label)
-
+        v.setContentsMargins(0, 0, 0, 0)
+        v.setSpacing(2)
+        self._label = QLabel(t(label_key))
+        self._label.setObjectName("secondaryText")
+        self._label.setWordWrap(True)
         self._value = QLabel("—")
-        fv = QFont("Consolas", 11)
-        fv.setWeight(QFont.Weight.Medium)
-        self._value.setFont(fv)
+        v.addWidget(self._label)
         v.addWidget(self._value)
 
     def retranslate(self) -> None:
-        self._label.setText(t(self._label_key).upper())
+        self._label.setText(t(self._label_key))
 
-    def set_value(self, text: str, color: str | None = None) -> None:
-        p = _style.CURRENT_PALETTE
+    def set_value(self, text: str, color_key: str = "text") -> None:
         self._value.setText(text)
-        self._value.setStyleSheet(f"color: {color or p['text']}; border: none;")
+        if self._color_key != color_key:
+            self._color_key = color_key
+            self.restyle()
 
     def restyle(self) -> None:
-        p = _style.CURRENT_PALETTE
-        self.setStyleSheet(
-            f"QFrame {{ background-color: {p['panel_alt']}; "
-            f"border: 0.5px solid {p['border']}; border-radius: {_style.RADIUS_MD}px; }}"
-        )
-        self._label.setStyleSheet(
-            f"color: {p['text_dim']}; letter-spacing: 0.5px; border: none;"
-        )
+        self._value.setStyleSheet(f"color: {_style.CURRENT_PALETTE[self._color_key]};")
 
 
 class ProxyBar(QWidget):
@@ -93,17 +71,17 @@ class ProxyBar(QWidget):
         self._since_seconds: float | None = None
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(5, 4, 5, 4)
-        layout.setSpacing(3)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(9)
 
         self._micro = QLabel(t("proxy_bar.micro"))
-        self._micro.setFont(QFont("Segoe UI", 8))
+        self._micro.setObjectName("sectionTitle")
         layout.addWidget(self._micro)
 
         cards_grid = QGridLayout()
         cards_grid.setContentsMargins(0, 0, 0, 0)
-        cards_grid.setHorizontalSpacing(4)
-        cards_grid.setVerticalSpacing(4)
+        cards_grid.setHorizontalSpacing(10)
+        cards_grid.setVerticalSpacing(8)
 
         self._card_alive = _MetricCard("proxy_bar.card_alive")
         self._card_validation = _MetricCard("proxy_bar.card_validation")
@@ -112,60 +90,44 @@ class ProxyBar(QWidget):
         self._card_since = _MetricCard("proxy_bar.card_last_refill")
         self._card_band = _MetricCard("proxy_bar.card_band")
         self._card_band_proxy = _MetricCard("proxy_bar.card_band_proxy")
-        self._cards = (
-            self._card_alive,
-            self._card_validation,
-            self._card_discarded,
-            self._card_refills,
-            self._card_since,
-            self._card_band,
-            self._card_band_proxy,
-        )
-        # I 7 riquadri distribuiti su DUE righe (griglia 2×4): con 4 card per
-        # riga ciascuna ha spazio per la propria etichetta su una sola riga,
-        # invece di essere schiacciate in un'unica fila da 7.
-        for idx, card in enumerate(self._cards):
-            cards_grid.addWidget(card, idx // 4, idx % 4)
-
+        self._cards = (self._card_band, self._card_band_proxy, self._card_alive,
+                       self._card_validation, self._card_discarded, self._card_refills,
+                       self._card_since)
+        for index, card in enumerate(self._cards):
+            cards_grid.addWidget(card, index // 3, index % 3)
+        for column in range(3):
+            cards_grid.setColumnStretch(column, 1)
+        layout.addLayout(cards_grid)
         # Pulsante per rifare la misura della banda della linea (diretto, fuori
         # dai proxy). La misura iniziale parte da MainWindow all'avvio.
         self._speedtest_btn = QPushButton()
-        self._speedtest_btn.setFixedHeight(22)
         self._speedtest_btn.clicked.connect(self.speedtest_requested.emit)
 
         # Pulsante per misurare la banda ATTRAVERSO il pool di proxy. Abilitato
         # solo quando il pool ha proxy vivi (durante una sessione): a riposo non
         # ci sono proxy da testare.
         self._proxy_speedtest_btn = QPushButton()
-        self._proxy_speedtest_btn.setFixedHeight(22)
         self._proxy_speedtest_btn.setEnabled(False)
         self._proxy_speedtest_btn.clicked.connect(self.proxy_speedtest_requested.emit)
 
         self._reset_btn = QPushButton()
-        self._reset_btn.setFixedHeight(22)
         self._reset_btn.clicked.connect(self._on_reset_cache)
 
-        # I tre pulsanti (Banda / Banda proxy / Reset cache) impilati in
-        # verticale a destra della griglia delle card.
-        buttons_col = QVBoxLayout()
-        buttons_col.setContentsMargins(0, 0, 0, 0)
-        buttons_col.setSpacing(2)
-        buttons_col.addWidget(self._speedtest_btn)
-        buttons_col.addWidget(self._proxy_speedtest_btn)
-        buttons_col.addWidget(self._reset_btn)
-
-        main_row = QHBoxLayout()
-        main_row.setContentsMargins(0, 0, 0, 0)
-        main_row.setSpacing(8)
-        main_row.addLayout(cards_grid)
-        main_row.addStretch(1)
-        main_row.addLayout(buttons_col)
-        layout.addLayout(main_row)
-
+        actions = QHBoxLayout()
+        actions.setSpacing(7)
+        for button in (self._speedtest_btn, self._proxy_speedtest_btn, self._reset_btn):
+            button.setObjectName("textAction")
+            actions.addWidget(button)
+        actions.addStretch()
+        layout.addLayout(actions)
+        self.set_session_visible(False)
         self.retranslate()
-        self._restyle_micro()
-        self._restyle_cards()
         self.reset()
+
+    def set_session_visible(self, visible: bool) -> None:
+        for card in self._cards[1:]:
+            card.setVisible(visible)
+        self._proxy_speedtest_btn.setVisible(visible)
 
     # ---- i18n ----------------------------------------------------------------
 
@@ -177,10 +139,10 @@ class ProxyBar(QWidget):
         self._micro.setText(t("proxy_bar.micro"))
         for card in self._cards:
             card.retranslate()
-        self._speedtest_btn.setText("↻ " + t("proxy_bar.speedtest_button"))
+        self._speedtest_btn.setText(t("proxy_bar.speedtest_button"))
         self._speedtest_btn.setToolTip(t("proxy_bar.speedtest_tooltip"))
         self._proxy_speedtest_btn.setText(
-            "↻ " + t("proxy_bar.proxy_speedtest_button")
+            t("proxy_bar.proxy_speedtest_button")
         )
         self._proxy_speedtest_btn.setToolTip(t("proxy_bar.proxy_speedtest_tooltip"))
         self._reset_btn.setText(t("proxy_bar.reset_button"))
@@ -189,13 +151,12 @@ class ProxyBar(QWidget):
     # ---- slot da pool/validazione --------------------------------------------
 
     def on_pool_size(self, n: int) -> None:
-        p = _style.CURRENT_PALETTE
         if n == 0:
-            color = p["accent_fail"]
+            color = "accent_fail"
         elif n < 5:
-            color = p["accent_warn"]
+            color = "accent_warn"
         else:
-            color = p["accent_ok"]
+            color = "accent_ok"
         self._card_alive.set_value(str(n), color)
         # Il test "Banda proxy" ha senso solo con proxy vivi nel pool.
         self._proxy_speedtest_btn.setEnabled(n > 0)
@@ -226,23 +187,19 @@ class ProxyBar(QWidget):
         self._card_band.set_value("…")
 
     def on_speedtest_result(self, mbit: float, ok: bool) -> None:
-        p = _style.CURRENT_PALETTE
         if ok and mbit > 0:
-            self._card_band.set_value(f"{mbit:.0f} Mbit", p["accent_ok"])
+            self._card_band.set_value(f"{mbit:.0f} Mbit")
         else:
-            self._card_band.set_value("—", p["text_dim"])
+            self._card_band.set_value("—", "text_dim")
 
     def on_proxy_speedtest_running(self) -> None:
         self._card_band_proxy.set_value("…")
 
     def on_proxy_speedtest_result(self, mbit: float, ok: bool) -> None:
-        # Colore distinto (accent_info, blu) dalla banda di linea (accent_ok,
-        # verde) per differenziare a colpo d'occhio le due misure.
-        p = _style.CURRENT_PALETTE
         if ok and mbit > 0:
-            self._card_band_proxy.set_value(f"{mbit:.0f} Mbit", p["accent_info"])
+            self._card_band_proxy.set_value(f"{mbit:.0f} Mbit")
         else:
-            self._card_band_proxy.set_value("—", p["text_dim"])
+            self._card_band_proxy.set_value("—", "text_dim")
 
     # ---- reset cache ---------------------------------------------------------
 
@@ -275,8 +232,7 @@ class ProxyBar(QWidget):
     # ---- reset / tema ---------------------------------------------------------
 
     def reset(self) -> None:
-        p = _style.CURRENT_PALETTE
-        self._card_alive.set_value("—", p["text_dim"])
+        self._card_alive.set_value("—", "text_dim")
         self._validation_text = "—"
         self._discarded = 0
         self._refills = 0
@@ -291,28 +247,9 @@ class ProxyBar(QWidget):
         # La card "Banda proxy" INVECE e' specifica della sessione (dipende dal
         # pool corrente): la azzeriamo e disabilitiamo il pulsante finche' non
         # ci sono proxy vivi.
-        self._card_band_proxy.set_value("—", p["text_dim"])
+        self._card_band_proxy.set_value("—", "text_dim")
         self._proxy_speedtest_btn.setEnabled(False)
 
     def refresh_theme(self) -> None:
-        self._restyle_micro()
-        self._restyle_cards()
-
-    def _restyle_micro(self) -> None:
-        p = _style.CURRENT_PALETTE
-        self._micro.setStyleSheet(
-            f"color: {p['text_dim']}; letter-spacing: 1px; border: none;"
-        )
-
-    def _restyle_cards(self) -> None:
         for card in self._cards:
             card.restyle()
-        p = _style.CURRENT_PALETTE
-        btn_qss = (
-            f"QPushButton {{ color: {p['text_dim']}; border: 1px solid {p['border']}; "
-            f"border-radius: 4px; background: transparent; font-size: 8pt; padding: 2px 6px; }}"
-            f"QPushButton:hover {{ background-color: {p['panel_alt']}; }}"
-        )
-        self._reset_btn.setStyleSheet(btn_qss)
-        self._speedtest_btn.setStyleSheet(btn_qss)
-        self._proxy_speedtest_btn.setStyleSheet(btn_qss)

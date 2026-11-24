@@ -6,8 +6,8 @@
 # nominati ({n}), non plurali: il testo non cambia forma.
 from __future__ import annotations
 
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QKeyEvent
+from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtGui import QKeyEvent, QKeySequence
 from PyQt6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
@@ -21,7 +21,7 @@ from PyQt6.QtWidgets import (
 
 from src.core.mega_links import is_folder_link
 from src.gui.i18n import t
-from src.gui.style import PALETTE
+from src.gui.style import CURRENT_PALETTE
 
 
 MEGA_PREFIX = "https://mega.nz/"
@@ -33,14 +33,16 @@ POSITION_BOTTOM = "bottom"
 POSITION_TOP = "top"
 
 
-class _NoEnterTextEdit(QTextEdit):
-    # Subclasse per evitare che Enter chiuda il dialog: i link multi-riga
-    # richiedono di poter inserire newline normalmente.
-    def keyPressEvent(self, e: QKeyEvent) -> None:  # noqa: N802 (override Qt)
-        # Niente da fare di speciale: il default di QTextEdit gia' inserisce
-        # un newline su Enter. Mantenere la classe serve solo a impedire che
-        # QDialog.keyPressEvent catturi Enter come "accept".
-        super().keyPressEvent(e)
+class _LinkEditor(QTextEdit):
+    submit_requested = pyqtSignal()
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:  # noqa: N802
+        enter = event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter)
+        if enter and event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+            self.submit_requested.emit()
+            event.accept()
+            return
+        super().keyPressEvent(event)
 
 
 class PasteLinksDialog(QDialog):
@@ -67,7 +69,10 @@ class PasteLinksDialog(QDialog):
 
         layout.addWidget(QLabel(t("paste.instructions")))
 
-        self.edit = _NoEnterTextEdit()
+        self.edit = _LinkEditor()
+        self.edit.setAcceptRichText(False)
+        self.edit.setAccessibleName(t("paste.instructions"))
+        self.edit.setFocus()
         self.edit.setPlaceholderText("https://mega.nz/...")
         self.edit.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
         self.edit.setMinimumHeight(200)
@@ -86,10 +91,10 @@ class PasteLinksDialog(QDialog):
         # dopo l'espansione (che fa rete e avviene all'Avvia).
         self.lbl_folders.setToolTip(t("paste.folders_tooltip"))
         for lbl, color in (
-            (self.lbl_valid, PALETTE["accent_ok"]),
-            (self.lbl_folders, PALETTE["accent_info"]),
-            (self.lbl_invalid, PALETTE["accent_fail"]),
-            (self.lbl_dups, PALETTE["accent_warn"]),
+            (self.lbl_valid, CURRENT_PALETTE["accent_ok"]),
+            (self.lbl_folders, CURRENT_PALETTE["accent_info"]),
+            (self.lbl_invalid, CURRENT_PALETTE["accent_fail"]),
+            (self.lbl_dups, CURRENT_PALETTE["accent_warn"]),
         ):
             lbl.setStyleSheet(f"color: {color}; font-size: 9pt;")
             stats_row.addWidget(lbl)
@@ -136,6 +141,8 @@ class PasteLinksDialog(QDialog):
         self.buttons.rejected.connect(self.reject)
         layout.addWidget(self.buttons)
 
+        self.add_btn.setToolTip(QKeySequence("Ctrl+Return").toString(QKeySequence.SequenceFormat.NativeText))
+        self.edit.submit_requested.connect(self.add_btn.click)
         self.edit.textChanged.connect(self._recompute_stats)
         self._recompute_stats()
 

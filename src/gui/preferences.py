@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import logging
+import sys
 from pathlib import Path
 
 from src.core.config import (
@@ -36,7 +37,16 @@ def _save_pref(key: str, value: object) -> None:
 
 
 def load_dark_theme() -> bool:
-    return bool(_load_prefs().get("dark_theme", False))
+    saved = _load_prefs().get("dark_theme")
+    if saved is not None:
+        return bool(saved)
+    if sys.platform == "darwin":
+        from PyQt6.QtCore import Qt
+        from PyQt6.QtGui import QGuiApplication
+
+        if QGuiApplication.instance() is not None:
+            return QGuiApplication.styleHints().colorScheme() == Qt.ColorScheme.Dark
+    return False
 
 
 def save_dark_theme(dark: bool) -> None:
@@ -121,13 +131,11 @@ def load_minimize_target() -> str:
     volta), "tray" (area di notifica accanto all'orologio), "taskbar" (barra
     delle applicazioni, com'era prima).
 
-    Retro-compatibile: un preferences.json senza la chiave — o con un valore
-    ignoto — si comporta come "ask". I tre valori sono gli stessi di
-    `gui/tray.MINIMIZE_TARGETS`, ripetuti qui perche' importarli farebbe un
-    ciclo (tray -> i18n -> preferences); `tests/test_tray.py` verifica che i
-    due elenchi coincidano.
+    Sul Mac la destinazione iniziale è il Dock (valore persistito "taskbar").
+    Una scelta esplicita dell'utente ha sempre la precedenza.
     """
-    val = str(_load_prefs().get("minimize_target", "ask") or "ask").strip().lower()
+    default = "taskbar" if sys.platform == "darwin" else "ask"
+    val = str(_load_prefs().get("minimize_target", default) or "ask").strip().lower()
     return val if val in ("ask", "tray", "taskbar") else "ask"
 
 

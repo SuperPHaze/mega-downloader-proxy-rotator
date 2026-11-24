@@ -30,6 +30,15 @@ def test_ico_reale_porta_piu_dimensioni(qt_app):
     assert (16, 16) in sizes and (256, 256) in sizes, sizes
 
 
+def test_ogni_dimensione_ha_fondo_trasparente(qt_app):
+    icon = icon_loader.build_app_icon()
+    for size in icon.availableSizes():
+        frame = icon.pixmap(size).toImage()
+        x, y = frame.width() - 1, frame.height() - 1
+        assert all(frame.pixelColor(i, j).alpha() == 0 for i, j in ((0, 0), (x, 0), (0, y), (x, y)))
+        assert frame.pixelColor(x // 2, y // 2).alpha() == 255
+
+
 def test_ripiego_al_png_quando_l_ico_e_illeggibile(qt_app, tmp_path, monkeypatch, caplog):
     """Il caso che con il vecchio controllo era solo teorico: un .ico che
     ESISTE ma non si legge. Il ripiego deve scattare davvero."""

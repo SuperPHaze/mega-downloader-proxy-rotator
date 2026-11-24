@@ -9,6 +9,13 @@ Tutte le modifiche rilevanti del progetto. Formato basato su [Keep a Changelog](
 - Verifica del MAC MEGA prima di completare o riutilizzare un file.
 - Il ripristino conserva gli identificativi dei download parziali anche quando cambia l’ordine della coda.
 
+### Interfaccia e macOS
+
+- Tema chiaro e tema scuro con superfici neutre e accento rosso corallo. Ogni download ha una barra di avanzamento sottile e un menu **…** per le azioni sul file.
+- Avvio dal Finder con `avvia.command`, riduzione nel Dock e scorciatoie Mac per aggiungere link e aprire le impostazioni.
+- Coda, avanzamento per file e destinazione sono in un’unica finestra. Statistiche e connessione si aprono sotto l’elenco. La vista iniziale si adatta anche agli schermi piccoli. La conferma di annullamento conserva i dati parziali salvo scelta esplicita.
+- I percorsi di Windows mostrano il nome corretto su Mac. Se la destinazione proviene da un altro sistema, l’app chiede una cartella locale prima del download.
+
 ## [2.3.0] — 2026-09-22
 
 ### Aggiunto

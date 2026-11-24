@@ -1,8 +1,4 @@
-# Pannello di input dei link Mega. Layout compatto su singola riga: tre
-# bottoni (import file / paste dialog / svuota), checkbox duplicati, label
-# contatore allineata a destra. L'API pubblica (`get_links`) e la lista
-# interna `self._links` restano invariate; cambiano solo i metodi che la
-# popolano.
+# Preparazione della coda: anteprima dei link, modifica della lista e import.
 from __future__ import annotations
 
 from pathlib import Path
@@ -13,15 +9,17 @@ from PyQt6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
     QLabel,
+    QListWidget,
     QMessageBox,
     QPushButton,
+    QVBoxLayout,
     QWidget,
 )
 
 from src.core.download_history import extract_handle, load_history
+from src.gui.format_helpers import link_caption
 from src.gui.i18n import t, tn
 from src.gui.paste_links_dialog import PasteLinksDialog
-from src.gui.style import PALETTE
 
 
 MEGA_PREFIX = "https://mega.nz/"
@@ -188,52 +186,46 @@ class LinkPanel(QWidget):
     # Emesso quando la lista interna cambia dimensione (import, paste, svuota).
     links_count_changed = pyqtSignal(int)
 
-    # Scelta di design (Opzione A in task spec): rimosso il QListWidget di
-    # anteprima. La label contatore + il pre-fill del dialog "Incolla link"
-    # con la lista corrente sostituiscono funzionalmente la lista visibile;
-    # i job in corso sono comunque mostrati da JobsPanel.
-
     def __init__(self) -> None:
         super().__init__()
         self._links: list[str] = []
         self._build_ui()
-        self._refresh_counter()
 
     def _build_ui(self) -> None:
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(4, 4, 4, 4)
-        layout.setSpacing(6)
+        self.setObjectName("queueSurface")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(18, 16, 18, 16)
+        layout.setSpacing(10)
+        self.counter_lbl = QLabel()
+        self.counter_lbl.setObjectName("sectionTitle")
+        layout.addWidget(self.counter_lbl)
+        self.preview = QListWidget()
+        self.preview.setAlternatingRowColors(True)
+        self.preview.setUniformItemSizes(True)
+        layout.addWidget(self.preview, 1)
+
+        actions = QHBoxLayout()
+        actions.setSpacing(8)
+        layout.addLayout(actions)
+        self.paste_btn = QPushButton()
+        self.paste_btn.clicked.connect(self._on_paste)
+        actions.addWidget(self.paste_btn)
 
         self.import_btn = QPushButton()
         self.import_btn.clicked.connect(self._on_import_file)
-        layout.addWidget(self.import_btn)
-
-        self.paste_btn = QPushButton()
-        # Marca come azione primaria (vedi selettore QSS in style.py).
-        self.paste_btn.setProperty("primary", "true")
-        self.paste_btn.clicked.connect(self._on_paste)
-        layout.addWidget(self.paste_btn)
+        actions.addWidget(self.import_btn)
 
         self.clear_btn = QPushButton()
         self.clear_btn.clicked.connect(self._on_clear)
-        layout.addWidget(self.clear_btn)
+        actions.addWidget(self.clear_btn)
+        actions.addStretch()
 
         # Permette di inserire piu' volte lo stesso URL: ogni copia diventa
         # un worker con file_id diverso e va in una cartella separata
         # (es. <hash>_0, <hash>_1).
         self.allow_dups = QCheckBox()
-        layout.addWidget(self.allow_dups)
-
-        layout.addStretch(1)
-
-        self.counter_lbl = QLabel("")
-        self.counter_lbl.setAlignment(
-            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
-        )
-        layout.addWidget(self.counter_lbl)
-
-        # Altezza fissa contenuta: una sola riga di controlli.
-        self.setMaximumHeight(40)
+        actions.addWidget(self.allow_dups)
 
         self.retranslate()
 
@@ -247,7 +239,7 @@ class LinkPanel(QWidget):
         dlg = PasteLinksDialog(
             existing_links=[],  # i duplicati intra-input li gestisce il dialog
             allow_duplicates=self.allow_dups.isChecked(),
-            parent=self,
+            parent=self.window(),
             prefill=list(self._links),
         )
         if dlg.exec() != PasteLinksDialog.DialogCode.Accepted:
@@ -255,18 +247,14 @@ class LinkPanel(QWidget):
         new_list = dlg.accepted_links()
         # Alert storico: avvisa se qualche link e' gia' stato scaricato in
         # una sessione precedente (dedup per handle, vedi download_history).
-        new_list = confirm_already_downloaded(new_list, self)
+        new_list = confirm_already_downloaded(new_list, self.window())
         if new_list is None:
-            return  # utente ha annullato: lista corrente invariata
-        if new_list == self._links:
             return
-        self._links = new_list
-        self._refresh_counter()
-        self.links_count_changed.emit(len(self._links))
+        self.set_links(new_list)
 
     def _on_import_file(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
-            self,
+            self.window(),
             t("link_panel.import_dialog_title"),
             "",
             t("link_panel.import_dialog_filter"),
@@ -277,25 +265,20 @@ class LinkPanel(QWidget):
             valid, n_invalid, n_dups = self._parse_links_file(path)
         except OSError as exc:
             QMessageBox.critical(
-                self,
+                self.window(),
                 t("link_panel.read_error_title"),
                 t("link_panel.read_error_body", error=exc),
             )
             return
 
         # Alert storico sui soli link nuovi in import: stesso dialog del paste.
-        valid = confirm_already_downloaded(valid, self)
+        valid = confirm_already_downloaded(valid, self.window())
         if valid is None:
             return  # utente ha annullato l'import
 
-        added = 0
-        for url in valid:
-            self._links.append(url)
-            added += 1
-
-        if added == 0:
+        if not valid:
             QMessageBox.warning(
-                self,
+                self.window(),
                 t("link_panel.nothing_imported_title"),
                 t(
                     "link_panel.nothing_imported_body",
@@ -305,25 +288,24 @@ class LinkPanel(QWidget):
             )
             return
 
-        QMessageBox.information(
-            self,
-            t("link_panel.import_done_title"),
-            tn(
-                "link_panel.import_done_body",
-                added,
-                invalid=n_invalid,
-                dups=n_dups,
-            ),
-        )
-        self._refresh_counter()
-        self.links_count_changed.emit(len(self._links))
+        self.set_links(self._links + valid)
+
+        if n_invalid or n_dups:
+            QMessageBox.information(
+                self.window(),
+                t("link_panel.import_done_title"),
+                tn(
+                    "link_panel.import_done_body",
+                    len(valid),
+                    invalid=n_invalid,
+                    dups=n_dups,
+                ),
+            )
 
     def _on_clear(self) -> None:
         if not self._links:
             return
-        self._links.clear()
-        self._refresh_counter()
-        self.links_count_changed.emit(0)
+        self.set_links([])
 
     # ---- parsing file -----------------------------------------------------
 
@@ -359,6 +341,8 @@ class LinkPanel(QWidget):
     def set_links(self, links: list[str]) -> None:
         """Rimpiazza la lista link (usato dal ripristino sessione all'avvio)."""
         self._links = list(links)
+        self.preview.clear()
+        self.preview.addItems([link_caption(url) for url in links])
         self._refresh_counter()
         self.links_count_changed.emit(len(self._links))
 
@@ -383,8 +367,9 @@ class LinkPanel(QWidget):
         Il contatore passa da `_refresh_counter` perche' il suo testo dipende
         dal numero di link, non solo dalla lingua.
         """
+        self.preview.setAccessibleName(t("workspace.queue_title"))
         self.import_btn.setText(t("link_panel.import"))
-        self.paste_btn.setText(t("link_panel.add"))
+        self.paste_btn.setText(t("link_panel.edit"))
         self.clear_btn.setText(t("link_panel.clear"))
         self.allow_dups.setText(t("link_panel.allow_duplicates"))
         self.allow_dups.setToolTip(t("link_panel.allow_duplicates_tooltip"))
@@ -401,6 +386,3 @@ class LinkPanel(QWidget):
             else tn("link_panel.counter", n)
         )
         self.counter_lbl.setText(text)
-        self.counter_lbl.setStyleSheet(
-            f"color: {PALETTE['text_dim']}; font-size: 9pt;"
-        )

@@ -7,7 +7,23 @@ lingua corrente (le sue abbreviazioni tot/ok/fall. sono parole, non unita').
 """
 from __future__ import annotations
 
+from src.core.mega_links import extract_handle, parse_folder_job_url, parse_folder_link
 from src.gui.i18n import t
+
+
+def link_caption(url: str) -> str:
+    """Nome leggibile in coda, senza la chiave di decifratura del link."""
+    job = parse_folder_job_url(url)
+    if job is not None:
+        return "/".join(job.rel_path)
+    folder = parse_folder_link(url)
+    if folder is not None:
+        path = f"mega.nz/folder/{folder.folder_id}"
+        return f"{path}/{folder.sub_handle}" if folder.sub_handle else path
+    handle = extract_handle(url)
+    if handle:
+        return f"mega.nz/file/{handle}"
+    return url.partition("#")[0]
 
 
 def fmt_speed(bps: float) -> str:

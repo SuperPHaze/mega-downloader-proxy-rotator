@@ -8,7 +8,7 @@
 # nella lingua nuova senza che il chiamante debba ripassarla.
 from __future__ import annotations
 
-from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QWidget
 
 from src.gui.i18n import t
@@ -20,7 +20,8 @@ class UpdateBanner(QWidget):
 
     def __init__(self) -> None:
         super().__init__()
-        self.setStyleSheet("background-color: #2d6cdf; color: white;")
+        self.setObjectName("updateBanner")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground)
         layout = QHBoxLayout(self)
         layout.setContentsMargins(8, 4, 8, 4)
 
