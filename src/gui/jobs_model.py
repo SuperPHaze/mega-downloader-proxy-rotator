@@ -89,8 +89,9 @@ class JobsModel(QObject):
         self._by_id: dict[int, int] = {}  # file_id -> row index
 
     # ----- API pubblica per gli slot della GUI -----
-    def reset(self, links: list[str]) -> None:
-        self._jobs = [Job(file_id=i, url=u) for i, u in enumerate(links)]
+    def reset(self, links: list[str] | dict[int, str]) -> None:
+        entries = links.items() if isinstance(links, dict) else enumerate(links)
+        self._jobs = [Job(file_id=i, url=u) for i, u in entries]
         self._by_id = {j.file_id: i for i, j in enumerate(self._jobs)}
         self.aggregates_changed.emit()
 

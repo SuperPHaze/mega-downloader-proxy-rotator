@@ -11,8 +11,6 @@
 #
 # Limiti noti:
 # - I chunk vanno allineati a 16 byte (block size AES). Forzato in _split_chunks.
-# - La verifica MAC del file non viene fatta (richiederebbe un pass seriale
-#   sull'intero file). Confidiamo nella correttezza dei chunk CDN.
 # - Se mega.py cambia API privata (_parse_url, _api_request, crypto helpers)
 #   il client si rompe in modo esplicito.
 from __future__ import annotations
@@ -53,10 +51,12 @@ from src.core.config import (
     TELEMETRY_SAMPLE_INTERVAL_S,
     USER_AGENT,
 )
-from src.core.disk import ensure_free_space
+from src.core.output_store import JobOutputs
+from src.core.disk import ensure_free_space, has_complete_file
 from src.core.errors import UserFacingRuntimeError, error_payload
 from src.core.proxy_url import build_proxies_dict as _proxies_dict
 from src.core.state import SessionState
+from src.downloader.file_integrity import matches_file_mac, promote_verified
 from src.downloader.mega_api import MegaPublicClient
 from src.downloader.mega_crypto import a32_to_str
 from src.downloader.mega_client import MegaCryptoDependencyError
@@ -88,14 +88,20 @@ def _load_progress(
         return set()
     try:
         data = json.loads(p.read_text(encoding="utf-8"))
-        if (data.get("file_handle") != file_handle
+        if (not isinstance(data, dict)
+                or data.get("file_handle") != file_handle
                 or data.get("file_size") != file_size
                 or data.get("chunk_size") != chunk_size):
             log.info(
                 "[parallel] sidecar invalido (handle/size/chunk_size diversi), ignoro"
             )
             return set()
-        done = {(int(s), int(e)) for s, e in data.get("done", [])}
+        ranges = data.get("done")
+        if not isinstance(ranges, list):
+            return set()
+        done = {(pair[0], pair[1]) for pair in ranges
+                if isinstance(pair, list) and len(pair) == 2
+                and all(type(offset) is int for offset in pair)}
         log.info("[parallel] resume: %d chunk gia' scaricati da run precedente", len(done))
         return done
     except (json.JSONDecodeError, OSError, ValueError) as exc:
@@ -109,7 +115,7 @@ def _save_progress(
     file_size: int,
     done: set[tuple[int, int]],
     chunk_size: int,
-) -> None:
+) -> bool:
     p = _progress_path(target_path)
     tmp = p.with_suffix(p.suffix + ".tmp")
     payload = {
@@ -121,8 +127,10 @@ def _save_progress(
     try:
         tmp.write_text(json.dumps(payload), encoding="utf-8")
         os.replace(tmp, p)
+        return True
     except OSError as exc:
         log.warning("[parallel] non posso salvare progress sidecar: %s", exc)
+        return False
 
 
 def _align_down(n: int, block: int = 16) -> int:
@@ -162,6 +170,7 @@ class ParallelMegaDownloader:
         chunk_size: int | None = None,
         segment_max_duration_s: int | None = None,
     ) -> None:
+        self.outputs: JobOutputs | None = None
         self.pool = proxy_pool
         self.n_connections = max(1, n_connections)
         self.session_state = session_state
@@ -201,6 +210,7 @@ class ParallelMegaDownloader:
         speed_callback: Callable[[float, int, int], None] | None = None,
         resolved_callback: Callable[[str, object, "Path"], None] | None = None,
         file_id: int | None = None,
+        reuse_existing: bool = False,
     ) -> Path:
         """Scarica un link Mega in parallelo usando una coda di chunk a dimensione fissa.
 
@@ -225,9 +235,10 @@ class ParallelMegaDownloader:
         ).hexdigest()[:12]
         self._file_id = file_id
         _t0 = time.monotonic()
-        file_handle, k, iv, cdn_url, file_size, file_name = self._resolve_cdn(
-            mega_url, resolver_proxy,
-        )
+        info = self._resolve_cdn(mega_url, resolver_proxy)
+        file_handle, cdn_url = info["handle"], info["cdn_url"]
+        file_size, file_name = info["file_size"], info["file_name"]
+        k, iv, meta_mac = info["k"], info["iv"], info["meta_mac"]
         telemetry.event(
             "file_resolved",
             file_id=file_id, url_hash=self._url_hash,
@@ -244,8 +255,7 @@ class ParallelMegaDownloader:
         final_path = output_dir / file_name
         # Pattern .part + rename atomico: si scrive SEMPRE su `<nome>.part`;
         # il nome finale viene creato solo a download completo e verificato
-        # (os.replace). L'esistenza del nome finale e' l'UNICO marker di
-        # completamento usato dal check di resume del worker.
+        # (os.replace). Prima del riuso si ricontrollano dimensione e MAC.
         part_path = final_path.with_suffix(final_path.suffix + ".part")
         log.info(
             "[parallel] resolve ok: name=%s size=%d cdn_host=%s",
@@ -258,14 +268,22 @@ class ParallelMegaDownloader:
             except Exception:
                 pass
 
+        if (reuse_existing and has_complete_file(final_path, file_size)
+                and matches_file_mac(final_path, file_size, k, iv, meta_mac, self._verification_cancelled)):
+            if progress_callback:
+                progress_callback(100)
+            return final_path
+
         # File da 0 byte: nessun chunk da scaricare. Con _split_chunks(0) si
         # otterrebbe un range 0--1 e un header "Range: bytes=0--1" invalido, che
         # fallirebbe a ripetizione fino all'abbandono. Crea il file finale vuoto
         # e termina, mantenendo l'invariante "esiste il nome finale = completo".
         if file_size == 0:
             _progress_path(part_path).unlink(missing_ok=True)
-            part_path.unlink(missing_ok=True)
-            final_path.write_bytes(b"")
+            part_path.write_bytes(b"")
+            promote_verified(part_path, final_path, 0, k, iv, meta_mac, self._verification_cancelled)
+            if self.outputs is not None:
+                self.outputs.written(final_path)
             if progress_callback:
                 progress_callback(100)
             log.info("[parallel] file da 0 byte: creato vuoto %s", final_path)
@@ -305,8 +323,17 @@ class ParallelMegaDownloader:
         # Il sidecar include chunk_size: se cambia, i range salvati sono
         # incompatibili e si reinizia. Con chunk_size fisso il resume e' valido
         # indipendentemente da N connessioni (al contrario dei vecchi segmenti).
-        already_done = _load_progress(part_path, file_handle, file_size, self.chunk_size)
-        already_done = already_done & set(chunks)
+        try:
+            part_size = part_path.stat().st_size
+        except FileNotFoundError:
+            part_size = None
+        if part_size == file_size:
+            already_done = _load_progress(part_path, file_handle, file_size, self.chunk_size) & set(chunks)
+        else:
+            # Prima della riallocazione: anche un crash subito dopo non deve
+            # far risultare completati i byte del precedente file parziale.
+            _progress_path(part_path).unlink(missing_ok=True)
+            already_done = set()
 
         telemetry.event(
             "file_plan", file_id=file_id, url_hash=self._url_hash,
@@ -334,24 +361,14 @@ class ParallelMegaDownloader:
         # pre-allocato a dimensione piena: meglio un errore chiaro pre-volo che
         # un OSError grezzo a metà setup. Su resume lo spazio del .part esistente
         # è già riservato: si richiede solo il delta mancante.
-        _existing_part = part_path.stat().st_size if part_path.exists() else 0
         ensure_free_space(
-            output_dir, file_size - _existing_part, MIN_FREE_DISK_MARGIN_BYTES
+            output_dir, file_size - (part_size or 0), MIN_FREE_DISK_MARGIN_BYTES
         )
 
-        # Pre-alloca il .part (sparse) SOLO se non esiste gia' (resume).
-        if not part_path.exists():
+        self._wrote_partial = part_size != file_size
+        if part_size != file_size:
             with open(part_path, "wb") as fp:
-                if file_size > 0:
-                    fp.seek(file_size - 1)
-                    fp.write(b"\0")
-        elif part_path.stat().st_size != file_size:
-            # .part esiste ma dimensione errata: rigenera (sidecar invalidato sopra).
-            log.warning("[parallel] .part esistente con size errato, rialloco")
-            with open(part_path, "wb") as fp:
-                if file_size > 0:
-                    fp.seek(file_size - 1)
-                    fp.write(b"\0")
+                fp.truncate(file_size)
         # Niente write_lock globale: ogni segmento apre un proprio file handle
         # sul .part e scrive su un range disgiunto dagli altri; seek+write su
         # offset non sovrapposti con handle separati non hanno race.
@@ -431,6 +448,8 @@ class ParallelMegaDownloader:
             progress_stop.set()
             if progress_thread is not None:
                 progress_thread.join(timeout=2)
+            if self.outputs is not None and self._wrote_partial:
+                self.outputs.written(part_path, partial=True)
 
         if chunk_errors:
             # NON cancellare il .part ne' il sidecar: i chunk completati restano
@@ -446,13 +465,14 @@ class ParallelMegaDownloader:
                 children=chunk_details[:3],
             )
 
-        # Successo totale: rimuovi il sidecar, poi promuovi il .part al nome
-        # finale con rename atomico. Solo da qui il file "esiste" davvero.
+        # Se il rename fallisce, i byte e il loro registro restano riprendibili.
+        promote_verified(part_path, final_path, file_size, k, iv, meta_mac, self._verification_cancelled)
+        if self.outputs is not None:
+            self.outputs.written(final_path)
         try:
             _progress_path(part_path).unlink(missing_ok=True)
         except OSError:
             pass
-        os.replace(part_path, final_path)
         if progress_callback:
             progress_callback(100)
         log.info("[parallel] download completato: %s (%d B)", final_path, file_size)
@@ -732,6 +752,7 @@ class ParallelMegaDownloader:
                                     (time.monotonic() - _attempt_t0) * 1000, 1
                                 )
                             fp.write(aes.decrypt(net_chunk))
+                            self._wrote_partial = True
                             downloaded += len(net_chunk)
                             with self._bytes_lock:
                                 self._bytes_downloaded += len(net_chunk)
@@ -780,14 +801,12 @@ class ParallelMegaDownloader:
                 # Persisti il chunk nel sidecar prima di tornare.
                 with self._done_lock:
                     self._done_segments.add((start, end))
-                    done_snapshot = set(self._done_segments)
-                _save_progress(
-                    self._part_path,
-                    self._file_handle_str,
-                    self._file_size,
-                    done_snapshot,
-                    self._chunk_size,
-                )
+                    saved = _save_progress(
+                        self._part_path, self._file_handle_str, self._file_size,
+                        self._done_segments, self._chunk_size,
+                    )
+                    if saved and self.outputs is not None:
+                        self.outputs.written(_progress_path(self._part_path), partial=True)
                 self.pool.record_success(proxy)
                 # Leva B (sperimentale): segnale a costo zero, gia' disponibile
                 # al watchdog. Non influisce sulla modalita' "score" (default).
@@ -868,6 +887,11 @@ class ParallelMegaDownloader:
             error=str(last_exc),
         )
 
+    def _verification_cancelled(self) -> bool:
+        if self.session_state is not None:
+            self.session_state.wait_if_paused()
+        return self._should_abort_resolve()
+
     def _should_abort_resolve(self) -> bool:
         """Cancellazione cooperativa per il resolver Mega: True se è scattato
         l'abort locale della coda o la cancellazione di sessione. Passato a
@@ -891,8 +915,7 @@ class ParallelMegaDownloader:
         return False
 
     def _resolve_cdn(self, mega_url: str, resolver_proxy: dict):
-        """Risolve un link Mega pubblico ritornando (file_handle, k, iv,
-        cdn_url, file_size, file_name). Usato sia al primo download che ai
+        """Risolve metadati, URL CDN e chiave del file. Usato al primo download e ai
         re-resolve quando la URL CDN scade (403/509/503).
 
         Usa il `resolver_proxy` passato per la chiamata API; se fallisce, il
@@ -903,11 +926,7 @@ class ParallelMegaDownloader:
             timeout=max(PROXY_TIMEOUT * 4, 30),
             should_abort=self._should_abort_resolve,
         )
-        info = client.resolve_public_url(mega_url)
-        return (
-            info["handle"], info["k"], info["iv"],
-            info["cdn_url"], info["file_size"], info["file_name"],
-        )
+        return client.resolve_public_url(mega_url)
 
     def _refresh_cdn_url(self, current_url: str) -> str | None:
         """Ri-risolve la URL CDN se quella corrente e' scaduta/throttled.
@@ -949,7 +968,7 @@ class ParallelMegaDownloader:
                     return None
                 _rr_tried += 1
                 try:
-                    _, _, _, new_url, _, _ = self._resolve_cdn(self._mega_url, proxy)
+                    new_url = self._resolve_cdn(self._mega_url, proxy)["cdn_url"]
                     self._cdn_url = new_url
                     log.info("[parallel] nuova CDN URL ottenuta: %s",
                              new_url.split("/")[2] if "://" in new_url else "?")

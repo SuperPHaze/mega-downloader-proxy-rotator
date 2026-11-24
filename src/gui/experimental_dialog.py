@@ -128,7 +128,7 @@ class ExperimentalFeaturesDialog(QDialog):
 
         desc_lbl = QLabel(t("experimental.speed_selection_desc_short"))
         desc_lbl.setWordWrap(True)
-        desc_lbl.setStyleSheet("color: gray; font-size: 9pt;")
+        desc_lbl.setObjectName("secondaryText")
         layout.addWidget(desc_lbl)
 
     def _add_control_row(
@@ -158,5 +158,5 @@ class ExperimentalFeaturesDialog(QDialog):
 
         desc_lbl = QLabel(desc_short)
         desc_lbl.setWordWrap(True)
-        desc_lbl.setStyleSheet("color: gray; font-size: 9pt;")
+        desc_lbl.setObjectName("secondaryText")
         layout.addWidget(desc_lbl)

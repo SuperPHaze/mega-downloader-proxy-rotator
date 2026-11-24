@@ -1,4 +1,5 @@
 venv/
+.venv-macos/
 __pycache__/
 downloads/
 *.pyc
@@ -19,6 +20,7 @@ logs/*
 
 # Preferenze e settings locali
 preferences.json
+/output-index.sqlite3*
 .claude/settings.local.json
 
 # Stato sessione per il ripristino all'avvio (link non completati)

@@ -6,6 +6,20 @@ All notable changes to this project. Format based on [Keep a Changelog](https://
 
 ## [Unreleased]
 
+- Folder links added at different times keep distinct destinations across restarts. Cancelling a queued file preserves other downloads.
+- Maintenance previews and removes only recorded files that still match the copies on disk.
+- **Retry** keeps the queue after preparation fails. The GUI summary and CLI exit code account for every outcome.
+
+- Verify the MEGA file MAC before completing a transfer or reusing a file.
+- Restore partial downloads by their original IDs even when the queue order changes.
+
+### Interface and macOS
+
+- Neutral light and dark themes with a coral red accent. Each download has a thin progress bar and a **…** menu for file actions.
+- Finder launcher `avvia.command`, minimize to Dock, and Mac shortcuts for adding links and opening Settings.
+- The queue, per-file progress and destination share one window. Session statistics and connection details expand below the list. The compact startup view fits smaller screens. Cancelling a file keeps partial data unless deletion is explicitly selected.
+- Windows paths show the correct folder name on Mac. If the saved destination belongs to another system, the app asks for a local folder before downloading.
+
 ## [2.3.0] — 2026-09-22
 
 ### Added

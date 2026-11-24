@@ -81,15 +81,15 @@
 #                                                     compaia nel sorgente del metodo (stesso
 #                                                     trucco di _open_dialogs, non instanzia)
 # - ControlsBar.set_download_dir(str)              — reindirizza i download di test
-# - ControlsBar._show_settings_menu()              — apre il popup Impostazioni
-# - ControlsBar._settings_menu                     — QMenu persistente, SOLO su istanza
+# - ControlsBar.show_settings()              — apre la finestra Impostazioni
+# - ControlsBar._settings_dialog                     — QDialog persistente, SOLO su istanza
 # - ControlsBar.language_combo                     — QComboBox pubblico dentro il popup
 #                                                     Impostazioni; .showPopup()/.hidePopup()
 #                                                     per il "sub-menu" Lingua del tour
 # - ControlsBar.theme_btn                          — QPushButton pubblico, .click() per il
 #                                                     toggle tema del tour (non e' un menu:
 #                                                     e' un pulsante, come da Contratto)
-#   (_settings_menu/language_combo/theme_btn sono verificati dal dry-run costruendo una
+#   (_settings_dialog/language_combo/theme_btn sono verificati dal dry-run costruendo una
 #   ControlsBar() autonoma — headless, sicura: nessuna rete nel suo __init__)
 # - LinkPanel.open_paste_dialog()                  — apre il dialogo "Incolla link Mega"
 #                                                     (usato TRE volte dal tour: vuoto per
@@ -235,7 +235,7 @@
 # - che i job passino DAVVERO per RUNNING/COMPLETED/ABANDONED con questi nomi
 #   esatti (STATUS_* import OK non garantisce che jobs_iter() li usi ancora
 #   cosi' — e' un comportamento, non una firma);
-# - che ControlsBar._settings_menu/language_combo/theme_btn e i dialoghi Info/
+# - che ControlsBar._settings_dialog/language_combo/theme_btn e i dialoghi Info/
 #   Sperimentale/Incolla si aprano/chiudano visivamente come atteso;
 # - che confirm_already_downloaded() assegni ancora i tre ButtonRole giusti
 #   (vedi sopra) e che, al ri-tentativo del passo 15, scatti DAVVERO due
@@ -403,7 +403,7 @@ _DRY_RUN_CLASS_ATTRS = [
     ("MainWindow", "_begin_folder_expansion"),
     ("MainWindow", "_on_expansion_done"),
     ("ControlsBar", "set_download_dir"),
-    ("ControlsBar", "_show_settings_menu"),
+    ("ControlsBar", "show_settings"),
     ("LinkPanel", "open_paste_dialog"),
     ("JobsPanel", "_on_filter_button_clicked"),
 ]
@@ -495,7 +495,7 @@ def run_dry_run() -> int:
             from PyQt6.QtWidgets import QApplication
             app = QApplication.instance() or QApplication([sys.argv[0]])
             cb = ControlsBar()
-            for attr in ("_settings_menu", "language_combo", "theme_btn"):
+            for attr in ("_settings_dialog", "language_combo", "theme_btn"):
                 if not hasattr(cb, attr):
                     errors.append(f"runner rotto: ControlsBar().{attr} non esiste piu'")
                 else:
@@ -1162,7 +1162,7 @@ class DemoDriver:
         from PyQt6.QtCore import QTimer
 
         controls = self.window.controls
-        menu = controls._settings_menu
+        menu = controls._settings_dialog
         self.log_event("settings_menu_open")
 
         def after_shot() -> None:
@@ -1174,7 +1174,7 @@ class DemoDriver:
                 QTimer.singleShot(self.SETTINGS_HOLD_MS, lambda: self._close_settings_menu(menu))
 
         self._maybe_capture("02-menu-impostazioni", menu, after_shot)
-        controls._show_settings_menu()  # blocca (nested loop) finche' menu.close()
+        controls.show_settings()  # blocca (nested loop) finche' menu.close()
         if self._finished:
             return
 
@@ -1424,9 +1424,8 @@ class DemoDriver:
     # ---- ri-tentativo con gli stessi link (passo 15: anti-duplicati) --------
 
     def _phase_retry_duplicate_links(self) -> None:
-        """Riapre "Incolla link Mega" con gli STESSI due link (mai rimossi da
-        LinkPanel dopo il primo Avvia) e clicca Aggiungi: e' gia' sufficiente
-        a far scattare confirm_already_downloaded() una prima volta dentro
+        """Riapre l'editor vuoto. Il watchdog inserisce di nuovo i due link
+        della prima sessione e conferma. Questo fa scattare confirm_already_downloaded() una prima volta dentro
         LinkPanel._on_paste() (vedi POPUP INTENZIONALI nel Contratto) — quella
         comparsa va chiusa in silenzio con "Scarica comunque", altrimenti la
         lista si svuota qui e il successivo Avvia non innesca piu' nulla."""
@@ -1539,8 +1538,8 @@ class DemoDriver:
             self._maybe_capture_expansion_dialog()
 
         w = QApplication.activeModalWidget()
-        if w is None:
-            return
+        if w is None or w is self.window.controls._settings_dialog:
+            return  # Il tour chiude Impostazioni dopo la cattura.
         if any(w is h for h in self._handled_modals):
             return
         cls_name = type(w).__name__

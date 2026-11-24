@@ -45,6 +45,7 @@ CLASSI_CON_CODICE = frozenset({
     "MegaFolderError",
     "MegaCryptoDependencyError",
     "InsufficientDiskSpaceError",
+    "FileIntegrityError",
 })
 
 # I `raise` che restano con un testo libero: NON sono errori che l'utente

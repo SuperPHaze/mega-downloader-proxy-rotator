@@ -22,6 +22,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QCheckBox,
     QDialog,
@@ -266,34 +267,34 @@ class MaintenanceDialog(QDialog):
                     detail=self._detail_text(key),
                 )
             )
-            # Le voci con pochi file si mostrano per nome: e' l'elenco esatto
-            # di cio' che sparisce. La cartella dei download no — sarebbero
-            # migliaia di righe: si mostra la cartella e i conteggi.
-            if key == ITEM_DOWNLOADS:
-                if survey.root is not None:
-                    lines.append("    " + str(survey.root))
-                continue
-            for path in survey.paths:
-                lines.append(
-                    "    " + t(
-                        "maintenance.confirm_file",
-                        name=path.name,
-                        size=fmt_bytes(_safe_size(path)),
-                    )
-                )
+            if key == ITEM_DOWNLOADS and survey.root is not None:
+                lines.append("    " + str(survey.root))
+                for entry in survey.receipts:
+                    lines.append("    " + t("maintenance.confirm_file",
+                                            name=str(entry.path.relative_to(survey.root)),
+                                            size=fmt_bytes(entry.size)))
+            else:
+                for path in survey.paths:
+                    lines.append("    " + t("maintenance.confirm_file", name=path.name,
+                                            size=fmt_bytes(_safe_size(path))))
         return lines
 
     def _on_confirm(self) -> None:
         keys = self._selected_keys()
         if not keys:
             return
-        body = "\n".join(
-            [t("maintenance.confirm_intro"), ""] + self.confirm_lines(keys)
-        )
+        lines = self.confirm_lines(keys)
+        intro = t("maintenance.confirm_intro")
         box = QMessageBox(self)
         box.setIcon(QMessageBox.Icon.Warning)
         box.setWindowTitle(t("maintenance.confirm_title"))
-        box.setText(body)
+        box.setTextFormat(Qt.TextFormat.PlainText)
+        if ITEM_DOWNLOADS in keys:
+            summary = [line for line in lines if not line.startswith("    ")]
+            box.setText("\n".join([intro, "", *summary]))
+            box.setDetailedText("\n".join(lines))
+        else:
+            box.setText("\n".join([intro, "", *lines]))
         yes = box.addButton(
             t("maintenance.confirm_button"), QMessageBox.ButtonRole.DestructiveRole
         )
@@ -311,7 +312,10 @@ class MaintenanceDialog(QDialog):
 
     def _run(self, keys: list[str]) -> None:
         core_keys = [k for k in keys if k != ITEM_PROXY_CACHE]
-        results = maintenance.clear_items(core_keys, output_root=self._output_root)
+        results = maintenance.clear_items(
+            core_keys, output_root=self._output_root,
+            selected_downloads=self._surveys[ITEM_DOWNLOADS].receipts,
+        )
         if ITEM_PROXY_CACHE in keys:
             results.append(self._clear_proxy_cache())
         self._show_report(results)

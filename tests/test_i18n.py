@@ -287,7 +287,7 @@ def test_controls_bar_retranslates_hot(qapp, isolated_prefs, monkeypatch):
     bar.retranslate()       # in app lo fa MainWindow._on_language_changed
     assert bar.start_btn.text().strip() == "Start"
     assert bar.cancel_btn.text().strip() == "Cancel"
-    assert bar._settings_labels["controls.row_language"].text() == "Language:"
+    assert bar._settings_labels["controls.row_language"].text() == "Language"
 
     TR.set_preference("it")
     bar.retranslate()
@@ -470,14 +470,16 @@ def test_proxy_bar_retranslates_with_cascade(qapp, isolated_prefs, monkeypatch):
     """La cascata sulle _MetricCard: ogni card tiene la chiave, non il testo."""
     _in_italian(monkeypatch)
     bar = ProxyBar()
-    assert bar._card_alive._label.text() == "VIVI"
-    assert bar._card_validation._label.text() == "VALIDAZIONE"
+    assert bar._micro.text() == "Connessione"
+    assert bar._card_alive._label.text() == "Proxy attivi"
+    assert bar._card_validation._label.text() == "Validazione"
 
     TR.set_preference("en")
     bar.retranslate()
-    assert bar._card_alive._label.text() == "ALIVE"
-    assert bar._card_validation._label.text() == "VALIDATION"
-    assert bar._card_band_proxy._label.text() == "PROXY SPEED"
+    assert bar._micro.text() == "Connection"
+    assert bar._card_alive._label.text() == "Active proxies"
+    assert bar._card_validation._label.text() == "Validation"
+    assert bar._card_band_proxy._label.text() == "Proxy speed"
     assert bar._reset_btn.text() == "Reset cache"
     assert "proxy pool" in bar._proxy_speedtest_btn.toolTip()
 
@@ -500,42 +502,47 @@ def test_stats_bar_retranslates(qapp, isolated_prefs, monkeypatch):
     _in_italian(monkeypatch)
     panel = JobsPanel()
     bar = StatsBar(panel.model)
-    assert bar._speed_micro.text() == "VELOCITÀ"
-    assert bar._job_micro.text() == "DOWNLOAD"
-    assert "totali" in bar._job_total.text()
+    panel.reset(["https://mega.nz/file/AAA#k"])
+    panel.on_progress(0, 1, 50)
+    panel.model.set_throughput(0, 1024, 4096, 8192)
+    assert [label.text() for label in bar._captions.values()] == [
+        "Velocità attuale", "Dati scaricati", "Tempo rimanente"]
+    assert [label.text() for label in bar._values] == ["1 KB/s", "4 KB", "~0:04"]
 
     TR.set_preference("en")
     bar.retranslate()
-    assert bar._speed_micro.text() == "SPEED"
-    assert bar._job_micro.text() == "DOWNLOADS"
-    assert "total" in bar._job_total.text()
-    assert "running" in bar._job_counts.text()
+    assert [label.text() for label in bar._captions.values()] == [
+        "Current speed", "Downloaded", "Time remaining"]
+    assert [label.text() for label in bar._values] == ["1 KB/s", "4 KB", "~0:04"]
 
 
 def test_stats_panel_retranslates(qapp, isolated_prefs, monkeypatch):
     _in_italian(monkeypatch)
     panel = JobsPanel()
     stats = StatsPanel(panel.model)
-    stats._body.setVisible(True)
-    stats.refresh()
     assert stats._title_lbl.text() == "Statistiche"
+    assert stats._empty.text() == "Le statistiche saranno disponibili al primo download."
+    assert stats._body.isHidden()
+    panel.reset(["https://mega.nz/file/AAA#k"])
+    panel.on_all_done(0)
+    assert not stats._body.isHidden()
+    assert stats._completion.text() == "Completati 1 su 1 (100%)"
     assert stats._copy_btn.text() == "Copia riepilogo"
-    assert stats._speed_hdr.text() == "Velocità di sessione"
+    assert stats._captions["effective"].text() == "Velocità effettiva"
 
     TR.set_preference("en")
     stats.retranslate()
     assert stats._title_lbl.text() == "Statistics"
     assert stats._copy_btn.text() == "Copy summary"
-    assert stats._speed_hdr.text() == "Session speed"
-    assert stats._detail_hdr.text() == "Per-download detail:"
-    assert stats._throughput_lbl.text().startswith("  Effective throughput :")
+    assert stats._captions["effective"].text() == "Effective speed"
+    assert stats._completion.text() == "Completed 1 of 1 (100%)"
 
 
 def test_jobs_panel_retranslates_with_cascade(qapp, isolated_prefs, monkeypatch):
     """La cascata su _EmptyState e su OGNI _JobCard."""
     _in_italian(monkeypatch)
     panel = JobsPanel()
-    assert panel._empty._msg.text() == "Aggiungi i tuoi link Mega per iniziare"
+    assert panel._empty._msg.text() == "Nessun download in coda"
     assert panel._filter_buttons["in_progress"].text() == "In corso (0)"
 
     panel.reset(["https://mega.nz/file/AAA#k", "https://mega.nz/file/BBB#k"])
@@ -545,7 +552,7 @@ def test_jobs_panel_retranslates_with_cascade(qapp, isolated_prefs, monkeypatch)
 
     TR.set_preference("en")
     panel.retranslate()
-    assert panel._empty._msg.text() == "Add your Mega links to get started"
+    assert panel._empty._msg.text() == "Your queue is empty"
     assert panel._filter_buttons["in_progress"].text() == "In progress (1)"
     assert panel._filter_buttons["completed"].text() == "Completed (1)"
     assert panel._restart_all_btn.text() == "Restart failed (0)"
@@ -554,15 +561,15 @@ def test_jobs_panel_retranslates_with_cascade(qapp, isolated_prefs, monkeypatch)
     assert panel._cards[1]._badge.text() == "Completed"
 
 
-def test_empty_state_button_matches_controls_key(qapp, isolated_prefs, monkeypatch):
-    """Il pulsante dello stato vuoto e il suggerimento che lo nomina usano la
-    STESSA chiave della barra comandi: non possono sfasarsi."""
+def test_empty_state_actions_and_hint_retranslate(qapp, isolated_prefs, monkeypatch):
     _in_italian(monkeypatch)
     panel = JobsPanel()
-    TR.set_preference("en")
-    panel.retranslate()
-    assert panel._empty._btn.text().strip() == t("controls.paste_links")
-    assert t("controls.paste_links") in panel._empty._sub.text()
+    for lang, hint in (("it", "file di testo"), ("en", "text file")):
+        TR.set_preference(lang)
+        panel.retranslate()
+        assert panel._empty._btn.text() == t("controls.paste_links")
+        assert panel._empty._import_btn.text() == t("link_panel.import")
+        assert hint in panel._empty._sub.text()
 
 
 def test_job_card_renders_the_error_in_both_languages(qapp, isolated_prefs, monkeypatch):
@@ -577,13 +584,13 @@ def test_job_card_renders_the_error_in_both_languages(qapp, isolated_prefs, monk
     )
     testo = panel._cards[0]._attempts_lbl.text()
     assert testo.startswith("Tentativi: 3")
-    assert testo.endswith("Ultimo errore: IP check fallito: timeout")
+    assert panel._cards[0]._error_lbl.accessibleName() == "Ultimo errore: IP check fallito: timeout"
 
     TR.set_preference("en")
     panel.retranslate()
     testo = panel._cards[0]._attempts_lbl.text()
     assert testo.startswith("Attempts: 3")
-    assert testo.endswith("Last error: IP check failed: timeout")
+    assert panel._cards[0]._error_lbl.accessibleName() == "Last error: IP check failed: timeout"
 
 
 def test_job_card_applies_the_abandon_alias(qapp, isolated_prefs, monkeypatch):
@@ -596,8 +603,7 @@ def test_job_card_applies_the_abandon_alias(qapp, isolated_prefs, monkeypatch):
         0, "https://mega.nz/file/AAA#k", 3,
         "ip_check_failed_paren", {"error": "timeout"},
     )
-    testo = panel._cards[0]._attempts_lbl.text()
-    assert testo.endswith("Ultimo errore: IP check fallito: timeout")
+    assert panel._cards[0]._error_lbl.accessibleName() == "Ultimo errore: IP check fallito: timeout"
 
 
 def test_job_card_frames_the_failed_attempt(qapp, isolated_prefs, monkeypatch):
@@ -607,8 +613,9 @@ def test_job_card_frames_the_failed_attempt(qapp, isolated_prefs, monkeypatch):
     panel = JobsPanel()
     panel.reset(["https://mega.nz/file/AAA#k"])
     panel.on_failed(0, 1, "download_failed_paren", {"error": "boom"})
-    testo = panel._cards[0]._attempts_lbl.text()
-    assert testo.endswith("Ultimo errore: Tentativo 1: download fallito (boom)")
+    label = panel._cards[0]._error_lbl
+    assert label.accessibleName() == "Ultimo errore: download fallito (boom)"
+    assert label.toolTip() == "Tentativo 1: download fallito (boom)"
 
 
 def test_header_summary_follows_language(isolated_prefs, monkeypatch):
@@ -852,6 +859,7 @@ class _FinestraFinta:
 
     def __init__(self, label):
         self._status_lbl = label
+        self._setup_error = None
         self._status_source = None
 
 
@@ -996,34 +1004,25 @@ def test_job_status_is_translated_everywhere(qapp, isolated_prefs, monkeypatch):
             assert stato not in dlg.summary_label.text()   # niente slug grezzo
 
 
-def test_status_badge_fits_the_longest_label(qapp, isolated_prefs, monkeypatch):
-    """Il badge ha larghezza fissa: l'etichetta piu' lunga (l'italiano
-    "Abbandonato") ci deve stare, altrimenti viene tagliata a meta' parola.
-
-    Due avvertenze, entrambe verificate e non dedotte:
-      - si misura a **10pt**, non agli 8pt che il codice chiede con `setFont`:
-        il QSS d'applicazione (`QWidget { font-size: 10pt }`) sovrascrive il
-        font impostato a mano, quindi 10pt e' cio' che l'utente vede davvero;
-      - senza Segoe UI (piattaforma offscreen, Linux, CI) le metriche vengono
-        da un font sostitutivo piu' largo e il numero non direbbe nulla sul
-        prodotto reale: li' il test si salta invece di fallire a vuoto.
-    """
-    from PyQt6.QtGui import QFont, QFontDatabase, QFontMetrics
+def test_status_text_fits_each_state(qapp, isolated_prefs, monkeypatch):
     from src.gui.jobs_panel import _STATUS_LABEL_KEY
 
-    if "Segoe UI" not in QFontDatabase.families():
-        pytest.skip("Segoe UI non disponibile: le metriche non sarebbero quelle rese")
-
     panel = JobsPanel()
+    panel.resize(440, 270)
     panel.reset(["https://mega.nz/file/AAA#k"])
-    utile = panel._cards[0]._badge.width() - 14   # padding 2px 6px + bordo 1px
-    reso = QFont("Segoe UI", 10)
-    reso.setBold(True)
-    fm = QFontMetrics(reso)
+    panel.show()
+    card = panel._cards[0]
+    job = panel.model.get_job(0)
     for lang in ("it", "en"):
         TR.set_preference(lang)
-        for key in _STATUS_LABEL_KEY.values():
-            assert fm.horizontalAdvance(t(key)) <= utile, (lang, key, t(key))
+        panel.retranslate()
+        for state, key in _STATUS_LABEL_KEY.items():
+            job.status = state
+            card.retranslate()
+            qapp.processEvents()
+            assert card._badge.text() == t(key)
+            assert card._badge.fontMetrics().horizontalAdvance(t(key)) <= card._badge.contentsRect().width()
+    panel.close()
 
 
 def test_job_detail_ip_table_survives_retranslation(qapp, isolated_prefs, monkeypatch):

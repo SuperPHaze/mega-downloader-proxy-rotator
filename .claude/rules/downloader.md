@@ -31,7 +31,8 @@ paths: ["src/downloader/**/*.py"]
 - `mega.py` NON è più una dipendenza. Le primitive crypto (`mega_crypto.py`) e l'API pubblica (`mega_api.py`) sono vendorizzate localmente.
 - `MegaPublicClient` (in `mega_api.py`) risolve un link pubblico Mega via API `cs?g=1` ritornando handle, URL CDN, dimensione, nome file decifrato. Usa `requests.Session` per-istanza con `session.proxies` nativi: nessun monkey-patch globale, nessun `threading.local`. Retry esplicito su `-3` (EAGAIN) bounded a 5 tentativi.
 - `mega_crypto.py` espone solo helper puri (no I/O, no stato globale): `base64_to_a32`, `a32_to_str`, `base64_url_decode`, `decrypt_attr` (AES-CBC sugli attributi), `derive_file_key` (split chiave a 8 word → k+iv per AES-CTR del payload).
-- `MegaClient` (in `mega_client.py`) usa `MegaPublicClient` per il resolve e `requests.get(stream=True)` per il transfer; decifra a blocchi con AES-CTR direttamente sul file finale (nessun temp file, nessun WinError 32 da gestire).
+- I client seriale e parallelo scrivono sul `.part`. `file_integrity.promote_verified` verifica dimensione e meta-MAC MEGA prima di `os.replace`. Un MAC errato invalida prima il checkpoint e poi il parziale. Il riavvio esplicito ritenta da zero. Un annullo durante la verifica conserva entrambi.
+- Anche il riuso di un file finale richiede dimensione e MAC. I blocchi di autenticazione seguono il formato MEGA e sono indipendenti dai range HTTP configurati.
 - L'import di `pycryptodome` resta locale dentro `MegaClient.download()` / `ParallelMegaDownloader.download()` per non rallentare l'avvio della GUI.
 - Se l'import di `Crypto` fallisce, sollevare `MegaCryptoDependencyError` (errore d'ambiente permanente, non transitorio): il worker lo cattura PRIMA di `Exception` e non chiama `mark_dead()` sul proxy innocente.
 
@@ -44,10 +45,7 @@ paths: ["src/downloader/**/*.py"]
 - Forma interna del job (costruita/riconosciuta SOLO da `core/mega_links.py`):
   `https://mega.nz/folder/<folder_id>/file/<node>?p=<b64url(rel_path)>&s=<byte>#<chiave_8_word>`.
   Il job resta una STRINGA: `session_store`, `download_history` e `worker` non cambiano contratto.
-  `&s=` e' la dimensione attesa: il worker la confronta con quella del file gia' presente prima
-  di dichiararlo completo. Senza, un file OMONIMO lasciato da un'altra cartella Mega (nell'albero
-  il path e' stabile fra le sessioni) verrebbe scambiato per il nostro e il download risulterebbe
-  completato senza aver scaricato niente. `&s=` e' opzionale in lettura (job vecchio stile).
+  `&s=` contiene la dimensione attesa. Quando è presente, il worker può verificare il file locale con la chiave del nodo senza accedere alla rete. Per i job precedenti senza `&s=` il client richiede la dimensione al resolver prima di riusare il file.
 - Richiesta `g` per un nodo di cartella: `n` ha DUE significati diversi nella stessa chiamata —
   handle del NODO nel payload, id della CARTELLA nella query (`_api_request(..., extra_params)`).
   Non è un refuso: documentarlo se si tocca quel codice.
@@ -63,8 +61,7 @@ paths: ["src/downloader/**/*.py"]
 - La cartella è CONDIVISA con gli altri file dello stesso albero. Conseguenze vincolanti: il check
   di resume deve guardare il NOME ESATTO del file (non "un file finale qualsiasi nella cartella"),
   e la pulizia dei temporanei `megapy_*` va saltata (non sono nostri).
-- Cancellare/eliminare un job-cartella rimuove SOLO quel file (+ `.part` + sidecar) e pota le
-  cartelle rimaste vuote fino alla radice dei download esclusa: mai `rmtree` dell'albero condiviso.
+- Il worker registra i file effettivamente scritti in `core/output_store.py`. La rimozione dei parziali richiesti dall’utente avviene a file chiusi, prima che il worker segnali il proprio arresto.
 - **Due job non possono condividere la destinazione su disco.** La de-collisione dentro una
   cartella la fa `build_folder_expansion`; quella GLOBALE (piu' cartelle nello stesso avvio) la fa
   `deduplicate_job_urls`, chiamata dal `FolderExpandWorker` perche' e' l'unico punto che vede
@@ -73,6 +70,7 @@ paths: ["src/downloader/**/*.py"]
   gli alberi non si mescolano), file che si chiamerebbe come una cartella sorella (vince la
   cartella). I link a FILE SINGOLO passano invariati: i loro duplicati sono leciti (finiscono in
   cartelle distinte grazie al suffisso `_<file_id>`) e li governa la checkbox «Consenti duplicati».
+  Le aggiunte successive e i ripristini usano inoltre `reserve_folder_links` per conservare i percorsi già assegnati nella destinazione.
 - Il suffisso di de-collisione va calcolato con il BUDGET di lunghezza del nome
   (`_suffixed_name` per i file su `MAX_FILE_NAME_LEN`, `_suffixed_folder_name` per le cartelle su
   `_TREE_SEGMENT_MAX_LEN`): accodarlo e basta lo farebbe ritagliare via dalla ri-sanificazione a
@@ -87,21 +85,19 @@ Tutti i segnali hanno `file_id: int` come primo parametro per permettere alla GU
 - `fatal_error(file_id, motivo)` — errore permanente d'ambiente (es. `MegaCryptoDependencyError`): il worker termina senza emettere `all_done`. L'orchestrator libera lo slot.
 - `all_done(file_id)` — emesso una sola volta a fine ciclo N
 - `completed_info(file_id, url, file_name, file_size, path)` — metadati del download riuscito, emesso UNA volta subito prima di `all_done`. `file_size` è tipato `object` per non troncare file > 2 GB. L'orchestrator lo persiste in `download_history.log` (JSONL, dedup per handle Mega).
-- `cancelled(file_id)` — emesso SOLO in caso di cancellazione locale per-job (flag `_local_cancelled`), MAI per annullo globale (gia' coperto da `SessionState`). Permette all'orchestrator di liberare lo slot e alla GUI di rimuovere la cartella di lavoro.
-- `abandoned(file_id, url, attempts, last_error)` — emesso quando il cap `MAX_ATTEMPTS_PER_FILE` viene raggiunto: l'orchestrator persiste l'evento in `failed_links.log` (JSONL) e libera lo slot.
+- `cancelled(file_id)` — emesso SOLO in caso di cancellazione locale per-job (flag `_local_cancelled`), MAI per annullo globale (gia' coperto da `SessionState`). La GUI può quindi eseguire l'eventuale rimozione richiesta per quel job.
+- `abandoned(file_id, url, attempts, last_error)` — emesso quando il cap `MAX_ATTEMPTS_PER_FILE` viene raggiunto: l'orchestrator persiste l'evento in `failed_links.log` (JSONL). Lo slot di ogni worker viene liberato da `QThread.finished`, anche dopo un annullo globale.
 
 ## Cancellazione per-job
-- `DownloadWorker.request_cancel()` setta solo il flag locale `_local_cancelled`. Non emette nulla direttamente.
+- `DownloadWorker.request_cancel()` setta il flag locale `_local_cancelled` e sveglia chi attende la fine della pausa.
 - I checkpoint del worker e il `ParallelMegaDownloader` non leggono `session_state` direttamente: usano `_EffectiveSessionState`, che fa OR fra flag locale e stato globale. Quando si aggiunge un nuovo checkpoint nel worker, usare `self._effective_state`, mai `self.session_state`.
-- Il segnale `cancelled` viene emesso nel `finally` di `run()` e solo se `_local_cancelled and not session_state.is_cancelled()`.
+- Il segnale `cancelled` viene emesso all'uscita da un ciclo interrotto e solo se `_local_cancelled and not session_state.is_cancelled()`.
 - La formula del path di output di un job (`downloads/<sha1(url)[:12]>_<file_id>/`) e' centralizzata in `worker.job_output_dir(url, file_id)`: usare quella funzione, non duplicare l'hashing.
 
 ## Identificativi dei job: mai riusati
 
-- Il `file_id` lo assegna **solo** `DownloadOrchestrator._allocate_file_id()`, un contatore
-  monotono azzerato esclusivamente da `start()` (che apre una sessione nuova, dove anche la GUI
-  ricrea le righe da zero). Nessun altro punto deve calcolarlo, e in particolare **mai** con un
-  `enumerate()` sulla lista corrente: due infornate di link darebbero gli stessi numeri.
+- La coda iniziale associa ciascun URL al proprio ID. `session_store` salva gli ID dei job incompleti e il primo ID libero. Al ripristino abbina ogni occorrenza di un URL al suo ID. L'orchestrator e la GUI ricevono la stessa mappa. Le aggiunte a caldo usano il contatore monotono di `DownloadOrchestrator`.
+- Se due job di cartella hanno la stessa destinazione, il secondo attende la fine del primo. Le altre destinazioni possono avanzare.
 - **Non e' un dettaglio estetico**: il `file_id` entra nel nome della cartella di destinazione
   (`downloads/<sha1(url)[:12]>_<file_id>/`, vedi `worker.job_output_dir`) ed e' la chiave con cui
   la GUI indirizza righe, dialoghi di dettaglio e cancellazioni. Riusarne uno fa scrivere due

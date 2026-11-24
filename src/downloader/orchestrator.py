@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import unicodedata
 from datetime import datetime
 from pathlib import Path
 
@@ -45,6 +46,8 @@ from src.core.config import (
 )
 from src.core.download_history import extract_handle, record_completed
 from src.core.failed_log import log_failed_link
+from src.core.file_naming import folder_job_output_dir, sanitize_file_name
+from src.core.mega_links import parse_folder_job_url
 from src.core.sources_stats import log_validation_result
 from src.core.state import SessionState
 from src.downloader.worker import DownloadWorker
@@ -327,6 +330,7 @@ class DownloadOrchestrator(QObject):
         # Mantiene il file_id originale per coerenza con le righe del ProgressPanel.
         self._queue: list[tuple[int, str]] = []
         self._active_count = 0
+        self._active_folder_paths: dict[int, str] = {}
         # Generatore degli identificativi di job: MONOTONO per tutta la
         # sessione. Non si riusa mai un file_id, nemmeno dopo annullamenti o
         # riavvii: entra nel nome della cartella di destinazione
@@ -400,6 +404,8 @@ class DownloadOrchestrator(QObject):
         speed_admission_bps: int | None = None,
         link_capacity_mbit: float | None = None,
         output_root: Path | None = None,
+        file_ids: list[int] | None = None,
+        next_file_id: int = 0,
     ) -> None:
         if concurrency is not None:
             self.max_concurrent = max(1, int(concurrency))
@@ -543,14 +549,14 @@ class DownloadOrchestrator(QObject):
         })
 
         self.session_state.start()
-        # Gli identificativi si assegnano QUI, una volta sola: da start() in
-        # poi nessuno li ricalcola, cosi' un'aggiunta a caldo puo' chiedere i
-        # propri senza rischiare di collidere con quelli gia' consegnati alla
-        # GUI. Per la prima infornata restano 0..n-1, come con enumerate().
-        self._next_file_id = 0
+        # A new queue starts at zero. A restored queue keeps its original IDs
+        # and reserves the high-water mark, including already completed jobs.
+        entries = enumerate(links) if file_ids is None else zip(file_ids, links, strict=True)
+        self._pending_jobs = list(entries)
+        highest_id = max((fid for fid, _ in self._pending_jobs), default=-1)
+        self._next_file_id = max(next_file_id, highest_id + 1)
         self._workers_spawned = False
         self._setup_failed = False
-        self._pending_jobs = [(self._allocate_file_id(), u) for u in links]
         # F3/F4: passa il cap e i parametri speed test al thread di setup.
         # use_speed_test copre sia speed_selection (throughput+N5) sia
         # speed_admission disaccoppiato (solo ammissione, score+N normale).
@@ -573,12 +579,37 @@ class DownloadOrchestrator(QObject):
         self._setup.failed_t.connect(self.pool_failed_t)
         self._setup.start()
 
+    def retry_setup(self) -> bool:
+        """Retry preparation with the same pending IDs, options and signal connections."""
+        if (not self._setup_failed or not self._pending_jobs or self._setup is None
+                or self._shutdown_requested or self.session_state.is_cancelled()):
+            return False
+        self._setup_failed = False
+        self._hot_started = False
+        self._retry_when_idle()
+        return True
+
+    def _retry_when_idle(self) -> None:
+        if self._shutdown_requested or self.session_state.is_cancelled() or not self._pending_jobs:
+            return
+        if self._setup.isRunning():
+            # Failure can reach the UI while the previous run is still unwinding.
+            QTimer.singleShot(20, self._retry_when_idle)
+        else:
+            self._setup.start()
+
     def stop_background_tasks(self) -> None:
         # Ferma subito refresher e timer, senza aspettare _on_slot_freed.
         # Usato dalla GUI su Annulla e da shutdown(). Idempotente.
         self._refresher.stop()
         self._pool_size_timer.stop()
         self._cache_save_timer.stop()
+
+    def cancel_all(self) -> None:
+        self.session_state.cancel()
+        self._queue.clear()
+        self._pending_jobs.clear()
+        self.stop_background_tasks()
 
     def has_active_workers(self) -> bool:
         """C'e' almeno un worker ancora VIVO (thread non terminato)?
@@ -725,10 +756,25 @@ class DownloadOrchestrator(QObject):
         self._fill_slots()
 
     def _fill_slots(self) -> None:
-        # Avvia worker finche' restano slot liberi e link in coda.
+        # Folder jobs share an output tree. A second writer must not change
+        # the .part between verification and rename, or through an open handle.
+        busy = set(self._active_folder_paths.values())
         while self._active_count < self.max_concurrent and self._queue:
-            file_id, link = self._queue.pop(0)
-            self._launch_worker(file_id, link)
+            for index, (file_id, link) in enumerate(self._queue):
+                job = parse_folder_job_url(link)
+                if job is not None:
+                    directory = folder_job_output_dir(job.rel_path, self.output_root)
+                    name = sanitize_file_name(job.file_name, fallback=f"mega_{job.node_handle}")
+                    path = unicodedata.normalize("NFC", str(directory / name)).casefold()
+                    if path in busy:
+                        continue
+                    busy.add(path)
+                    self._active_folder_paths[file_id] = path
+                self._queue.pop(index)
+                self._launch_worker(file_id, link)
+                break
+            else:
+                return
 
     def _launch_worker(self, file_id: int, link: str) -> None:
         log.info(
@@ -758,11 +804,9 @@ class DownloadOrchestrator(QObject):
         worker.throughput.connect(self.throughput)
         worker.file_resolved.connect(self.file_resolved)
         worker.completed_info.connect(self._on_worker_completed)
-        # Quando un worker termina (fine cicli o errore fatale) libera lo slot
-        # e riempie con il prossimo della coda. Usiamo i segnali del worker
-        # stesso anziche' QThread.finished per restare nel contratto pubblico.
-        worker.all_done.connect(self._on_slot_freed)
-        worker.fatal_error.connect(lambda _fid, _msg: self._on_slot_freed(_fid))
+        # Anche un annullo globale termina il thread, senza emettere un
+        # segnale terminale per il singolo file. Ogni thread libera uno slot.
+        worker.finished.connect(self._on_worker_finished)
         worker.cancelled.connect(self._on_worker_cancelled)
         worker.abandoned.connect(self._on_worker_abandoned)
         worker.abandoned_detail.connect(self.abandoned_detail)
@@ -786,7 +830,13 @@ class DownloadOrchestrator(QObject):
         high = low * 2
         return low, high
 
+    def _on_worker_finished(self) -> None:
+        worker = self.sender()
+        self._workers.remove(worker)
+        self._on_slot_freed(worker.file_id)
+
     def _on_slot_freed(self, file_id: int) -> None:
+        self._active_folder_paths.pop(file_id, None)
         self._active_count = max(0, self._active_count - 1)
         if self.speed_selection_enabled:
             low, high = self._compute_adaptive_thresholds()
@@ -797,6 +847,8 @@ class DownloadOrchestrator(QObject):
             self._active_count,
             len(self._queue),
         )
+        if self._shutdown_requested:
+            return
         if self.session_state.is_cancelled():
             self._refresher.stop()
             self._pool_size_timer.stop()
@@ -845,7 +897,7 @@ class DownloadOrchestrator(QObject):
 
     def _on_worker_abandoned(self, file_id: int, url: str, attempts: int, last_error: str) -> None:
         # Persistiamo l'evento sul file dedicato (centralizzato qui per non
-        # duplicarlo nel worker) e libera lo slot come per all_done/fatal_error.
+        # duplicarlo nel worker).
         log.warning(
             "Worker file_id=%d abbandonato dopo %d tentativi: %s",
             file_id, attempts, last_error,
@@ -862,17 +914,15 @@ class DownloadOrchestrator(QObject):
         except Exception:
             log.exception("Scrittura failed_links.log fallita per file_id=%d", file_id)
         self.abandoned.emit(file_id, url, attempts, last_error)
-        self._on_slot_freed(file_id)
 
     def _on_worker_cancelled(self, file_id: int) -> None:
         # Un worker ha onorato una richiesta di cancellazione locale.
-        # Notifica la GUI e libera lo slot per il prossimo in coda.
+        # Notifica la GUI che può completare l'annullo.
         log.info(
             "Worker file_id=%d cancellato dall'utente", file_id,
             extra={"event_type": "download_cancelled", "file_id": file_id},
         )
         self.job_cancelled.emit(file_id)
-        self._on_slot_freed(file_id)
 
     def _allocate_file_id(self) -> int:
         """Prossimo identificativo di job, mai uguale a uno gia' consegnato.
@@ -895,8 +945,6 @@ class DownloadOrchestrator(QObject):
         operazione a meno dell'identificativo (uno esistente contro uno nuovo),
         e due copie divergerebbero alla prima modifica.
         """
-        # Pulisci worker terminati per non accumulare riferimenti.
-        self._workers = [w for w in self._workers if w.isRunning()]
         # Riattiva sessione se necessario (es. dopo Annulla globale).
         if self.session_state.is_cancelled():
             self.session_state.start()
@@ -912,6 +960,14 @@ class DownloadOrchestrator(QObject):
             self._pool_size_timer.start()
         if not self._cache_save_timer.isActive():
             self._cache_save_timer.start()
+
+    def _can_accept_jobs(self) -> bool:
+        if self._shutdown_requested or self._setup_failed:
+            return False
+        # I vecchi worker devono osservare l'annullo prima che start() lo azzeri.
+        if self.session_state.is_cancelled():
+            return self._workers_spawned and not self.has_active_workers()
+        return True
 
     def add_jobs(self, links: list[str], at_top: bool = False) -> list[int]:
         """Aggiunge link a una sessione GIA' avviata, senza rifare la raccolta
@@ -930,11 +986,8 @@ class DownloadOrchestrator(QObject):
         """
         if not links:
             return []
-        if self._shutdown_requested:
-            log.warning("add_jobs su orchestrator in chiusura: rifiutato")
-            return []
-        if self._setup_failed:
-            log.warning("add_jobs senza proxy validi: rifiutato")
+        if not self._can_accept_jobs():
+            log.warning("Sessione non disponibile per nuovi job")
             return []
         entries = [(self._allocate_file_id(), url) for url in links]
         self._reactivate_session()
@@ -962,23 +1015,27 @@ class DownloadOrchestrator(QObject):
     def restart_job(self, file_id: int, url: str) -> bool:
         """Riavvia un singolo job (già in stato terminato). Ritorna False se
         il job è già in coda o in esecuzione, o se l'orchestrator non è pronto."""
-        if any(fid == file_id for fid, _ in self._queue):
+        if not self._can_accept_jobs():
+            return False
+        queue = self._queue if self._workers_spawned else self._pending_jobs
+        if any(fid == file_id for fid, _ in queue):
             return False
         if any(
-            w.file_id == file_id and w.isRunning() and not w.is_local_cancelled()
+            w.file_id == file_id and w.isRunning()
             for w in self._workers
         ):
             return False
         self._reactivate_session()
-        self._queue.append((file_id, url))
-        self._fill_slots()
+        queue.append((file_id, url))
+        if self._workers_spawned:
+            self._fill_slots()
         return True
 
     def restart_all_failed(self, jobs: list[tuple[int, str]]) -> int:
         """Riavvia una lista di job (file_id, url). Ritorna quanti accettati."""
         return sum(1 for fid, url in jobs if self.restart_job(fid, url))
 
-    def cancel_job(self, file_id: int) -> str:
+    def cancel_job(self, file_id: int, *, discard_partial: bool = False) -> str:
         # Cancella un singolo job. Ritorna lo stato precedente:
         #   "queued"   -> rimosso dalla coda, GUI gia' aggiornata
         #   "running"  -> richiesta cancellazione al worker (asincrona)
@@ -986,14 +1043,15 @@ class DownloadOrchestrator(QObject):
         # Per i job in coda, emettiamo job_cancelled subito.
         # Per quelli in esecuzione, sara' il worker a emettere cancelled
         # (cfr. _on_worker_cancelled) quando avra' effettivamente terminato.
-        for i, (fid, _url) in enumerate(self._queue):
+        queue = self._queue if self._workers_spawned else self._pending_jobs
+        for i, (fid, _url) in enumerate(queue):
             if fid == file_id:
-                del self._queue[i]
+                del queue[i]
                 log.info("Cancellato dalla coda file_id=%d", file_id)
                 self.job_cancelled.emit(file_id)
                 return "queued"
         for w in self._workers:
             if w.file_id == file_id and w.isRunning() and not w.is_local_cancelled():
-                w.request_cancel()
+                w.request_cancel(discard_partial=discard_partial)
                 return "running"
         return "unknown"

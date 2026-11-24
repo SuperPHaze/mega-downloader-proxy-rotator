@@ -15,6 +15,31 @@ STRINGS: dict[str, str | dict[str, str]] = {
     "main_window.title": "{name} v{version}",
 
     # ---- controls bar: buttons ---------------------------------------------
+    "workspace.transfers": "Downloads",
+    "workspace.details": "Session details",
+    "workspace.queue_title": "Download queue",
+    "workspace.file_menu": "File",
+    "workspace.speed": "Current speed",
+    "workspace.volume": "Downloaded",
+    "workspace.remaining": "Time remaining",
+    "workspace.destination": "Save to · {folder}",
+    "controls.application": "Application",
+    "controls.row_theme": "Appearance",
+    "controls.use_light": "Use light theme",
+    "controls.use_dark": "Use dark theme",
+    "controls.minimize_tooltip_ask_mac": "Choose between the Dock and the menu bar each time you minimize.",
+    "controls.minimize_tooltip_taskbar_mac": "The window minimizes to the Dock. Click to choose again.",
+    "controls.minimize_tooltip_tray_mac": "The window hides in the menu bar. Click to choose again.",
+    "tray.ask_dock": "Dock",
+    "tray.ask_menu_bar": "Menu bar",
+    "link_panel.edit": "Edit links",
+    "jobs_panel.filter_all": "All",
+    "jobs_panel.filtered_empty": "No downloads in this view. Select All to see the queue.",
+    "jobs_panel.details": "Details",
+    "jobs_panel.actions_for": "Actions for {name}",
+    "jobs_panel.details_for": "Details for {name}",
+    "jobs_panel.confirm_cancel": "Cancel the download of {name}?",
+    "jobs_panel.discard_partial": "Also delete partially downloaded data from disk",
     "controls.start": "Start",
     "controls.pause": "Pause",
     "controls.resume": "Resume",
@@ -41,10 +66,7 @@ STRINGS: dict[str, str | dict[str, str]] = {
         "more HTTP requests to the Mega CDN.\n"
         "Large sizes (128/256 MB): for very large files on good proxies."
     ),
-    "controls.settings_tooltip": (
-        "Configure parallel downloads, duration limit and chunk size.\n"
-        "Cannot be changed during a download session."
-    ),
+    "controls.settings_tooltip": "Download, language and appearance preferences.",
     "controls.experimental_tooltip": (
         "Features under test (connections per file, proxy selection by "
         "speed). Off by default.\n"
@@ -60,16 +82,17 @@ STRINGS: dict[str, str | dict[str, str]] = {
         "Default: the program's 'downloads' subfolder."
     ),
     "controls.download_dir_tooltip_chosen": "Download folder:\n{path}",
+    "controls.choose_local_download_dir": "The saved folder is from another system. Choose a local destination",
     "controls.choose_download_dir_title": "Choose the download folder",
 
     # ---- controls bar: Settings menu rows ------------------------------------
-    "controls.row_concurrency": "Parallel files:",
-    "controls.row_time_limit": "Time limit (min/file):",
-    "controls.row_chunk": "Chunk:",
-    "controls.row_download_dir": "Download folder:",
-    "controls.row_minimize": "On minimize:",
-    "controls.row_language": "Language:",
-    "controls.row_maintenance": "Maintenance:",
+    "controls.row_concurrency": "Simultaneous downloads",
+    "controls.row_time_limit": "Time per file (min)",
+    "controls.row_chunk": "Segment size",
+    "controls.row_download_dir": "Download folder",
+    "controls.row_minimize": "On minimize",
+    "controls.row_language": "Language",
+    "controls.row_maintenance": "Maintenance",
 
     # ---- controls bar: maintenance -------------------------------------------
     "controls.maintenance_button": "Clear data…",
@@ -217,19 +240,19 @@ STRINGS: dict[str, str | dict[str, str]] = {
     # Le etichette delle card stanno in uno spazio di ~100px a 7pt: "Proxy
     # bandwidth" (143px) verrebbe TAGLIATA. "Line speed"/"Proxy speed" dicono
     # la stessa cosa e ci stanno; il tooltip dei pulsanti spiega per esteso.
-    "proxy_bar.micro": "PROXY",
-    "proxy_bar.card_alive": "Alive",
+    "proxy_bar.micro": "Connection",
+    "proxy_bar.card_alive": "Active proxies",
     "proxy_bar.card_validation": "Validation",
     "proxy_bar.card_discarded": "Discarded",
     "proxy_bar.card_refills": "Refills",
     "proxy_bar.card_last_refill": "Last refill",
     "proxy_bar.card_band": "Line speed",
     "proxy_bar.card_band_proxy": "Proxy speed",
-    "proxy_bar.speedtest_button": "Line speed",
+    "proxy_bar.speedtest_button": "Test line speed",
     "proxy_bar.speedtest_tooltip": (
         "Measures the line bandwidth (direct download, without proxies)."
     ),
-    "proxy_bar.proxy_speedtest_button": "Proxy speed",
+    "proxy_bar.proxy_speedtest_button": "Test proxy speed",
     "proxy_bar.proxy_speedtest_tooltip": (
         "Measures the real bandwidth of the proxy pool (only during a session)."
     ),
@@ -284,11 +307,7 @@ STRINGS: dict[str, str | dict[str, str]] = {
         "On the next start you will no longer be offered to resume the links "
         "left pending. Files already half-written on disk stay where they are."
     ),
-    "maintenance.warn_downloads": (
-        "Deletes the downloaded files and the half-finished fragments: "
-        "whatever goes has to be downloaded again from scratch. This is the "
-        "most destructive entry."
-    ),
+    "maintenance.warn_downloads": "Removes files and partial downloads recorded by this installation. Personal files and older downloads without a record are kept.",
     "maintenance.warn_logs": (
         "app.log, events.jsonl, terminal-log.txt, the source statistics and "
         "the abandoned links. They only serve to work out what happened: "
@@ -338,6 +357,14 @@ STRINGS: dict[str, str | dict[str, str]] = {
     "maintenance.report_total": "Total space freed: {size}.",
 
     # ---- Statistics panel (StatsPanel) ---------------------------------------------
+    "stats_panel.idle": "Statistics will appear when a download starts.",
+    "stats_panel.metric_elapsed": "Elapsed time",
+    "stats_panel.metric_effective": "Effective speed",
+    "stats_panel.metric_file_average": "Per-file average",
+    "stats_panel.metric_sample_average": "Active average",
+    "stats_panel.metric_peak": "Peak",
+    "stats_panel.metric_minimum": "Minimum",
+    "stats_panel.finished_of": "Completed {done} of {total} ({pct}%)",
     "stats_panel.title": "Statistics",
     "stats_panel.copy_button": "Copy summary",
     "stats_panel.session": "Session: {time}  ({status})",
@@ -398,7 +425,8 @@ STRINGS: dict[str, str | dict[str, str]] = {
     "jobs_panel.current_ip": "Current IP: {ip}",
     "jobs_panel.attempts": "Attempts: {n}",
     "jobs_panel.errors_suffix": "  •  Errors: {n}",
-    "jobs_panel.last_error_suffix": "  •  Last error: {error}",
+    "jobs_panel.file_missing": "File or folder not found.",
+    "jobs_panel.last_error": "Last error: {error}",
     "jobs_panel.filter_in_progress": "In progress",
     "jobs_panel.filter_completed": "Completed",
     "jobs_panel.filter_not_completed": "Not completed",
@@ -408,11 +436,8 @@ STRINGS: dict[str, str | dict[str, str]] = {
         "Restarts every failed, abandoned or cancelled download.\n"
         "The download resumes from the segments already fetched (.part)."
     ),
-    "jobs_panel.empty_title": "Add your Mega links to get started",
-    "jobs_panel.empty_hint": (
-        'Use the "{button}" button in the command bar\n'
-        "or click below."
-    ),
+    "jobs_panel.empty_title": "Your queue is empty",
+    "jobs_panel.empty_hint": "Paste a Mega link or import a list from a text file.",
     # ---- pannello link (LinkPanel) -----------------------------------------
     "link_panel.import": "Import from file",
     "link_panel.add": "Add links",
@@ -532,6 +557,13 @@ STRINGS: dict[str, str | dict[str, str]] = {
     ),
     "main_window.collecting_proxies": "Collecting proxies…",
     "main_window.pool_ready": "Valid proxies: {n}. Download started.",
+    "main_window.retry_setup": "Retry",
+    "main_window.setup_failed": "Could not start the queue. {error}",
+    "main_window.queue_result": "Downloaded {completed} · Failed {failed} · Abandoned {abandoned} · Cancelled {cancelled}",
+    "jobs_panel.filter_waiting": "Waiting",
+    "main_window.delete_recorded_body": "Delete the recorded files for download {file} from disk?",
+    "main_window.outputs_removed": "Removed {n} recorded files.",
+    "main_window.output_index_failed": "Could not assign the download destination. {error}",
     "main_window.pool_failed": "Proxy pool error: {error}",
     "main_window.validation_progress": (
         "Validating proxies: {done}/{total} (alive: {alive})"
@@ -784,6 +816,7 @@ STRINGS: dict[str, str | dict[str, str]] = {
     "err.folder_listing_unavailable": (
         "folder listing not available (response: {response})"
     ),
+    "err.file_mac_mismatch": "MEGA integrity check failed. Restart the download to fetch a fresh copy.",
     "err.download_incomplete": "incomplete download: {downloaded}/{expected} bytes",
     "err.crypto_not_importable": (
         "pycryptodome could not be imported ({error}). "

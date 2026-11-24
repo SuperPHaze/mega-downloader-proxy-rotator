@@ -44,13 +44,14 @@ src/
 │   │                     #   sola `addFile()` lascia al lettore ICO di Qt la scelta di quante dimensioni esporre
 │   │                     #   (con Qt 6.11 le espone tutte e 7 — misurato — ma non è un contratto). Il controllo
 │   │                     #   di riuscita è `availableSizes()`, non `isNull()`
-│   ├── file_naming.py     # sanitize_folder_name() + sanitize_file_name() (nome file sicuro per Windows: caratteri riservati + device name CON/NUL/…, estensione preservata; applicata alla SORGENTE in mega_api.resolve_public_url) + final_output_dir(file_name, file_id, output_root): path finale del download (output_root = cartella scelta dall'utente, None=default); rinomina la cartella hash-based al primo resolve riuscito; + folder_job_output_dir(rel_path, output_root): cartella di destinazione ad ALBERO per i job nati da un link cartella (ri-sanifica i segmenti: è il confine col filesystem)
+│   ├── file_naming.py     # sanitize_folder_name() + sanitize_file_name() (nome file sicuro per Windows: caratteri riservati + device name CON/NUL/…, estensione preservata; applicata alla SORGENTE in mega_api.resolve_public_url) + final_output_dir(file_name, file_id, output_root): path finale del download (output_root = cartella scelta dall'utente, None=default); rinomina la cartella hash-based dopo la chiusura dei file dell’ultimo ciclo; + folder_job_output_dir(rel_path, output_root): cartella di destinazione ad ALBERO per i job nati da un link cartella (ri-sanifica i segmenti: è il confine col filesystem)
 │   ├── disk.py            # ensure_free_space()/free_space_bytes() + InsufficientDiskSpaceError (UserFacingError+OSError, codice `disk_full`): check spazio disco PRIMA del download (errore d'ambiente: il worker abbandona subito senza bruciare i tentativi). Solo stdlib
 │   ├── mega_links.py      # FONTE UNICA delle forme di URL Mega (stdlib puro, niente I/O né Crypto):
 │   │                     #   file singolo, legacy, cartella `/folder/#key`, cartella con nodo selezionato
 │   │                     #   (`/file/<n>`, `/folder/<n>`, legacy `#F!id!key!node`) e la forma INTERNA dei
 │   │                     #   job-cartella. Ordine di match dal più specifico al più generico.
 │   │                     #   `extract_handle` vive qui (download_history vi delega)
+│   ├── output_store.py    # Registro locale SQLite delle destinazioni per share/nodo e delle impronte dei file prodotti. Manutenzione e annullo eliminano solo file registrati ancora identici.
 │   ├── maintenance.py     # manutenzione: MISURA (survey/survey_all: quanti file, quante voci,
 │   │                     #   quanto spazio) e CANCELLA (clear/clear_items) i dati lasciati su
 │   │                     #   disco — storico, stato di sessione, cartella download, log. Non sa
@@ -59,7 +60,7 @@ src/
 │   │                     #   `preferences.json` (l'app lo riscriverebbe), `crash.log` e la
 │   │                     #   telemetria, e la cache proxy (vive in `src/proxy/`, che core non
 │   │                     #   può importare: la chiama la finestra, con `delete_proxy_cache`)
-│   ├── session_store.py   # persistenza JSON dei link NON completati della sessione (save/load/clear, mai solleva) per il prompt "Riprendi sessione precedente?" all'avvio; i .part fanno il resume a livello byte
+│   ├── session_store.py   # sessione JSON con URL, file_ids e prossimo ID libero. Ripristina anche le vecchie liste di URL nella destinazione scelta
 │   └── proxy_url.py       # build_proxy_url/build_proxies_dict: schema URL in base al campo protocol (http/socks4/socks5 -> socks5h) + prefisso user:pass@ opzionale se il proxy porta credenziali, solo stdlib, usato da proxy/ e downloader/; include anche cache_bust_url() (parametro query anti-cache per gli speed test) e sustained_throughput_bps() (misura pura del throughput: finestra del corpo con fallback alla finestra completa sul burst-da-buffer, evita le "bande impossibili")
 ├── proxy/
 │   ├── sources.py         # 74 fonti pubbliche (4 html, 64 plain, 6 json/jsonl); per protocollo: 52 http, 16 socks5, 6 socks4 (campo opzionale "protocol" per fonte)
@@ -82,11 +83,12 @@ src/
 │   │                     #   (nome di radice distinto per share), cap MEGA_FOLDER_MAX_FILES
 │   │                     #   (loggato, mai silenzioso). `build_folder_expansion` è puro rispetto alla
 │   │                     #   rete (testabile con nodi fabbricati)
+│   ├── file_integrity.py  # meta-MAC MEGA sui byte in chiaro, con cancellazione e rinomina dopo la verifica
 │   ├── mega_client.py     # MegaClient seriale (single-stream via proxy); check spazio disco (ensure_free_space) prima del transfer
 │   ├── parallel_client.py # ParallelMegaDownloader (coda chunk a dimensione fissa, HTTP Range N parallele); check disco pre-allocazione; file da 0 byte gestito a parte; Retry-After onorato su 403/509/429; should_abort passato al re-resolve
 │   ├── worker.py          # DownloadWorker(QThread) — 1 link, N cicli; ramo job-cartella (_folder_job):
 │   │                     #   destinazione ad albero senza `ciclo_N` (_cycle_dir), niente rinomina,
-│   │                     #   resume sul NOME ESATTO del file (la cartella è condivisa con gli altri job); cartella base rinominata da hash a nome file al primo resolve (_current_base_dir aggiornato da _resolved_cb); riceve output_root (cartella download scelta dall'utente); InsufficientDiskSpaceError = abbandono immediato (non retry)
+│   │                     #   resume sul NOME ESATTO del file (la cartella è condivisa con gli altri job); cartella di lavoro stabile fino alla fine dei cicli, poi rinominata con il nome del file; riceve output_root (cartella download scelta dall'utente); InsufficientDiskSpaceError = abbandono immediato (non retry)
 │   └── orchestrator.py    # DownloadOrchestrator(QObject) — coordina tutto; `add_jobs(links, at_top)`
 │                          #   `has_active_workers()` dice se un thread di download è ancora VIVO (non è
 │                          #   lo stato dei job: dopo l'annullo globale sono già tutti annullati mentre i
@@ -114,8 +116,7 @@ src/
     │                      #   `_begin_folder_expansion(links, hot_position)` serve entrambi i casi: a
     │                      #   caldo la finestra di avanzamento e' NON modale (i download proseguono) e
     │                      #   Avvia NON va riabilitato a fine espansione;
-    │                      #   _delete_folder_job_file elimina il SINGOLO file di un job-cartella
-    │                      #   (+ .part + sidecar) e pota le cartelle vuote, mai l'albero condiviso; ripristino sessione all'avvio (prompt "Riprendi sessione precedente?" da session_store, differito con QTimer.singleShot); propaga la cartella download scelta a orchestrator.start(output_root=...) e la usa per il delete cartella; _on_language_changed fa il fan-out della ritraduzione su TUTTE le superfici persistenti (gemello di _on_theme_toggle), riga di stato compresa: _set_status_t/_set_status_tn ricordano chiave+parametri in _status_source e _refresh_status la riscrive, mentre _set_status (grezzo) azzera la memoria;
+    │                      #   _delete_folder_for usa il registro dei file prodotti dal job; ripristino sessione all'avvio (prompt "Riprendi sessione precedente?" da session_store, differito con QTimer.singleShot); propaga la cartella download scelta a orchestrator.start(output_root=...) e la usa per il delete cartella; _on_language_changed fa il fan-out della ritraduzione su TUTTE le superfici persistenti (gemello di _on_theme_toggle), riga di stato compresa: _set_status_t/_set_status_tn ricordano chiave+parametri in _status_source e _refresh_status la riscrive, mentre _set_status (grezzo) azzera la memoria;
     │                      #   changeEvent intercetta la RIDUZIONE A ICONA e differisce la decisione con
     │                      #   QTimer.singleShot(0) (dentro il gestore dell'evento la finestra sta ancora
     │                      #   cambiando stato): _handle_minimized chiede o applica la preferenza,
@@ -149,7 +150,7 @@ src/
     ├── jobs_panel.py      # lista job a righe-card (QScrollArea + _JobCard widget per riga);
     │                      #   `append_jobs()` aggiunge card senza toccare quelle esistenti (l'ordine resta
     │                      #   cronologico anche per i link messi in TESTA alla coda: chi sta scaricando lo
-    │                      #   dice il proprio stato); filtri a pulsanti esclusivi (QButtonGroup), senza etichetta; ogni pulsante mostra il conteggio file per categoria ("In corso (N)"/"Completati (N)"/"Non completati (N)"), aggiornato da _update_filter_counts su aggregates_changed; i18n: retranslate() ricasca su _EmptyState e su ogni _JobCard; le card rendono l'ultimo errore dal PAYLOAD del modello con error_render.render_error(), e on_abandoned applica ABANDON_ALIASES al confine col segnale
+    │                      #   dice il proprio stato); filtri a pulsanti esclusivi (QButtonGroup), con Tutti selezionato all’avvio; ogni pulsante mostra il conteggio file per categoria ("In corso (N)"/"Completati (N)"/"Non completati (N)"), aggiornato da _update_filter_counts su aggregates_changed; i18n: retranslate() ricasca su _EmptyState e su ogni _JobCard; le card rendono l'ultimo errore dal PAYLOAD del modello con error_render.render_error(), e on_abandoned applica ABANDON_ALIASES al confine col segnale
     ├── job_detail_dialog.py # dialog non-modale dettaglio job (doppio clic); UNICO dialogo PERSISTENTE del progetto:
     │                      #   ha `retranslate()` ed e' nel fan-out di `_on_language_changed`. `_refresh(force=True)` e'
     │                      #   obbligatorio al cambio lingua: il ridisegno normale salta log e tabella IP quando il NUMERO
@@ -166,16 +167,14 @@ src/
     ├── format_helpers.py  # helper di formattazione condivisi: fmt_speed/fmt_bytes/fmt_mmss/fmt_hhmmss (puro, no Qt); build_header_summary passa da t() → dipende dalla lingua (le unità di misura no)
     ├── session_clock.py   # SessionClock: tempo sessione con auto-freeze a fine sessione (puro, no Qt/I/O)
     ├── session_speed.py   # SessionSpeedStats: media/picco/minima di sessione (puro, no Qt/I/O), campionato 1x/s da StatsBar
-    ├── stats_bar.py       # cruscotto "spinta" compatto: zona velocita' (RadialGauge con % del picco + picco/media/minima/ETA/tempo) e zona Download (totale + SegmentBar + conteggi), separate da una linea verticale interna
-    ├── stats_panel.py     # StatsPanel: cruscotto Statistiche collassabile (header riassuntivo sempre visibile + corpo espandibile); metriche: volume, throughput effettivo, media per-download, picco/min, durata con auto-freeze, dettaglio per-job, pulsante copia riepilogo
-    ├── proxy_bar.py       # (i18n: retranslate() ricasca su ogni _MetricCard, che tiene la CHIAVE dell'etichetta) ProxyBar: zona proxy in stile "conservativo" — griglia 2x4 di card compatte su due righe (vivi/validazione/scartati/ricariche/ultimo refill/banda/banda proxy; min width 112px = etichetta più lunga non tagliata al resize) + colonna verticale di pulsanti "↻ Banda" (speed test linea diretta), "↻ Banda proxy" (speed test attraverso il pool live, abilitato solo con proxy vivi) e "Reset cache"; popolata da pool_size_changed/setup_progress/proxy_stats dell'orchestrator. Card "Banda" verde (accent_ok) vs "Banda proxy" blu (accent_info) per differenziare le due misure
+    ├── stats_bar.py       # velocità attuale, volume scaricato e tempo rimanente sopra la coda
+    ├── stats_panel.py     # statistiche nei dettagli sotto la coda, durata con arresto automatico, velocità relative al picco, completamento e copia del riepilogo per file
+    ├── proxy_bar.py       # misure e comandi di connessione nei dettagli sessione. Le misure del pool compaiono durante i trasferimenti
     ├── speedtest_worker.py # SpeedTestWorker (banda linea diretta, senza proxy) + ProxySpeedTestWorker (banda aggregata del pool live, uno stream per proxy campionato, resiliente ai proxy lenti/caduti); entrambi QThread, emettono finished_test(mbit, ok)
-    ├── controls.py        # barra comandi: Avvia/Pausa/Annulla/Paralleli/Incolla/Tema/Info; menu Impostazioni con Paralleli/Limite/Pezzo/"Cartella download:" (QFileDialog, getter get_download_dir, segnale download_dir_changed) + "Lingua:" (QComboBox Automatica/Italiano/English → TR.set_preference); PRIMO pannello migrato a i18n: testi via t("controls.*") e retranslate() per il cambio a caldo
-    │                      #   + "Manutenzione:" (pulsante «Azzera dati…» → segnale maintenance_requested,
-    │                      #   apre MaintenanceDialog). NB: `set_running(True)` disabilita il pulsante
-    │                      #   Impostazioni, quindi a sessione VIVA il menu — e con esso la manutenzione —
-    │                      #   non è raggiungibile: il rifiuto per voce serve dopo un Annulla globale,
-    │                      #   quando i comandi tornano attivi ma i worker stanno ancora scrivendo
+    ├── controls.py        # Comandi di sessione e QDialog Impostazioni. Lingua e tema sono disponibili
+    │                      #   anche durante i download. Parametri della sessione e manutenzione sono
+    │                      #   disattivati fino al termine. Dopo un annullo i controlli di manutenzione
+    │                      #   verificano anche i worker ancora attivi prima di intervenire sui file.
     ├── experimental_dialog.py # ExperimentalFeaturesDialog: 3 controlli con descrizione breve inline e icona "i" (QToolButton) → QMessageBox estesa: "Connessioni per file" (spinbox), "Budget per pezzo (s)" (spinbox), "Selezione per velocità" (checkbox + spinbox soglia KB/s); tutti persistono in preferences.json; i18n: t("experimental.*"), le descrizioni brevi/estese stanno nei dizionari
     ├── folder_expand_worker.py # FolderExpandWorker(QThread): espande i link cartella prima dell'avvio; le righe di report passano da t()/tn() (clausole opzionali autonome: separatore incluso nella chiave)
     │                      #   (rete fuori dal thread GUI); i link non-cartella passano invariati e
@@ -291,7 +290,7 @@ uccida il processo: da lì in poi l'uscita è ESPLICITA e passa tutta da `MainWi
   (`cause=error_payload(exc)`, o `children=[...]` per una lista) accanto al suo `str(exc)`:
   senza, la GUI in inglese incastona una frase italiana dentro una cornice inglese — e il
   controllo di fedeltà non lo vede, perché in italiano il testo coincide comunque.
-- Downloader: pattern `.part` + rename atomico. Si scarica SEMPRE su `<nome>.part` (sidecar `.progress.json` riferito al `.part`, include `chunk_size` per validare compatibilità del resume); `os.replace` sul nome finale solo a download completo e verificato. L'esistenza del nome finale è l'UNICO marker di completamento usato dal check di resume del worker. I `.part` non vanno mai cancellati al cleanup (servono al resume: i chunk completati restano scritti e vengono skippati al retry).
+- Downloader: pattern `.part` + rename atomico. Si scarica SEMPRE su `<nome>.part` (sidecar `.progress.json` riferito al `.part`, include `chunk_size` per validare compatibilità del resume); `os.replace` sul nome finale solo a download completo e verificato. La ripresa controlla nome, dimensione e MAC del file atteso. Un registro di avanzamento vale solo per un parziale presente della dimensione prevista. Un errore di MAC invalida il registro e il parziale. Pausa, annullo e fallimento della rinomina conservano i checkpoint validi.
 - Pool scoring: i call-site devono registrare anche i successi (`record_success` su segmento completato / IP check ok) e usare `penalize(hard=True)` solo per 503 dal CDN; errori transitori (timeout, throughput basso, connection error) → `penalize(hard=False)`. Mai usare `mark_dead` (alias deprecato).
 - Pool cooldown vs penalize: il rate-limit 403/509 dal CDN Mega chiama `pool.cooldown(proxy)`, NON `penalize(hard=True)` — lo score non viene toccato (la reputazione resta intatta) ma il proxy è escluso sia da `get_next()` sia dal conteggio `size()`/`_count_alive_unlocked()` per `PROXY_COOLDOWN_SECONDS` (90s), poi torna selezionabile e contato. Se contasse come vivo mentre è a riposo, `size() > 0` farebbe saltare `refill_blocking(force=False)` anche quando il pool è di fatto inutilizzabile (starvation osservata con quasi tutti i proxy in cooldown insieme).
 - URL del proxy (schema): costruire SEMPRE con `build_proxy_url`/`build_proxies_dict` (`core/proxy_url.py`), mai con un f-string a mano — è l'unico punto che sa come mappare `protocol` (http/socks4/socks5) sullo schema giusto (socks5 → `socks5h://`, DNS risolto lato proxy). Richiede la dipendenza `PySocks` (in `requirements.txt`) perché `requests` parli gli schemi `socks4://`/`socks5h://`.

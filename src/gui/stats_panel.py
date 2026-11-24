@@ -1,32 +1,19 @@
-# Cruscotto "Statistiche" di sessione: volume totale, throughput effettivo,
-# media aritmetica per-download, picco/minima, tempo attivo con auto-freeze,
-# dettaglio per-job, pulsante "Copia riepilogo". Header sempre visibile con
-# riassunto 1 Hz; body collassabile. Aggiornamento event-driven + tick 1 Hz.
-#
-# i18n: superficie PERSISTENTE, quindi retranslate(). Le etichette statiche
-# (titolo, intestazioni, pulsante) restano appese come attributi apposta per
-# poterle riscrivere; il resto si rigenera da refresh().
+"""Statistiche della sessione, apribili sotto la coda di download."""
 from __future__ import annotations
 
 import time
 
 from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
     QApplication,
-    QGroupBox,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
-    QMessageBox,
-    QPlainTextEdit,
     QPushButton,
-    QSizePolicy,
-    QToolButton,
     QVBoxLayout,
     QWidget,
 )
 
-from src.gui import style as _style
 from src.gui.i18n import t
 from src.gui.format_helpers import (
     build_header_summary,
@@ -34,12 +21,14 @@ from src.gui.format_helpers import (
     fmt_hhmmss,
     fmt_mmss,
     fmt_speed,
+    link_caption,
 )
 from src.gui.jobs_model import (
     JobsModel,
     STATUS_RUNNING,
 )
-from src.gui.preferences import load_stats_panel_expanded, save_stats_panel_expanded
+from src.gui.radial_gauge import RadialGauge, gauge_fraction
+from src.gui.segment_bar import SegmentBar
 from src.gui.session_clock import SessionClock
 from src.gui.session_speed import SessionSpeedStats, is_plausible_bps
 
@@ -61,159 +50,68 @@ def _status_label(status: str) -> str:
     return t(key) if key else status
 
 
-def _short_url(url: str, max_len: int = 40) -> str:
-    try:
-        part = url.split("/")[-1]
-        if "#" in part:
-            handle = part.split("#")[0]
-            s = f"mega://{handle}" if handle else url
-        else:
-            s = part
-        return s[:max_len] if len(s) > max_len else s
-    except Exception:
-        return url[:max_len]
-
-
 class StatsPanel(QWidget):
     def __init__(self, model: JobsModel) -> None:
         super().__init__()
-        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
         self.model = model
         self._clock = SessionClock()
         self._speed_stats = SessionSpeedStats()
+        self._captions: dict[str, QLabel] = {}
+        self._values: dict[str, QLabel] = {}
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(9)
+        heading = QHBoxLayout()
+        self._title_lbl = QLabel()
+        self._title_lbl.setObjectName("sectionTitle")
+        heading.addWidget(self._title_lbl, 1)
+        self._copy_btn = QPushButton()
+        self._copy_btn.setObjectName("textAction")
+        self._copy_btn.clicked.connect(self._on_copy)
+        heading.addWidget(self._copy_btn)
+        layout.addLayout(heading)
 
-        self._build_ui()
+        self._empty = QLabel()
+        self._empty.setObjectName("secondaryText")
+        self._empty.setWordWrap(True)
+        layout.addWidget(self._empty)
+        self._body = QWidget()
+        layout.addWidget(self._body)
+        body = QVBoxLayout(self._body)
+        body.setContentsMargins(0, 0, 0, 0)
+        body.setSpacing(7)
+        measurements = QHBoxLayout()
+        measurements.setSpacing(14)
+        self._gauge = RadialGauge(color_key="accent_info")
+        measurements.addWidget(self._gauge, 0, Qt.AlignmentFlag.AlignVCenter)
+        rows = QGridLayout()
+        rows.setHorizontalSpacing(10)
+        rows.setVerticalSpacing(4)
+        for index, name in enumerate(("elapsed", "effective", "file_average", "sample_average", "peak", "minimum")):
+            label = QLabel()
+            label.setObjectName("secondaryText")
+            value = QLabel()
+            value.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            self._captions[name] = label
+            self._values[name] = value
+            rows.addWidget(label, index, 0)
+            rows.addWidget(value, index, 1)
+        rows.setColumnStretch(0, 1)
+        measurements.addLayout(rows, 1)
+        body.addLayout(measurements)
+        self._completion = QLabel()
+        self._completion.setObjectName("secondaryText")
+        body.addWidget(self._completion)
+        self._segments = SegmentBar()
+        self._segments.setFixedHeight(6)
+        body.addWidget(self._segments)
 
-        # Imposta stato iniziale da preferenze prima di connettere il segnale toggle
-        expanded = load_stats_panel_expanded()
-        self._body.setVisible(expanded)
-        self._update_toggle_icon(expanded)
-        self._toggle_btn.setChecked(not expanded)
-
-        # Connetti dopo l'impostazione iniziale per evitare salvataggio spurio
-        self._toggle_btn.toggled.connect(self._on_toggle)
-
-        model.aggregates_changed.connect(self.refresh)
+        self.model.aggregates_changed.connect(self.refresh)
         self._tick = QTimer(self)
         self._tick.setInterval(1000)
         self._tick.timeout.connect(self._on_tick)
         self._tick.start()
-        self.refresh()
-
-    # ---- costruzione UI --------------------------------------------------
-
-    def _build_ui(self) -> None:
-        outer = QVBoxLayout(self)
-        outer.setContentsMargins(0, 2, 0, 0)
-        outer.setSpacing(0)
-
-        self._box = QGroupBox()
-        self._box.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
-        outer.addWidget(self._box)
-
-        vl = QVBoxLayout(self._box)
-        vl.setSpacing(3)
-        vl.setContentsMargins(8, 6, 8, 6)
-
-        # Header sempre visibile: toggle ▾/▸ + "Statistiche" + riassunto + Copia
-        header_row = QHBoxLayout()
-        header_row.setSpacing(6)
-        header_row.setContentsMargins(0, 0, 0, 0)
-
-        self._toggle_btn = QToolButton()
-        self._toggle_btn.setCheckable(True)
-        self._toggle_btn.setFixedSize(20, 20)
-        header_row.addWidget(self._toggle_btn)
-
-        self._title_lbl = QLabel(t("stats_panel.title"))
-        self._title_lbl.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
-        header_row.addWidget(self._title_lbl)
-
-        self._summary_lbl = QLabel("—")
-        self._summary_lbl.setFont(QFont("Segoe UI", 9))
-        header_row.addWidget(self._summary_lbl, 1)
-
-        self._copy_btn = QPushButton(t("stats_panel.copy_button"))
-        self._copy_btn.setFixedHeight(24)
-        self._copy_btn.clicked.connect(self._on_copy)
-        header_row.addWidget(self._copy_btn)
-
-        vl.addLayout(header_row)
-
-        # Body collassabile: tutto il contenuto dettagliato
-        self._body = QWidget()
-        body_vl = QVBoxLayout(self._body)
-        body_vl.setSpacing(3)
-        body_vl.setContentsMargins(0, 4, 0, 0)
-
-        self._session_lbl = QLabel(t("stats_panel.session_placeholder"))
-        self._session_lbl.setFont(QFont("Segoe UI", 10))
-        body_vl.addWidget(self._session_lbl)
-
-        self._volume_lbl = QLabel(t("stats_panel.volume", value="—"))
-        body_vl.addWidget(self._volume_lbl)
-
-        self._speed_hdr = QLabel(t("stats_panel.speed_header"))
-        self._speed_hdr.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
-        body_vl.addWidget(self._speed_hdr)
-
-        speed_cols = QHBoxLayout()
-        speed_cols.setSpacing(24)
-
-        left = QVBoxLayout()
-        left.setSpacing(1)
-        self._throughput_lbl = QLabel(t("stats_panel.throughput", value="—"))
-        self._throughput_lbl.setFont(QFont("Consolas", 9))
-        left.addWidget(self._throughput_lbl)
-        self._avg_dl_lbl = QLabel(t("stats_panel.avg_per_download", value="—"))
-        self._avg_dl_lbl.setFont(QFont("Consolas", 9))
-        left.addWidget(self._avg_dl_lbl)
-        speed_cols.addLayout(left, 1)
-
-        right = QVBoxLayout()
-        right.setSpacing(1)
-        self._peak_lbl = QLabel(t("stats_panel.peak", value="—"))
-        self._peak_lbl.setFont(QFont("Consolas", 9))
-        right.addWidget(self._peak_lbl)
-        self._min_lbl = QLabel(t("stats_panel.minimum", value="—"))
-        self._min_lbl.setFont(QFont("Consolas", 9))
-        right.addWidget(self._min_lbl)
-        speed_cols.addLayout(right, 1)
-
-        body_vl.addLayout(speed_cols)
-
-        self._counts_lbl = QLabel(t("stats_panel.counts_placeholder"))
-        body_vl.addWidget(self._counts_lbl)
-        self._rate_lbl = QLabel(t("stats_panel.rate", value="—"))
-        body_vl.addWidget(self._rate_lbl)
-
-        self._detail_hdr = QLabel(t("stats_panel.detail_header"))
-        self._detail_hdr.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
-        body_vl.addWidget(self._detail_hdr)
-
-        self._detail_text = QPlainTextEdit()
-        self._detail_text.setReadOnly(True)
-        self._detail_text.setFont(QFont("Consolas", 9))
-        self._detail_text.setMaximumHeight(120)
-        self._detail_text.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
-        body_vl.addWidget(self._detail_text)
-
-        vl.addWidget(self._body)
-
-    # ---- toggle collassa/espandi -----------------------------------------
-
-    def _on_toggle(self, checked: bool) -> None:
-        expanded = not checked
-        self._body.setVisible(expanded)
-        self._update_toggle_icon(expanded)
-        save_stats_panel_expanded(expanded)
-
-    def _update_toggle_icon(self, expanded: bool) -> None:
-        self._toggle_btn.setArrowType(
-            Qt.ArrowType.DownArrow if expanded else Qt.ArrowType.RightArrow
-        )
-
-    # ---- ciclo di vita sessione ------------------------------------------
+        self.retranslate()
 
     def start_clock(self) -> None:
         """Resetta clock e statistiche e avvia la sessione. Chiamato da MainWindow su 'Avvia'."""
@@ -223,6 +121,10 @@ class StatsPanel(QWidget):
         self.refresh()
 
     # ---- tick 1 Hz -------------------------------------------------------
+
+    def showEvent(self, event) -> None:  # noqa: N802
+        super().showEvent(event)
+        self.refresh()
 
     def _on_tick(self) -> None:
         agg = self.model.aggregates()
@@ -240,112 +142,38 @@ class StatsPanel(QWidget):
         agg = self.model.aggregates()
         self._refresh_labels(agg, time.time())
 
-    def _refresh_labels(self, agg: dict, now: float, force: bool = False) -> None:
-        p = _style.CURRENT_PALETTE
-        elapsed = self._clock.elapsed(now)
-        all_term = bool(agg.get("all_terminated", False))
-        total_bytes = int(agg.get("total_downloaded_bytes", 0))
-        total = int(agg.get("total", 0))
-        ok = int(agg.get("completed", 0))
-        failed = int(agg.get("failed", 0))
-        abandoned = int(agg.get("abandoned", 0))
-        cancelled = int(agg.get("cancelled", 0))
-        fallen = failed + cancelled + abandoned
-
-        eff_bps = total_bytes / elapsed if elapsed > 0 and total_bytes > 0 else 0.0
-
-        # Header summary: sempre aggiornato anche con body nascosto
-        self._summary_lbl.setText(build_header_summary(
-            elapsed_s=elapsed,
-            total_bytes=total_bytes,
-            throughput_eff_bps=eff_bps,
-            totals_dict={"total": total, "ok": ok, "fallen": fallen},
-            all_terminated=all_term,
-        ))
-
-        # Col body nascosto non vale la pena formattare: nessuno legge quelle
-        # etichette. `force` serve al cambio lingua, che deve lasciare TUTTO
-        # nella lingua nuova anche se il pannello e' chiuso — altrimenti
-        # riaprendolo si vedrebbe la lingua vecchia fino al tick successivo.
-        if not force and not self._body.isVisible():
+    def _refresh_labels(self, agg: dict, now: float) -> None:
+        total = agg["total"]
+        self._empty.setVisible(total == 0)
+        self._body.setVisible(total > 0)
+        self._copy_btn.setVisible(total > 0)
+        if total == 0:
             return
+        elapsed = self._clock.elapsed(now)
+        volume = agg["total_downloaded_bytes"]
+        self._values["elapsed"].setText(fmt_hhmmss(elapsed))
+        self._values["effective"].setText(fmt_speed(volume / elapsed if elapsed else 0))
+        self._values["file_average"].setText(fmt_speed(agg["arithmetic_avg_bps"] or 0))
+        self._values["sample_average"].setText(fmt_speed(self._speed_stats.average))
+        self._values["peak"].setText(fmt_speed(self._speed_stats.peak or 0))
+        self._values["minimum"].setText(fmt_speed(self._speed_stats.minimum or 0))
 
-        # Body labels
-        status_str = t(
-            "stats_panel.session_completed" if all_term
-            else "stats_panel.session_running"
-        )
-        self._session_lbl.setText(
-            t("stats_panel.session", time=fmt_hhmmss(elapsed), status=status_str)
-        )
-        self._session_lbl.setStyleSheet(f"color: {p['text']};")
-
-        self._volume_lbl.setText(
-            t("stats_panel.volume", value=fmt_bytes(total_bytes))
-        )
-        self._volume_lbl.setStyleSheet(f"color: {p['text']};")
-
-        eff_str = fmt_speed(eff_bps) if eff_bps > 0 else "—"
-        self._throughput_lbl.setText(t("stats_panel.throughput", value=eff_str))
-        self._throughput_lbl.setStyleSheet(f"color: {p['text_dim']};")
-
-        arith = agg.get("arithmetic_avg_bps")
-        self._avg_dl_lbl.setText(
-            t(
-                "stats_panel.avg_per_download",
-                value=fmt_speed(arith) if arith is not None else "—",
-            )
-        )
-        self._avg_dl_lbl.setStyleSheet(f"color: {p['text_dim']};")
-
-        peak = self._speed_stats.peak
-        minimum = self._speed_stats.minimum
-        self._peak_lbl.setText(
-            t("stats_panel.peak", value=fmt_speed(peak) if peak is not None else "—")
-        )
-        self._peak_lbl.setStyleSheet(f"color: {p['text_dim']};")
-        self._min_lbl.setText(
-            t(
-                "stats_panel.minimum",
-                value=fmt_speed(minimum) if minimum is not None else "—",
-            )
-        )
-        self._min_lbl.setStyleSheet(f"color: {p['text_dim']};")
-
-        running = int(agg.get("running", 0))
-        queued = int(agg.get("queued", 0))
-        self._counts_lbl.setText(
-            t(
-                "stats_panel.counts",
-                total=total, ok=ok, failed=failed, abandoned=abandoned,
-                cancelled=cancelled, running=running, queued=queued,
-            )
-        )
-        self._counts_lbl.setStyleSheet(f"color: {p['text']};")
-
-        tasso_str = f"{round(ok / total * 100)}%" if total > 0 else "—"
-        self._rate_lbl.setText(t("stats_panel.rate", value=tasso_str))
-        self._rate_lbl.setStyleSheet(f"color: {p['text_dim']};")
-
-        lines = []
-        for job in self.model.jobs_iter():
-            name = job.file_name if job.file_name else _short_url(job.url, 40)
-            vol_str = fmt_bytes(job.downloaded_bytes) if job.downloaded_bytes else "—"
-            dur_str = fmt_mmss(job.duration_s()) if job.started_at else "—"
-            if job.average_bps_final is not None:
-                spd_str = fmt_speed(job.average_bps_final)
-            elif job.status == STATUS_RUNNING and job.speed > 0:
-                spd_str = fmt_speed(job.speed)
-            else:
-                spd_str = "—"
-            status_short = _status_label(job.status)
-            lines.append(
-                f"#{job.file_id + 1:<3} {name:<40}  {vol_str:>9}  {dur_str}"
-                f"  {spd_str:>12}  {status_short}"
-            )
-        self._detail_text.setPlainText("\n".join(lines))
-
-    # ---- copia riepilogo -------------------------------------------------
+        speed = agg["total_speed"]
+        ratio = gauge_fraction(speed, self._speed_stats.peak or 0)
+        number, _, unit = fmt_speed(speed).partition(" ")
+        self._gauge.set_value(ratio, number, unit)
+        hint = t("stats_bar.pct_of_peak", pct=round(ratio * 100))
+        self._gauge.setToolTip(hint)
+        self._gauge.setAccessibleName(f"{fmt_speed(speed)} · {hint}")
+        ok = agg["completed"]
+        self._completion.setText(t("stats_panel.finished_of", done=ok, total=total, pct=round(ok * 100 / total)))
+        failed = agg["failed"] + agg["cancelled"] + agg["abandoned"]
+        self._segments.set_segments([(agg["running"], "accent_info"), (agg["queued"], "border_strong"),
+                                     (ok, "accent_ok"), (failed, "accent_fail")])
+        summary = build_header_summary(elapsed, volume, volume / elapsed if elapsed else 0,
+                                       {"total": total, "ok": ok, "fallen": failed}, agg["all_terminated"])
+        self._segments.setAccessibleName(summary)
+        self._segments.setToolTip(summary)
 
     def _on_copy(self) -> None:
         agg = self.model.aggregates()
@@ -399,7 +227,7 @@ class StatsPanel(QWidget):
             t("stats_panel.copy_detail_header"),
         ]
         for job in self.model.jobs_iter():
-            name = job.file_name if job.file_name else _short_url(job.url, 40)
+            name = job.file_name if job.file_name else link_caption(job.url)[:40]
             vol_str = fmt_bytes(job.downloaded_bytes) if job.downloaded_bytes else "—"
             dur_str = fmt_mmss(job.duration_s()) if job.started_at else "—"
             if job.average_bps_final is not None:
@@ -414,21 +242,23 @@ class StatsPanel(QWidget):
             )
 
         QApplication.clipboard().setText("\n".join(lines))
-        QMessageBox.information(
-            self, t("stats_panel.copied_title"), t("stats_panel.copied_body")
-        )
+        self._copy_btn.setText(t("stats_panel.copied_title"))
+        QTimer.singleShot(1500, self._restore_copy_label)
+
+    def _restore_copy_label(self) -> None:
+        self._copy_btn.setText(t("stats_panel.copy_button"))
 
     # ---- i18n -----------------------------------------------------------
 
     def retranslate(self) -> None:
         """Riscrive le etichette statiche e rigenera quelle con dati."""
         self._title_lbl.setText(t("stats_panel.title"))
-        self._copy_btn.setText(t("stats_panel.copy_button"))
-        self._speed_hdr.setText(t("stats_panel.speed_header"))
-        self._detail_hdr.setText(t("stats_panel.detail_header"))
-        self._refresh_labels(self.model.aggregates(), time.time(), force=True)
-
-    # ---- tema -----------------------------------------------------------
+        self._empty.setText(t("stats_panel.idle"))
+        self._restore_copy_label()
+        for name, label in self._captions.items():
+            label.setText(t(f"stats_panel.metric_{name}"))
+        self.refresh()
 
     def refresh_theme(self) -> None:
-        self.refresh()
+        self._gauge.refresh_theme()
+        self._segments.refresh_theme()

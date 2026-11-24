@@ -6,7 +6,7 @@ Cancella:
   - branding_cache.json   (cache branding remoto)
   - proxy_cache.json      (cache proxy validati)
   - logs/download_history.log (storico dei download completati, archivi inclusi)
-  - contenuto di downloads/  (i file scaricati)
+  - file registrati in downloads/ (i file scaricati e i parziali riconosciuti)
 
 NON tocca:
   - il codice
@@ -91,14 +91,13 @@ def main(argv: list[str] | None = None) -> int:
     downloads = maintenance.survey(maintenance.ITEM_DOWNLOADS)
 
     files_present = extra + [p for s in surveys.values() for p in s.paths]
-    dirs_with_content = [downloads.root] if downloads.paths else []
 
-    if not files_present and not dirs_with_content:
+    if not files_present and not downloads.paths:
         print("Nulla da pulire — lo stato utente e' gia' fresco.")
         return 0
 
     _print_group("File da cancellare", files_present)
-    _print_group("Cartelle da svuotare", dirs_with_content)
+    _print_group("Download registrati da cancellare", list(downloads.paths))
 
     if args.dry_run:
         print("\n(dry-run: nulla e' stato toccato)")
@@ -116,7 +115,8 @@ def main(argv: list[str] | None = None) -> int:
     for p in extra:
         p.unlink()
 
-    results = maintenance.clear_items(SHARED_ITEMS + [maintenance.ITEM_DOWNLOADS])
+    results = maintenance.clear_items(SHARED_ITEMS + [maintenance.ITEM_DOWNLOADS],
+                                      selected_downloads=downloads.receipts)
     for result in results:
         if not result.ok:
             print(f"[ATTENZIONE] {result.key}: {result.error}")

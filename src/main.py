@@ -7,6 +7,7 @@ import sys
 from PyQt6.QtWidgets import QApplication
 
 from src.core import diagnostics
+from src.core.branding import resolve as resolve_branding
 from src.core.config import APP_VERSION
 from src.core.icon_loader import build_app_icon
 from src.core.logging_setup import (
@@ -58,7 +59,10 @@ def main() -> int:
 
     _set_windows_app_user_model_id()
 
+    QApplication.setApplicationName(resolve_branding().name)
     app = QApplication(sys.argv)
+    app.setApplicationDisplayName(app.applicationName())
+    app.setApplicationVersion(APP_VERSION)
     # Con l'icona nell'area di notifica la finestra puo' essere NASCOSTA senza
     # che l'applicazione debba morire: senza questa riga, nascondere l'unica
     # finestra fa terminare il processo (e' il default di Qt). Effetto

@@ -28,7 +28,7 @@ https://github.com/user-attachments/assets/1ebcd19c-38f5-40b5-86ff-5a1c87154a2d
 
 ![version](https://img.shields.io/badge/version-2.3.0-blue)
 ![python](https://img.shields.io/badge/python-3.11%E2%80%933.14-blue)
-![platform](https://img.shields.io/badge/platform-Windows%2010%2F11-lightgrey)
+![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-lightgrey)
 ![gui](https://img.shields.io/badge/GUI-PyQt6-green)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
@@ -40,11 +40,11 @@ https://github.com/user-attachments/assets/1ebcd19c-38f5-40b5-86ff-5a1c87154a2d
 
 ## 🚀 Overview
 
-A **Windows desktop app** (Python + PyQt6) that downloads files **and entire folders** from Mega.nz by routing traffic through public, free HTTP proxies. The file is split into a **queue of fixed-size fragments**, downloaded in parallel — each through a different proxy — decrypted on the fly and reassembled. It started as a technical IP-rotation experiment and is now a real-world downloader: single-user, single-process. The interface is **bilingual, Italian and English**.
+A **desktop app for Windows and macOS** (Python + PyQt6) that downloads files **and entire folders** from Mega.nz by routing traffic through public, free HTTP proxies. The file is split into a **queue of fixed-size fragments**, downloaded in parallel — each through a different proxy — decrypted on the fly and reassembled. It started as a technical IP-rotation experiment and is now a real-world downloader: single-user, single-process. The interface is **bilingual, Italian and English**.
 
 ## ✨ What makes it different
 
-- **Built for Mega** — public-link resolution and AES decryption are built in (no dependency on `mega.py`).
+- **MEGA file integrity** — after AES decryption, the app checks the byte count and the file authentication code (MAC) before completing the download.
 - **Validated, scored pool of free proxies** — scraped from dozens of sources (around 70), two-stage validation (optionally three with a speed test), per-proxy reputation, on-disk cache, background regeneration.
 - **A different proxy for every fragment** — rotation is per-fragment, not per-file: if a proxy dies, you lose at most one fragment.
 - **Granular resume** — completed fragments survive crashes, proxy changes, and changes to the number of connections.
@@ -61,10 +61,10 @@ A **Windows desktop app** (Python + PyQt6) that downloads files **and entire fol
 - **Per-fragment watchdog**: drops proxies that are too slow or fail to finish in time.
 - **"Experimental Features" panel** with connections per file, fragment budget, and speed-based selection with configurable threshold (real speed test + throughput-based proxy selection).
 - **Passive crash diagnostics**, always on (memory heartbeat, multi-thread tracebacks), universal structured logging (`logs/events.jsonl`), and an HTML report generator (`tools/report.py`).
-- **Tabbed interface** with a compact 3-zone dashboard (speed, downloads, proxy) — a radial speed gauge (% of session peak), a segmented bar for download status, compact cards for proxy pool status — button-based job filters showing the file count per state (in progress/completed/not completed), light/dark theme, global and per-job pause/resume/cancel.
-- **Bilingual Italian/English interface**: on first launch it follows the system language, then you choose it from the Settings menu (Automatic / Italiano / English) and the change is immediate, with no restart. The whole interface is translated, error messages included; messages in the log files stay in Italian because they are there for diagnostics.
-- **Notification area icon**: when you minimize the window you choose — once, or for good — whether to send it next to the clock or leave it in the taskbar; pop-up notices on every completed file, on every error and when the queue is done. The X still closes the program, as always.
-- **Disk data maintenance**: from Settings you can clear the download history, the saved session, the download folder, the logs and the proxy cache. Each entry shows how much it actually takes up, nothing is pre-selected, the list of what will go is shown before anything is deleted, and while a download is running the dangerous entries are disabled.
+- **Download queue** with a link preview, status filters, current speed and time remaining. Open **Session details** below the queue to see statistics and connection information.
+- **Bilingual Italian/English interface**: on first launch it follows the system language, then you choose it in Settings (Automatic / Italiano / English) and the change is immediate, with no restart. The whole interface is translated, error messages included; messages in the log files stay in Italian because they are there for diagnostics.
+- **Minimize to the Dock** on macOS. On Windows you can choose the taskbar or the notification area. The icon menu can reopen the window.
+- **Disk data maintenance**. In Settings you can review and remove individual downloads recorded by the app, including partial files. Personal files in the same folder are preserved. History, saved session, logs and proxy cache can be selected separately.
 - **CLI mode** for headless machines.
 
 ## ⚡ Quick install (Windows 10/11)
@@ -87,11 +87,17 @@ A single command sets everything up: runtime dependencies (`requirements.txt`), 
 
 > **Script language** — `install.ps1` and `package.ps1` print their messages in **English by default**. For Italian, run them with `-Lang IT`, e.g. `powershell -ExecutionPolicy Bypass -File install.ps1 -Lang IT`.
 
+## Run on macOS
+
+With Python 3.11–3.14 installed, open `avvia.command` in Finder. On first launch it creates a Python environment in the project folder and installs the dependencies. Later launches reuse that environment. In Terminal you can run `sh avvia.command` from the project folder. If the zip lost the executable permission, run `chmod +x avvia.command` once to enable double-clicking.
+
+A manual test of version 2.3.0 on Apple Silicon with Python 3.14.10 confirmed that a download started.
+
 ## 🔧 Quick usage
 
-1. Paste one or more `https://mega.nz/...` links — to a **single file** or to a **folder** — (or import them from a `.txt` file).
-2. Adjust the options in the **Settings** menu and press **Start**.
-3. Follow progress, speed, and attempts for each file; pause, restart, or cancel whenever you want.
+1. Choose **Add links** to paste one address per line, or **Import from file** to open a `.txt` list. On Mac you can use **⌘L** and confirm with **⌘Return**.
+2. Review the list and destination. Use **Settings** (**⌘,** on Mac) to change the folder. Press **Start** when the queue is ready.
+3. The queue shows progress, speed and time remaining. Expand a file to open its details. Select **Session details** below the list for statistics.
 
 Headless CLI:
 ```powershell
@@ -116,7 +122,6 @@ Headless CLI:
 - Free proxies have a high death rate: it's normal for validation to discard most of them.
 - Speed depends on the proxies: typically from tens to a few hundred KB/s.
 - Mega may rate-limit the same file even from different IPs (403/509 from the CDN): temporarily blocked proxies are put to rest and reused (details in the [guide](Docs/OPERATING_GUIDE.md)).
-- File MAC verification is not yet implemented (planned).
 
 ## 🛡️ Disclaimer
 

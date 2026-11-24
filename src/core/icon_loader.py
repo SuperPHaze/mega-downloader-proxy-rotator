@@ -21,7 +21,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from PyQt6.QtGui import QIcon, QImageReader, QPixmap
+from PyQt6.QtGui import QBitmap, QIcon, QImage, QImageReader, QPixmap
 
 from src.core.config import APP_ICON_ICO_PATH, APP_ICON_PNG_PATH
 
@@ -51,6 +51,15 @@ def _add_all_frames(icon: QIcon, path: Path) -> int:
             pixmap = QPixmap.fromImage(image)
             if pixmap.isNull():
                 continue
+            # Alcune risoluzioni del marchio hanno un fondo quasi nero.
+            # La maschera raggiunge solo il fondo collegato ai bordi.
+            x, y = image.width() - 1, image.height() - 1
+            corners = [image.pixelColor(i, j) for i, j in ((0, 0), (x, 0), (0, y), (x, y))]
+            if all(c.alpha() == 255 and c.value() < 12 for c in corners):
+                key = image.convertToFormat(QImage.Format.Format_Grayscale8)
+                key.reinterpretAsFormat(QImage.Format.Format_Indexed8)
+                key.setColorTable([0xff000000] * 12 + [0xffffffff] * 244)
+                pixmap.setMask(QBitmap.fromImage(key.createHeuristicMask()))
             icon.addPixmap(pixmap)
             added += 1
     except Exception:       # pragma: no cover - difensivo: Qt senza plugin immagini

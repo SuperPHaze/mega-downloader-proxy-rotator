@@ -33,12 +33,12 @@ from __future__ import annotations
 
 import json
 import logging
-import shutil
+import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Sequence
 
-from src.core import logging_setup
+from src.core import logging_setup, output_store
 from src.core.config import (
     DOWNLOAD_HISTORY_LOG,
     EVENTS_LOG,
@@ -81,11 +81,8 @@ SESSION_LOCKED_ITEMS = frozenset({ITEM_DOWNLOADS, ITEM_LOGS})
 class ItemSurvey:
     """Misura di una voce, scattata al momento dell'apertura della finestra.
 
-    `paths` sono i percorsi di PRIMO livello che verranno rimossi (per la
-    cartella dei download: i suoi figli diretti, non l'albero intero), ed e'
-    cio' che si mostra all'utente prima di chiedere conferma. `count` e
-    `extra_count` sono i due conteggi "naturali" della voce, diversi voce per
-    voce e documentati da `survey()`.
+    `paths` elenca i singoli file. Per i download `receipts` conserva anche
+    l’impronta verificata nell’anteprima, da ricontrollare alla conferma.
     """
 
     key: str
@@ -94,6 +91,7 @@ class ItemSurvey:
     count: int = 0
     extra_count: int = 0
     root: Path | None = None
+    receipts: tuple[output_store.Receipt, ...] = ()
 
     @property
     def is_empty(self) -> bool:
@@ -210,24 +208,6 @@ def _count_session_links(path: Path) -> int:
     return len(urls) if isinstance(urls, list) else 0
 
 
-def _walk_downloads(root: Path) -> tuple[int, int, int]:
-    """(file, frammenti .part, byte) sotto `root`. Mai solleva."""
-    files = parts = total = 0
-    if not root.is_dir():
-        return (0, 0, 0)
-    for entry in root.rglob("*"):
-        try:
-            if not entry.is_file():
-                continue
-        except OSError:
-            continue
-        files += 1
-        if entry.suffix == ".part":
-            parts += 1
-        total += _size_of(entry)
-    return (files, parts, total)
-
-
 def survey_paths(key: str, paths: Iterable[Path], *, count: int = 0) -> ItemSurvey:
     """Misura generica di un elenco esplicito di percorsi.
 
@@ -276,21 +256,17 @@ def survey(
             count=_count_session_links(paths[0]) if paths else 0,
         )
     if key == ITEM_DOWNLOADS:
-        root = downloads_root(output_root)
-        files, parts, total = _walk_downloads(root)
-        children: tuple[Path, ...] = ()
-        if root.is_dir():
-            try:
-                children = tuple(sorted(root.iterdir(), key=lambda p: p.name))
-            except OSError:
-                children = ()
+        root = downloads_root(output_root).resolve()
+        try:
+            entries = output_store.receipts(root)
+        except (OSError, sqlite3.Error) as exc:
+            log.warning("Registro dei download non leggibile: %s", exc)
+            entries = ()
         return ItemSurvey(
-            key=key,
-            paths=children,
-            total_bytes=total,
-            count=files,
-            extra_count=parts,
-            root=root,
+            key=key, root=root, paths=tuple(item.path for item in entries),
+            total_bytes=sum(item.size for item in entries), count=len(entries),
+            extra_count=sum(item.partial and item.path.suffix == ".part" for item in entries),
+            receipts=entries,
         )
     if key == ITEM_LOGS:
         paths = [p for p in log_paths(logs_dir) if p.exists()]
@@ -350,49 +326,14 @@ def _clear_log_files(key: str, paths: Sequence[Path]) -> ItemResult:
     )
 
 
-def _clear_downloads(root: Path) -> ItemResult:
-    """Svuota la cartella dei download, lasciando in piedi la cartella stessa
-    (alcuni componenti si aspettano che esista).
-
-    **Precondizione, non verificata qui**: nessuna sessione di download in
-    corso. La regola sugli alberi delle cartelle Mega («mai un `rmtree`
-    sull'albero condiviso finche' un file di quell'albero e' in corso», vedi
-    rules/downloader.md) e' proprio questa: a sessione ferma nessun file di
-    quell'albero e' in corso, quindi il vincolo non si applica e l'albero si
-    puo' rimuovere per intero. A sessione viva il vincolo c'e' eccome, ed e'
-    per questo che `SESSION_LOCKED_ITEMS` contiene questa voce: chi chiama deve
-    aver gia' rifiutato l'operazione.
-    """
-    freed = 0
-    removed = 0
-    failures: list[str] = []
-    if not root.is_dir():
-        return ItemResult(key=ITEM_DOWNLOADS, ok=True)
+def _clear_downloads(root: Path, selected: tuple[output_store.Receipt, ...] | None) -> ItemResult:
     try:
-        children = sorted(root.iterdir(), key=lambda p: p.name)
-    except OSError as exc:
-        return ItemResult(key=ITEM_DOWNLOADS, ok=False, error=str(exc),
-                          failures=(str(exc),))
-    for child in children:
-        size = _walk_downloads(child)[2] if child.is_dir() else _size_of(child)
-        try:
-            if child.is_dir():
-                shutil.rmtree(child)
-            else:
-                child.unlink()
-            freed += size
-            removed += 1
-        except OSError as exc:
-            failures.append(f"{child.name}: {exc}")
-            log.warning("[manutenzione] %s non rimovibile: %s", child, exc)
-    return ItemResult(
-        key=ITEM_DOWNLOADS,
-        ok=not failures,
-        freed_bytes=freed,
-        removed=removed,
-        error="; ".join(failures) or None,
-        failures=tuple(failures),
-    )
+        entries = output_store.receipts(root) if selected is None else selected
+        removed, freed, failures = output_store.remove(root, entries)
+    except (OSError, sqlite3.Error) as exc:
+        removed, freed, failures = 0, 0, [str(exc)]
+    return ItemResult(key=ITEM_DOWNLOADS, ok=not failures, freed_bytes=freed,
+                      removed=removed, error="; ".join(failures) or None, failures=tuple(failures))
 
 
 def _clear_plain_files(key: str, paths: Sequence[Path]) -> ItemResult:
@@ -427,6 +368,7 @@ def clear(
     logs_dir: Path | None = None,
     project_root: Path | None = None,
     output_root: Path | None = None,
+    selected_downloads: tuple[output_store.Receipt, ...] | None = None,
 ) -> ItemResult:
     """Azzera UNA voce e ritorna il suo esito. Non solleva per i fallimenti di
     I/O: li mette nel risultato, cosi' le altre voci proseguono."""
@@ -435,7 +377,7 @@ def clear(
     elif key == ITEM_SESSION:
         result = _clear_plain_files(key, session_paths(project_root))
     elif key == ITEM_DOWNLOADS:
-        result = _clear_downloads(downloads_root(output_root))
+        result = _clear_downloads(downloads_root(output_root), selected_downloads)
     elif key == ITEM_LOGS:
         result = _clear_log_files(key, [p for p in log_paths(logs_dir) if p.exists()])
     else:
@@ -465,6 +407,7 @@ def clear_items(
     logs_dir: Path | None = None,
     project_root: Path | None = None,
     output_root: Path | None = None,
+    selected_downloads: tuple[output_store.Receipt, ...] | None = None,
 ) -> list[ItemResult]:
     """Azzera piu' voci nell'ordine di `ITEMS`. Se una fallisce, le altre
     proseguono comunque: l'esito dice quale non e' riuscita e perche'."""
@@ -474,7 +417,7 @@ def clear_items(
             key,
             logs_dir=logs_dir,
             project_root=project_root,
-            output_root=output_root,
+            output_root=output_root, selected_downloads=selected_downloads,
         )
         for key in ordered
     ]

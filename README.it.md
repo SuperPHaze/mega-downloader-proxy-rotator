@@ -24,7 +24,7 @@ https://github.com/user-attachments/assets/275c6fbe-3792-4178-8a75-dc8f4610df3e
 
 ![version](https://img.shields.io/badge/version-2.3.0-blue)
 ![python](https://img.shields.io/badge/python-3.11%E2%80%933.14-blue)
-![platform](https://img.shields.io/badge/platform-Windows%2010%2F11-lightgrey)
+![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-lightgrey)
 ![gui](https://img.shields.io/badge/GUI-PyQt6-green)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
@@ -36,11 +36,11 @@ https://github.com/user-attachments/assets/275c6fbe-3792-4178-8a75-dc8f4610df3e
 
 ## 🚀 Panoramica
 
-App **desktop per Windows** (Python + PyQt6) che scarica file **e intere cartelle** da Mega.nz instradando il traffico su proxy HTTP pubblici e gratuiti. Il file viene diviso in una **coda di chunk a dimensione fissa**, scaricati in parallelo ognuno su un proxy diverso, decifrati al volo e riassemblati. Nata come test tecnico di rotazione IP, oggi è un downloader a uso reale, single-user e single-process. L'interfaccia è **bilingue, italiano e inglese**.
+App **desktop per Windows e macOS** (Python + PyQt6) che scarica file **e intere cartelle** da Mega.nz instradando il traffico su proxy HTTP pubblici e gratuiti. Il file viene diviso in una **coda di chunk a dimensione fissa**, scaricati in parallelo ognuno su un proxy diverso, decifrati al volo e riassemblati. Nata come test tecnico di rotazione IP, oggi è un downloader a uso reale, single-user e single-process. L'interfaccia è **bilingue, italiano e inglese**.
 
 ## ✨ Perché è diversa
 
-- **Specifica per Mega** — resolve del link pubblico e decifratura AES integrati (nessuna dipendenza da `mega.py`).
+- **Integrità dei file MEGA** — dopo la decifratura AES, l’app verifica la dimensione e il codice di autenticazione (MAC) prima di completare il download.
 - **Pool di proxy gratuiti validato e con punteggio** — scraping da decine di fonti (circa 70), validazione a due stadi (opzionalmente a tre con test di velocità), reputazione per proxy, cache su disco, rigenerazione in background.
 - **Un proxy diverso per ogni chunk** — la rotazione è per-chunk, non per-file: se un proxy cade, perdi al massimo un chunk.
 - **Resume granulare** — i chunk completati sopravvivono a crash, cambio proxy e cambio numero di connessioni.
@@ -57,10 +57,10 @@ App **desktop per Windows** (Python + PyQt6) che scarica file **e intere cartell
 - **Watchdog per chunk**: scarta i proxy troppo lenti o che non finiscono in tempo.
 - **Pannello "Funzioni sperimentali"** con connessioni per file, budget per pezzo e selezione per velocità con soglia configurabile (test di velocità reale + selezione proxy per throughput).
 - **Diagnostica crash passiva** sempre attiva (heartbeat di memoria, traceback multi-thread), log strutturato universale (`logs/events.jsonl`) e un generatore di report HTML (`tools/report.py`).
-- **Interfaccia** a schede con cruscotto compatto a 3 zone (velocità, download, proxy) — gauge radiale di velocità (% del picco di sessione), barra segmentata per lo stato dei download, card compatte per lo stato del pool proxy — filtri job a pulsanti con conteggio dei file per stato (in corso/completati/non completati), tema chiaro/scuro, pausa/ripresa/annullo globali e per singolo job.
-- **Interfaccia bilingue italiano/inglese**: al primo avvio segue la lingua del sistema, poi si sceglie dal menu Impostazioni (Automatica / Italiano / English) e il cambio è immediato, senza riavviare. È tradotta tutta l'interfaccia, messaggi d'errore compresi; i messaggi nei file di log restano in italiano perché servono alla diagnosi.
-- **Icona nell'area di notifica**: riducendo la finestra si sceglie (una volta o per sempre) se mandarla accanto all'orologio o lasciarla nella barra delle applicazioni; avvisi a comparsa a ogni file completato, a ogni errore e a coda completata. La X chiude il programma, come sempre.
-- **Manutenzione dei dati su disco**: da Impostazioni si azzerano storico dei download, sessione salvata, cartella dei download, log e cache dei proxy. Ogni voce mostra quanto occupa davvero, niente è pre-selezionato, l'elenco di ciò che sparisce viene mostrato prima di cancellare e con un download in corso le voci pericolose sono disattivate.
+- **Coda di download** con anteprima dei link, filtri per stato, velocità e tempo rimanente. Puoi aprire **Dettagli sessione** sotto la coda per consultare statistiche e connessione.
+- **Interfaccia bilingue italiano/inglese**: al primo avvio segue la lingua del sistema, poi si sceglie da Impostazioni (Automatica / Italiano / English) e il cambio è immediato, senza riavviare. È tradotta tutta l'interfaccia, messaggi d'errore compresi; i messaggi nei file di log restano in italiano perché servono alla diagnosi.
+- **Riduzione della finestra** nel Dock su macOS. Su Windows puoi scegliere tra barra delle applicazioni e area di notifica. Il menu dell’icona permette di riaprire la finestra.
+- **Manutenzione dei dati su disco**. In Impostazioni puoi controllare e rimuovere i singoli download registrati dall’app, compresi i parziali. I file personali nella stessa cartella vengono conservati. Storico, sessione salvata, log e cache dei proxy sono selezionabili separatamente.
 - **Modalità CLI** per macchine headless.
 
 ## ⚡ Installazione rapida (Windows 10/11)
@@ -83,11 +83,17 @@ Un solo comando prepara tutto: dipendenze runtime (`requirements.txt`), dipenden
 
 > **Lingua degli script** — `install.ps1` e `package.ps1` mostrano i messaggi in **inglese per impostazione predefinita**. Per l'italiano, eseguili con `-Lang IT`, es. `powershell -ExecutionPolicy Bypass -File install.ps1 -Lang IT`.
 
+## Avvio su macOS
+
+Con Python 3.11–3.14 installato, apri `avvia.command` dal Finder. Al primo avvio crea l’ambiente Python nella cartella del progetto e installa le dipendenze. Agli avvii successivi riutilizza l’ambiente. Dal Terminale nella cartella del progetto puoi usare `sh avvia.command`. Se lo zip ha perso il permesso di esecuzione, `chmod +x avvia.command` abilita il doppio clic.
+
+Su Apple Silicon con Python 3.14.10 è stato verificato l’avvio di un download dalla versione 2.3.0.
+
 ## 🔧 Uso in breve
 
-1. Incolla uno o più link `https://mega.nz/...` — a **file singolo** o a **cartella** — (o importali da un file `.txt`).
-2. Regola le opzioni dal menù **Impostazioni** e premi **Avvia**.
-3. Segui avanzamento, velocità e tentativi per ogni file; metti in pausa, riavvia o annulla quando vuoi.
+1. Scegli **Aggiungi link** per incollare un indirizzo per riga, oppure **Importa da file** per aprire un elenco `.txt`. Su Mac puoi usare **⌘L** e confermare con **⌘Invio**.
+2. Controlla l’anteprima e la destinazione. **Impostazioni** (**⌘,** sul Mac) permette di cambiare cartella. Premi **Avvia** quando la coda è pronta.
+3. La coda mostra avanzamento, velocità e tempo rimanente. Espandi un file per aprire i dettagli. Per le statistiche, apri **Dettagli sessione** sotto l’elenco.
 
 CLI senza interfaccia:
 ```powershell
@@ -112,7 +118,6 @@ CLI senza interfaccia:
 - I proxy gratuiti hanno mortalità elevata: è normale che la validazione ne scarti la maggior parte.
 - La velocità dipende dai proxy: tipicamente da decine a poche centinaia di KB/s.
 - Mega può applicare rate-limit allo stesso file anche da IP diversi (403/509 dal CDN): i proxy temporaneamente bloccati vengono messi a riposo e riusati (dettagli nella [guida](Docs/GUIDA_OPERATIVA.md)).
-- Verifica MAC del file scaricato non ancora implementata (pianificata).
 
 ## 🛡️ Disclaimer
 

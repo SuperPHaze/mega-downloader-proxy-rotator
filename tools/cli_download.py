@@ -16,10 +16,13 @@ from __future__ import annotations
 
 import argparse
 import logging
+import sqlite3
 import sys
 
 from PyQt6.QtCore import QCoreApplication, QTimer
 
+from src.core.config import OUTPUT_DIR
+from src.downloader.mega_folder import reserve_folder_links
 from src.core.logging_setup import setup_logging
 from src.core.state import SessionState
 from src.downloader.orchestrator import DownloadOrchestrator
@@ -58,6 +61,11 @@ def main(argv: list[str]) -> int:
         return 2
 
     setup_logging()
+    try:
+        links = reserve_folder_links(links, OUTPUT_DIR)
+    except (OSError, sqlite3.Error) as exc:
+        log.error("Impossibile assegnare la destinazione: %s", exc)
+        return 1
     app = QCoreApplication(sys.argv[:1])
     state = SessionState()
     orch = DownloadOrchestrator(state)
@@ -87,19 +95,22 @@ def main(argv: list[str]) -> int:
     def on_cycle_completed(fid: int, cycle: int) -> None:
         log.info("[file %d] ciclo %d COMPLETATO", fid, cycle)
 
+    def finish(fid: int, *, success: bool) -> None:
+        if fid not in pending:
+            return
+        pending.remove(fid)
+        if not success:
+            exit_code["value"] = 1
+        if not pending:
+            QCoreApplication.quit()
+
     def on_all_done(fid: int) -> None:
         log.info("[file %d] TUTTI I CICLI COMPLETATI", fid)
-        pending.discard(fid)
-        if not pending:
-            log.info("[done] tutti i download conclusi, esco")
-            QCoreApplication.quit()
+        finish(fid, success=True)
 
     def on_fatal_error(fid: int, msg: str) -> None:
         log.error("[file %d] FATAL: %s", fid, msg)
-        pending.discard(fid)
-        if not pending:
-            exit_code["value"] = 1
-            QCoreApplication.quit()
+        finish(fid, success=False)
 
     def on_failed(fid: int, cycle: int, reason: str) -> None:
         log.warning("[file %d] ciclo %d tentativo fallito: %s", fid, cycle, reason)
@@ -108,11 +119,7 @@ def main(argv: list[str]) -> int:
         # Senza questo handler il file abbandonato non viene mai rimosso da
         # `pending` e il runner resta appeso fino al timeout esterno.
         log.warning("[file %d] ABBANDONATO dopo %d tentativi: %s", fid, attempts, last_error)
-        pending.discard(fid)
-        exit_code["value"] = 1
-        if not pending:
-            log.info("[done] tutti i download conclusi (con abbandoni), esco")
-            QCoreApplication.quit()
+        finish(fid, success=False)
 
     orch.setup_status.connect(on_setup_status)
     orch.setup_progress.connect(on_setup_progress)
@@ -124,6 +131,7 @@ def main(argv: list[str]) -> int:
     orch.fatal_error.connect(on_fatal_error)
     orch.failed.connect(on_failed)
     orch.abandoned.connect(on_abandoned)
+    orch.job_cancelled.connect(lambda fid: finish(fid, success=False))
 
     speed_admission_bps = (
         args.speed_admission * 1024 if args.speed_admission is not None else None

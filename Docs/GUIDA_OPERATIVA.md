@@ -16,7 +16,9 @@ L'uso previsto è il download di file di cui si ha il diritto di disporre. I pro
 
 ---
 
-## 1-bis. Avviare il programma: due lanci
+## 1-bis. Avvio su Windows e macOS
+
+Su macOS, apri `avvia.command` dal Finder con Python 3.11–3.14 installato. Nel Terminale puoi usare `sh avvia.command` dalla cartella del progetto. Il primo avvio prepara le dipendenze. I lanci descritti di seguito sono per Windows.
 
 L'installazione (`install.bat`) prepara **due** file di avvio nella cartella del programma, che fanno la stessa cosa in due modi diversi.
 
@@ -70,7 +72,7 @@ La rotazione è quindi per-chunk, non per-file: se un proxy cade, si perde al pi
 
 Il programma può inoltre lavorare su **più file contemporaneamente**: il valore di default è 1, regolabile dalla GUI fino a 5. Aumentarlo moltiplica però la pressione sul pool di proxy e può degradare tutti i download in corso, motivo per cui il default è sequenziale.
 
-Il payload consegnato da Mega è cifrato. Il programma lo **decifra in streaming** (AES-CTR) man mano che i chunk arrivano, scrivendo direttamente sul file di destinazione: il consumo di RAM resta costante anche su file di molti GB e ciò che finisce sul disco è già il file finale utilizzabile.
+Il programma decifra i dati in streaming con AES-CTR e li scrive nel file temporaneo `.part`. Prima della rinomina finale rilegge il file a blocchi e verifica la dimensione e il MAC contenuto nella chiave MEGA. Lo stesso controllo precede il riuso di un file esistente. Se il MAC è errato, l’app segnala il problema, scarta il parziale e i relativi checkpoint. Puoi riavviare il download per ottenere una nuova copia. Se interrompi soltanto la verifica, i checkpoint restano disponibili.
 
 La scrittura segue il pattern **`.part` + rename atomico**: il trasferimento avviene sempre su un file `<nome>.part`, affiancato da un sidecar `.progress.json` che registra i chunk completati. Solo a download completo il file viene rinominato (operazione atomica) sul nome definitivo. L'esistenza del nome definitivo è l'unico marcatore di completamento.
 
@@ -153,11 +155,15 @@ La prima costruzione del pool richiede tempo (indicativamente da mezzo minuto a 
 
 Il tasto **Reset cache** nella zona proxy (in basso nell'interfaccia) cancella il file `proxy_cache.json` senza uscire dall'applicazione: il prossimo avvio o la prossima sessione ripartirà da zero, utile quando si vuole testare una configurazione diversa senza residui della sessione precedente. La cancellazione non interrompe alcun download in corso.
 
-La zona proxy mostra anche due misure di banda affiancate, distinte per colore. **Banda** (verde) è la banda della propria linea, misurata con un download diretto **senza proxy**: viene calcolata automaticamente all'avvio e si può rifare con il pulsante **↻ Banda**. **Banda proxy** (blu) è invece la banda aggregata reale che il **pool di proxy** riesce a erogare, ottenuta scaricando in parallelo attraverso i proxy migliori del momento; si avvia con il pulsante **↻ Banda proxy**, attivo solo durante una sessione (a riposo non ci sono proxy da testare). La misura è robusta: un proxy lento o caduto contribuisce solo i byte effettivamente scaricati, senza far fallire l'intero test. Confrontare le due bande aiuta a capire quanto il pool di proxy si avvicina alla capacità della linea.
+In **Dettagli sessione → Connessione**, **Velocità linea** indica la banda della linea, misurata all’avvio con un download diretto. Puoi ripetere la misura con **Misura linea**. Durante la sessione compare **Velocità proxy**, la banda aggregata misurata attraverso il pool. **Misura proxy** è disponibile quando il pool contiene proxy attivi. Se un proxy rallenta o cade, per quel proxy vengono conteggiati i byte effettivamente scaricati. Confrontare le due misure indica quanto il pool si avvicina alla capacità della linea.
 
 ---
 
 ## 9. Controlli di sessione e resume
+
+In **Download**, incolla o importa i link e controlla l’anteprima prima di premere **Avvia**. La destinazione è indicata sotto il titolo. **⌘L** apre l’inserimento sul Mac e **⌘,** apre le impostazioni. Durante una sessione puoi ancora cambiare lingua e aspetto.
+
+Se la preparazione fallisce, **Riprova** riavvia la preparazione con gli stessi file e le stesse impostazioni. I link restano in coda. A fine sessione il riepilogo conta separatamente file scaricati, falliti, abbandonati e annullati. La CLI restituisce un codice di errore quando almeno un file fallisce.
 
 Durante una sessione i controlli disponibili sono pausa/ripresa e annullo, sia globali sia per singolo file dalla tabella. La pausa non comporta la perdita dei proxy: alla ripresa il lavoro riparte dal punto in cui era stato sospeso. La pausa agisce **al confine del pezzo in corso**: un chunk già in trasferimento viene portato a termine e solo dopo il lavoro si sospende (sospendere un pezzo a metà farebbe scadere i timeout di lettura). L'annullo di un singolo file può, a scelta, rimuoverne anche i dati già scaricati dal disco.
 
@@ -173,9 +179,11 @@ Un link a **cartella** aggiunto a caldo viene prima elencato, come all'avvio. La
 
 Se il programma viene chiuso (o va in crash) con dei download non ancora completati, alla riapertura propone di **ricaricare i link rimasti** con una richiesta intitolata «Ripristina sessione» («La sessione precedente si è chiusa con N link non completati. Vuoi ricaricarli nella lista?»). Accettando, i link tornano nella lista e — grazie al resume descritto sotto — ripartono dai pezzi già scaricati: basta premere Avvia.
 
-La lista dei download può essere filtrata con tre pulsanti a selezione esclusiva — **In corso**, **Completati** e **Non completati** — che insieme coprono tutti gli stati possibili (i job in coda e in corso ricadono in «In corso»; falliti, annullati e abbandonati in «Non completati»). Ogni pulsante riporta tra parentesi il numero di file nella sua categoria, aggiornato in tempo reale: così la composizione della sessione è leggibile a colpo d'occhio senza cambiare filtro.
+La coda si apre su **Tutti**, così anche i file completati restano visibili. **In corso**, **Completati** e **Non completati** filtrano la lista. I conteggi si aggiornano durante il download. Il menu **…** accanto al nome contiene le azioni per quel file. La freccia espande i dati del trasferimento. L’ultimo errore occupa una riga. Apri **Dettagli** per leggere il messaggio intero e la cronologia dei tentativi. Annullando un singolo file, i dati parziali restano su disco salvo selezione esplicita della casella di eliminazione.
 
-Il resume copre anche le interruzioni non volontarie (chiusura del programma, blackout, errore). Grazie allo schema `.part` + sidecar, alla ripresa vengono riscaricati solo i chunk mancanti; un ciclo è considerato completo unicamente quando esiste il file finale rinominato, quindi un file interrotto non viene mai scambiato per completo.
+Anteprime della coda con dati di esempio nel [tema chiaro](images/download-queue-light.png) e nel [tema scuro](images/download-queue-dark.png).
+
+Nella stessa cartella di destinazione il ripristino conserva gli identificativi dei download, anche se alcuni file sono già terminati o modifichi l’ordine della lista. Le copie dello stesso URL conservano cartelle parziali distinte. Per una sessione delle versioni precedenti viene recuperata la cartella di un link singolo se la corrispondenza è univoca. In modalità parallela il registro del `.part` indica quali pezzi mancano.
 
 ---
 
@@ -183,7 +191,7 @@ Il resume copre anche le interruzioni non volontarie (chiusura del programma, bl
 
 L'interfaccia è **bilingue: italiano e inglese**. Al primo avvio il programma segue la **lingua di sistema** — italiano se il sistema è in italiano, inglese in tutti gli altri casi — e da lì in poi la scelta passa all'utente.
 
-Si cambia dal menu **Impostazioni → «Lingua:»**, che offre tre voci: **Automatica**, **Italiano**, **English**. «Automatica» non è una lingua ma una regola: continua a seguire il sistema, e mostra fra parentesi quale lingua sta scegliendo in quel momento («Automatica (Italiano)»). Scegliendo esplicitamente Italiano o English si esce dalla regola; per tornarci basta rimettere «Automatica». La scelta viene **ricordata** e ritrovata al lancio successivo.
+Si cambia da **Impostazioni → Lingua**, che offre tre voci: **Automatica**, **Italiano**, **English**. «Automatica» non è una lingua ma una regola: continua a seguire il sistema, e mostra fra parentesi quale lingua sta scegliendo in quel momento («Automatica (Italiano)»). Scegliendo esplicitamente Italiano o English si esce dalla regola; per tornarci basta rimettere «Automatica». La scelta viene **ricordata** e ritrovata al lancio successivo.
 
 Il cambio è **immediato e non richiede il riavvio**: pannelli, menu, pulsanti, finestre di dialogo e riga di stato si riscrivono sul posto, comprese le finestre già aperte — se è aperto il dettaglio di un download, viene ritradotta anche la cronologia dei tentativi già scritta.
 
@@ -195,7 +203,9 @@ La traduzione copre **tutta** l'interfaccia, inclusi i **messaggi d'errore** dei
 
 ## 9-ter. Ridurre a icona: area di notifica e avvisi
 
-Riducendo la finestra a icona il programma **chiede dove metterla**, con una domanda intitolata «Riduzione a icona»: **Area di notifica** (l'icona accanto all'orologio) oppure **Barra delle applicazioni** (il comportamento di sempre). La domanda compare nel momento della riduzione e ha una casella **«Ricorda la scelta»**: spuntandola, la scelta viene salvata e non viene più chiesto. Per tornare a farsi chiedere ogni volta: menu **Impostazioni → «Riduzione a icona:» → «Chiedi ogni volta»**; il suggerimento del mouse su quel pulsante dice quale scelta è in vigore adesso.
+Sul Mac, la destinazione iniziale è il Dock. Per scegliere anche la barra dei menu, apri **Impostazioni**, poi **Riduzione a icona** e **Chiedi ogni volta**. La preferenza già salvata ha la precedenza.
+
+Su Windows, riducendo la finestra a icona il programma **chiede dove metterla**, con una domanda intitolata «Riduzione a icona»: **Area di notifica** (l'icona accanto all'orologio) oppure **Barra delle applicazioni** (il comportamento di sempre). La domanda compare nel momento della riduzione e ha una casella **«Ricorda la scelta»**: spuntandola, la scelta viene salvata e non viene più chiesto. Per tornare a farsi chiedere ogni volta: menu **Impostazioni → «Riduzione a icona:» → «Chiedi ogni volta»**; il suggerimento del mouse su quel pulsante dice quale scelta è in vigore adesso.
 
 **Il pulsante di chiusura della finestra (la X) non cambia: chiude l'applicazione**, come ha sempre fatto e senza chiedere conferma. L'area di notifica è un posto dove *ridurre* la finestra, non un modo per chiudere il programma di nascosto.
 
@@ -209,30 +219,23 @@ Se l'area di notifica non è disponibile — disattivata nelle impostazioni di W
 
 ---
 
-## 10. Cruscotto Statistiche
+## 10. Dettagli sessione
 
-Il pannello **Statistiche**, visibile sotto il cruscotto principale, aggrega le metriche di sessione in un unico punto pensato per confrontare configurazioni durante i test. Il pannello è **collassabile**: cliccando sull'intestazione si riduce a una singola riga riassuntiva (tempo attivo, volume, throughput e conteggi job), che rimane sempre visibile. Lo stato espanso/collassato viene ricordato tra le sessioni.
+Durante un trasferimento la coda mostra velocità attuale, dati scaricati e tempo rimanente stimato. Apri **Dettagli sessione** sotto l’elenco per vedere **Statistiche** e **Connessione**. A ogni avvio dell’applicazione la sezione è chiusa.
 
-**Cosa mostra:**
+- Il **tempo trascorso** si ferma quando termina l’ultimo file. Avviando una nuova sessione, riparte da zero.
+- La **velocità effettiva** è il rapporto tra i byte scaricati e il tempo trascorso. Comprende anche i dati parziali dei download falliti o annullati.
+- La **media per file** è la media delle velocità medie dei file terminati. Le altre misure di velocità usano i campioni raccolti durante l’attività. L’anello indica la velocità attuale rispetto al picco della sessione.
+- Il **completamento** indica il numero e la percentuale di file scaricati con successo. I filtri sopra la coda permettono di vedere i file in ciascuno stato.
+- **Copia riepilogo** copia le misure della sessione e una riga per file con nome, volume, durata, velocità e stato. Puoi anche espandere un file direttamente nella coda per consultarne i dettagli.
 
-- *Sessione*: tempo attivo dall'avvio. Il clock si **congela automaticamente** quando tutti i download terminano (in qualsiasi stato), così i numeri restano stabili per la consultazione. Se si avvia una nuova sessione il clock riparte da zero.
-- *Volume scaricato*: totale cumulativo su tutti i job della sessione, inclusi i byte parziali di job falliti, annullati o abbandonati.
-- *Velocità di sessione*: due formule distinte:
-  - **Throughput effettivo** = volume totale / tempo attivo (misura quanti byte vengono effettivamente portati a casa per unità di tempo);
-  - **Media per-download** = media aritmetica delle velocità medie dei singoli job terminati (indica la qualità tipica di un singolo download).
-  - Picco e minima di sessione dal campionamento 1 Hz.
-- *Conteggi job*: totali per stato e tasso di completamento.
-- *Dettaglio per-download*: una riga per ogni job con nome file, volume, durata e velocità media finale (o velocità istantanea per i job in corso).
-
-**Pulsante "Copia riepilogo"**: produce un blocco di testo plain negli appunti con tutti i numeri sopra elencati, pronto da incollare in una nota di confronto fra test con configurazioni diverse.
-
-Ogni card di job in stato terminale mostra inoltre una riga di riepilogo con la velocità media finale, il volume scaricato e la durata del singolo download.
+Prima del primo download, **Connessione** mostra l’ultima velocità della linea misurata. Durante la sessione mostra anche i dati del pool di proxy.
 
 ---
 
 ## 11. Output, storico e log
 
-I file scaricati vengono salvati in sottocartelle dedicate dentro la **cartella di download**. Per impostazione predefinita è la cartella `downloads` del progetto, ma può essere cambiata dal menu **Impostazioni → «Cartella download:»**: la scelta viene ricordata tra le sessioni e, se la cartella indicata non è scrivibile, il programma avvisa e torna alla predefinita. Prima di iniziare, il programma verifica che sul disco di destinazione ci sia spazio sufficiente per il file (più un margine di sicurezza): in mancanza, il download viene abbandonato subito con un messaggio chiaro invece di fallire a metà con il disco pieno. Ogni download da **link a file singolo** occupa una cartella con il nome del file scaricato e un suffisso numerico (`<nome_file>_<id>/`); al suo interno le sottocartelle `ciclo_1/`, `ciclo_2/`, … contengono i file prodotti da ciascun ciclo. Il nome della cartella viene assegnato al primo resolve riuscito del link: fino a quel momento viene usato un nome temporaneo basato sull'hash dell'URL. I file provenienti da un **link a cartella** seguono invece un layout **ad albero**: finiscono tutti sotto un'unica cartella che porta il nome della cartella Mega, con le sottocartelle originali preservate (`<Nome cartella Mega>/<sottocartella>/<file>`), senza suffisso numerico e senza livello `ciclo_N`. Tutti i log diagnostici/operativi sono raccolti nella cartella `logs/` del progetto: lo storico dei download completati (con deduplica per handle Mega, usato per avvisare quando si reinserisce un link già scaricato), il registro dei link abbandonati, le metriche per-fonte dei proxy, un log tecnico generale dell'attività, un log strutturato universale (`logs/events.jsonl`) e una cattura grezza dell'intero output del terminale della sessione corrente (`logs/terminal-log.txt`, riazzerato a ogni avvio). Non servono per l'uso ordinario, ma sono disponibili per la diagnostica.
+I file scaricati vengono salvati in sottocartelle dedicate dentro la **cartella di download**. Per impostazione predefinita è la cartella `downloads` del progetto, ma può essere cambiata dal menu **Impostazioni → «Cartella download:»**: la scelta viene ricordata tra le sessioni e, se la cartella indicata non è scrivibile, il programma avvisa e torna alla predefinita. Prima di iniziare, il programma verifica che sul disco di destinazione ci sia spazio sufficiente per il file (più un margine di sicurezza): in mancanza, il download viene abbandonato subito con un messaggio chiaro invece di fallire a metà con il disco pieno. Ogni download da **link a file singolo** occupa una cartella con il nome del file scaricato e un suffisso numerico (`<nome_file>_<id>/`); al suo interno le sottocartelle `ciclo_1/`, `ciclo_2/`, … contengono i file prodotti da ciascun ciclo. Il download usa una cartella basata sull’hash del link fino alla verifica finale. Al termine l’app assegna il nome del file alla cartella se quel nome è disponibile. I file provenienti da un **link a cartella** seguono invece un layout **ad albero**: finiscono tutti sotto un'unica cartella che porta il nome della cartella Mega, con le sottocartelle originali preservate (`<Nome cartella Mega>/<sottocartella>/<file>`), senza suffisso numerico e senza livello `ciclo_N`. Tutti i log diagnostici/operativi sono raccolti nella cartella `logs/` del progetto: lo storico dei download completati (con deduplica per handle Mega, usato per avvisare quando si reinserisce un link già scaricato), il registro dei link abbandonati, le metriche per-fonte dei proxy, un log tecnico generale dell'attività, un log strutturato universale (`logs/events.jsonl`) e una cattura grezza dell'intero output del terminale della sessione corrente (`logs/terminal-log.txt`, riazzerato a ogni avvio). Non servono per l'uso ordinario, ma sono disponibili per la diagnostica.
 
 Una **suite di diagnostica passiva**, sempre attiva, integra questi log: traceback dei crash nativi, cattura delle eccezioni su tutti i thread, un heartbeat periodico con uso di memoria e marcatori di avvio/chiusura della sessione. In caso di crash, lo strumento da riga di comando `tools/report.py` legge `logs/events.jsonl` e `logs/crash.log` e produce un report HTML leggibile in `logs/reports/`, utile per ricostruire cosa stava succedendo nel programma poco prima del problema.
 
@@ -242,15 +245,15 @@ Una **suite di diagnostica passiva**, sempre attiva, integra questi log: traceba
 
 Il programma lascia su disco cinque cose: i file scaricati, lo storico dei download, lo stato della sessione da riprendere, i log e la cache dei proxy. Si azzerano dal menu **Impostazioni → «Manutenzione:» → «Azzera dati…»**, che apre una finestra dedicata.
 
-La finestra elenca le cinque voci con, accanto a ciascuna, **il conteggio e lo spazio reali letti dal disco in quel momento** — quante voci contiene lo storico, quanti link sono rimasti in sospeso, quanti file e quanti frammenti `.part` ci sono nella cartella dei download, quanto occupano i log. Nessuna casella è spuntata all'apertura: si scelgono le voci una per una. Una voce che non ha niente da cancellare è disattivata e lo dice («niente da cancellare»).
+La finestra elenca le cinque voci con, accanto a ciascuna, **il conteggio e lo spazio reali letti dal disco in quel momento** — quante voci contiene lo storico, quanti link sono rimasti in sospeso, quanti file e frammenti `.part` registrati ci sono nella destinazione, quanto occupano i log. Nessuna casella è spuntata all'apertura: si scelgono le voci una per una. Una voce che non ha niente da cancellare è disattivata e lo dice («niente da cancellare»).
 
 Cosa comporta ogni voce:
 
 - **Storico dei download** (`logs/download_history.log`): è ciò che alimenta l'avviso «già scaricato». Azzerandolo il programma non riconosce più i file presi in passato e non avvisa più se si reinserisce lo stesso link. Il controllo continua a funzionare, semplicemente non riconosce più nulla.
 - **Stato della sessione** (`session_state.json`): al prossimo avvio non verrà più proposto il ripristino dei link rimasti in sospeso. I file già a metà sul disco restano dove sono e il resume a livello di byte continua a funzionare.
-- **Cartella dei download**: svuota la cartella di download configurata (quella scelta da **Impostazioni → «Cartella download:»**, o la predefinita). È la voce più distruttiva: quello che sparisce va riscaricato da capo. La cartella stessa resta in piedi.
+- **Cartella dei download**. **Mostra dettagli** nella conferma elenca i singoli percorsi e le dimensioni dei file registrati da questa installazione. L’app ricontrolla ogni file prima di eliminarlo. I documenti personali, i file sostituiti e i vecchi download di provenienza incerta restano nella destinazione.
 - **Log e statistiche delle fonti**: `app.log` e i suoi archivi, `events.jsonl` e i suoi archivi, `terminal-log.txt`, le metriche per-fonte dei proxy e il registro dei link abbandonati. Servono solo alla diagnostica: azzerandoli non si perde nessun download. Restano fuori, di proposito, `logs/crash.log` e la telemetria in `logs/telemetry/`, che servono proprio quando qualcosa è andato storto.
-- **Cache dei proxy** (`proxy_cache.json`): il prossimo avvio rifà la raccolta da zero e sarà quindi più lento. Non si perde nessun dato. È la stessa operazione del pulsante **«Reset cache»** nella zona proxy del cruscotto.
+- **Cache dei proxy** (`proxy_cache.json`): il prossimo avvio rifà la raccolta da zero e sarà quindi più lento. Non si perde nessun dato. È la stessa operazione del pulsante **«Reset cache»** in **Dettagli sessione → Connessione**.
 
 **Prima di cancellare** compare una seconda finestra che elenca riga per riga ciò che sparirà, con i nomi dei file e le loro dimensioni; il pulsante predefinito è **Annulla**, non quello che cancella. **Dopo**, la finestra mostra un resoconto di cosa è stato azzerato e di quanto spazio è stato liberato, e la stessa informazione finisce nel log dell'applicazione. Se una voce non riesce (per esempio un file bloccato da un altro programma), le altre proseguono comunque e il resoconto dice quale ha fallito e perché.
 
@@ -316,5 +319,4 @@ Alcuni comportamenti possono sembrare anomalie ma sono parte del normale funzion
 - La velocità è determinata dai proxy, non dal programma.
 - Mega può applicare rate-limit allo stesso file anche da IP diversi (403/509 dal CDN): è il comportamento che il tool è nato per misurare. Il proxy colpito non viene scartato ma messo a riposo per 90 secondi, poi torna in rotazione.
 - Mega impone inoltre un **limite di IP concorrenti per singolo file** (risposta `429 "Too Many Concurrent IP Addresses"`): troppi proxy diversi che scaricano lo stesso file nello stesso momento vengono respinti. Il programma lo gestisce **ri-provando lo stesso proxy** (stesso IP) dopo una breve attesa, invece di passarne a uno nuovo — cambiare IP peggiorerebbe il limite. Conseguenza pratica: oltre una certa soglia, aggiungere connessioni o proxy sullo stesso file non aumenta la banda. La velocità massima su un singolo file è quindi limitata sia dalla qualità dei proxy sia da questo tetto di Mega.
-- Due cartelle Mega **diverse ma con lo stesso nome** scaricate in **sessioni diverse** condividono la stessa cartella su disco (nella stessa sessione vengono invece separate automaticamente in «Nome» e «Nome (2)»). I file non vengono scambiati — prima di considerare un file già scaricato il programma ne verifica anche la dimensione — ma i contenuti delle due cartelle finiscono mescolati. Se capita, conviene scegliere una cartella di download diversa per la seconda.
-- La verifica dell'integrità tramite MAC del file scaricato non è ancora implementata: è una funzionalità pianificata.
+- Due cartelle Mega **diverse ma con lo stesso nome** scaricate in **sessioni diverse** condividono la stessa cartella su disco (nella stessa sessione vengono invece separate automaticamente in «Nome» e «Nome (2)»). I contenuti delle due cartelle finiscono mescolati. Se due file hanno lo stesso percorso, l’app riutilizza la copia esistente solo dopo averne verificato dimensione e MAC. Se capita, conviene scegliere una cartella di download diversa per la seconda.

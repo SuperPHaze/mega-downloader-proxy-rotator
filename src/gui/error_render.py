@@ -148,6 +148,18 @@ def render_error(code: str, params: dict | None = None, _depth: int = 0) -> str:
     return str(code) if testo == key else testo
 
 
+def render_queue_cause(code: str, params: dict) -> str:
+    """Sintesi per la riga del file. Il dettaglio conserva il messaggio integrale."""
+    reason = params.get("reason")
+    if code == "attempt_frame" and _is_payload(reason):
+        code, params = reason["code"], reason.get("params") or {}
+    error = params.get("error")
+    if code in ("download_failed", "download_failed_paren") and isinstance(error, str):
+        if error.startswith(("[Errno 2]", "[WinError 2]", "[WinError 3]")):
+            return t("jobs_panel.file_missing")
+    return render_error(code, params)
+
+
 def _render_child(payload: dict, depth: int) -> str:
     """Un livello piu' in basso. Oltre il tetto ci si ferma al codice: e' una
     cintura di sicurezza contro un payload malformato, non un caso reale."""

@@ -128,15 +128,13 @@ tenerlo allineato quando cambi slot pubblici o dialoghi.
   colonne, niente `data()`, niente `dataChanged`) perché senza view a tabella quell'API non
   aveva più un chiamante. Gli aggiornamenti passano da `job_updated(file_id)` e
   `aggregates_changed()`.
-- Ogni card porta i propri comandi (annulla, apri cartella, riavvia, copia URL): non ci sono piu'
-  delegate di cella. Click sull'annullo → `JobsPanel.cancel_job_requested(file_id, True)` se il job
-  è attivo, `delete_folder_requested(file_id)` se è terminato.
+- Il menu **…** di ciascuna riga offre il dettaglio e l’azione per lo stato corrente.
+  L’annullamento chiede conferma. Il secondo argomento di `cancel_job_requested(file_id, delete_folder)`
+  rispecchia la casella di eliminazione dei dati parziali. La riga mostra una sintesi dell’ultimo
+  errore, mentre il suggerimento e la finestra Dettagli conservano la diagnostica completa.
 - Status bar (`QStatusBar`) per messaggi brevi (stato del pool, pausa, annullo, errori non bloccanti).
 - `QMessageBox` per errori bloccanti che richiedono attenzione (es. nessun link inserito) e per conferme distruttive (eliminazione cartella di job terminati).
-- **Eliminare un job nato da un link cartella cancella SOLO quel file** (+ `.part` + sidecar) e pota
-  le cartelle rimaste vuote: l'albero è condiviso con gli altri file della stessa cartella Mega, un
-  `rmtree` cancellerebbe roba altrui. Vedi `_delete_folder_job_file` in `main_window.py` e la regola
-  d'area `downloader.md`.
+- La conferma di manutenzione usa gli stessi file registrati e le stesse impronte che verranno ricontrollati prima della rimozione. Annullare un job in attesa agisce solo sulla coda. Il worker attivo può eliminare i propri parziali prima di liberare il posto.
 
 ## Area di notifica e uscita dall'applicazione
 `src/main.py` chiama `app.setQuitOnLastWindowClosed(False)`: senza, nascondere l'unica finestra

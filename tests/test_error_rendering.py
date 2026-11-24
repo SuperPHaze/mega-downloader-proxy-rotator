@@ -171,6 +171,7 @@ def test_alias_abbandono_riporta_la_formulazione_del_worker(in_italiano):
         "pool_empty_short": "pool_empty",
         "ip_check_failed_paren": "ip_check_failed",
         "download_failed_paren": "download_failed",
+        "file_mac_mismatch": "file_mac_mismatch",
         "disk_full_short": "disk_full_short",     # stesso codice sui due canali
     }
     assert coppie.keys() == _codici_emit_failed()

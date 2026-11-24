@@ -12,7 +12,7 @@ from PyQt6.QtWidgets import QWidget
 
 from src.gui import style as _style
 
-_PEN_WIDTH = 9.0
+_PEN_WIDTH = 6.0
 _FULL_TURN_16THS = 360 * 16
 
 
@@ -34,7 +34,7 @@ class RadialGauge(QWidget):
         self._fraction: float = 0.0
         self._value_text: str = "—"
         self._unit_text: str = ""
-        self.setFixedSize(84, 84)
+        self.setFixedSize(66, 66)
 
     def set_value(self, fraction: float, value_text: str, unit_text: str) -> None:
         self._fraction = max(0.0, min(1.0, fraction))
@@ -77,7 +77,7 @@ class RadialGauge(QWidget):
 
         # Testo al centro: valore + unita'.
         painter.setPen(QColor(p["text"]))
-        value_font = QFont("Consolas", 16)
+        value_font = _style.ui_font(12)
         value_font.setWeight(QFont.Weight.Medium)
         painter.setFont(value_font)
         value_rect = QRectF(0, h / 2 - 16, w, 18)
@@ -85,7 +85,7 @@ class RadialGauge(QWidget):
 
         if self._unit_text:
             painter.setPen(QColor(p["text_dim"]))
-            unit_font = QFont("Segoe UI", 8)
+            unit_font = _style.ui_font(9)
             painter.setFont(unit_font)
             unit_rect = QRectF(0, h / 2 + 2, w, 14)
             painter.drawText(unit_rect, Qt.AlignmentFlag.AlignCenter, self._unit_text)

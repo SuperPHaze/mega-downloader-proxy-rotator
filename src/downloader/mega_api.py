@@ -25,6 +25,7 @@ from src.core.mega_links import (
 )
 from src.core.proxy_url import build_proxies_dict
 from src.downloader.mega_crypto import (
+    a32_to_str,
     base64_to_a32,
     base64_url_decode,
     decrypt_attr,
@@ -186,6 +187,7 @@ class MegaPublicClient:
             "handle": handle,
             "k": k,
             "iv": iv,
+            "meta_mac": a32_to_str(raw_key[6:8]),
             "cdn_url": cdn_url,
             "file_size": file_size,
             "file_name": file_name,
@@ -232,6 +234,7 @@ class MegaPublicClient:
             "handle": job.node_handle,
             "k": k,
             "iv": iv,
+            "meta_mac": a32_to_str(raw_key[6:8]),
             "cdn_url": cdn_url,
             "file_size": file_size,
             "file_name": file_name,
