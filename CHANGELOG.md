@@ -6,6 +6,10 @@ All notable changes to this project. Format based on [Keep a Changelog](https://
 
 ## [Unreleased]
 
+- Folder links added at different times keep distinct destinations across restarts. Cancelling a queued file preserves other downloads.
+- Maintenance previews and removes only recorded files that still match the copies on disk.
+- **Retry** keeps the queue after preparation fails. The GUI summary and CLI exit code account for every outcome.
+
 - Verify the MEGA file MAC before completing a transfer or reusing a file.
 - Restore partial downloads by their original IDs even when the queue order changes.
 

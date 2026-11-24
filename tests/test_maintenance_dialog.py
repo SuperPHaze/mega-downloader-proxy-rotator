@@ -54,6 +54,8 @@ def workspace(tmp_path, monkeypatch):
     (downloads / "primo_0").mkdir()
     (downloads / "primo_0" / "video.mp4").write_text("x" * 10, encoding="utf-8")
     (tmp_path / "proxy_cache.json").write_text("{}", encoding="utf-8")
+    from src.core import output_store
+    output_store.record(downloads, "test-owner", downloads / "primo_0" / "video.mp4", False)
     return tmp_path
 
 
@@ -130,10 +132,10 @@ def test_the_confirm_list_names_every_file_that_goes(qt_app, italian_ui, workspa
     assert "download_history.log" in righe
     assert "Stato della sessione" in righe
     assert "session_state.json" in righe
-    # La cartella dei download si mostra per PATH, non file per file.
+    # Anche nei download ogni file confermato è riconoscibile.
     righe_dl = "\n".join(dlg.confirm_lines([ITEM_DOWNLOADS]))
     assert str(workspace / "downloads") in righe_dl
-    assert "video.mp4" not in righe_dl
+    assert "video.mp4" in righe_dl
 
 
 def test_an_empty_entry_says_so(qt_app, italian_ui, tmp_path, monkeypatch):
@@ -191,12 +193,17 @@ def test_the_proxy_cache_goes_through_the_function_that_already_exists(
 def test_a_failed_entry_is_reported_and_the_others_go_on(
     qt_app, italian_ui, workspace, monkeypatch,
 ):
-    import shutil
+    from pathlib import Path
 
     monkeypatch.setattr(md.QMessageBox, "warning", staticmethod(lambda *a, **k: None))
-    monkeypatch.setattr(
-        shutil, "rmtree", lambda *a, **k: (_ for _ in ()).throw(OSError("occupata"))
-    )
+    unlink = Path.unlink
+
+    def locked(path, *args, **kwargs):
+        if path.name == "video.mp4":
+            raise OSError("occupata")
+        return unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", locked)
     dlg = _dialog(workspace)
     dlg._run([ITEM_DOWNLOADS, ITEM_SESSION])
 
@@ -257,6 +264,7 @@ def _finta_finestra(*, total=1, all_terminated=False, no_orchestrator=False,
     win.orchestrator = (
         None if no_orchestrator else _FakeOrchestrator(active_workers)
     )
+    win._setup_error = None
     win.jobs_panel = _FakePanel(_FakeModel(total, all_terminated))
     win.controls = _FakeControls(download_dir)
     return win

@@ -20,9 +20,9 @@ from src.gui.paste_links_dialog import PasteLinksDialog
 @pytest.fixture
 def window(qt_app, tmp_path, monkeypatch, italian_ui):
     monkeypatch.setattr(preferences, "_PREFS_PATH", tmp_path / "preferences.json")
-    for method in ("_run_speedtest", "_maybe_check_updates_on_startup", "_session_persist"):
+    for method in ("_run_speedtest", "_maybe_check_updates_on_startup"):
         monkeypatch.setattr(MainWindow, method, lambda self: None)
-    monkeypatch.setattr("src.gui.main_window.session_store.load", lambda: [])
+    monkeypatch.setattr("src.gui.main_window.session_store._path", lambda: tmp_path / "session.json")
     preferences.save_stats_panel_expanded(True)  # Preferenza scritta dalle versioni precedenti.
     win = MainWindow()
     win.resize(720, 500)
@@ -162,8 +162,8 @@ def test_cancel_file_requires_explicit_data_removal(window, monkeypatch, discard
     QTest.keyClick(card._expand_btn, Qt.Key.Key_Space)
     assert card._details_btn.isVisible()
     assert card._percent_lbl.text() == "20%"
-    removed = []
-    monkeypatch.setattr(window, "_delete_folder_for", removed.append)
+    requested = []
+    panel.cancel_job_requested.connect(lambda fid, flag: requested.append((fid, flag)))
 
     def confirm(box):
         assert not box.checkBox().isChecked()
@@ -179,7 +179,7 @@ def test_cancel_file_requires_explicit_data_removal(window, monkeypatch, discard
     assert card._file_action.text() == "Annulla download"
     menu.aboutToShow.connect(lambda: QTimer.singleShot(0, choose_cancel))
     card._action_btn.showMenu()
-    assert removed == ([0] if discard else [])
+    assert requested == [(0, discard)]
 
 
 @pytest.mark.parametrize("lang, dark, summary", [
@@ -247,3 +247,86 @@ def test_foreign_destination_requires_local_choice(window, monkeypatch, tmp_path
     window.controls.start_btn.click()
     assert started == [url]
     assert preferences.load_download_dir() == str(tmp_path)
+
+
+def _start_offline(window, monkeypatch, tmp_path, urls):
+    from src.downloader import orchestrator as engine
+    from src.core import session_store
+    calls = []
+    window.controls.set_download_dir(str(tmp_path))
+    monkeypatch.setattr(session_store, "_path", lambda: tmp_path / "session.json")
+    monkeypatch.setattr(engine.telemetry, "start_session", lambda *a, **kw: None)
+    monkeypatch.setattr(engine._SetupThread, "start", lambda _: calls.append("setup"))
+    monkeypatch.setattr("src.gui.main_window.confirm_already_downloaded", lambda value, parent: value)
+    window._start_with_links(urls)
+    return calls
+
+
+def test_failed_setup_retries_the_same_pending_queue_once(window, monkeypatch, tmp_path):
+    from src.core import session_store
+    urls = ["https://mega.nz/file/EXAMPLE1#one", "https://mega.nz/file/EXAMPLE2#two"]
+    calls = _start_offline(window, monkeypatch, tmp_path, urls)
+    orch = window.orchestrator
+    assert not window.controls.pause_btn.isEnabled()
+    orch._on_setup_ok([])
+    QApplication.processEvents()
+    assert window._retry_setup_btn.isVisible() and not window.controls.paste_btn.isVisible()
+    assert not window.controls.pause_btn.isVisible()
+    assert not window._session_is_running()
+    assert "Avvio non riuscito" in window._setup_reason.text()
+    assert session_store.load() == urls
+    window._retry_setup_btn.click()
+    window._retry_setup()
+    assert calls == ["setup", "setup"]
+    assert orch._pending_jobs == list(enumerate(urls))
+    assert not window._retry_setup_btn.isVisible()
+    dispatched = []
+    monkeypatch.setattr(orch, "_launch_worker", lambda fid, url: dispatched.append((fid, url)))
+    monkeypatch.setattr(orch._refresher, "start", lambda *a, **kw: None)
+    orch._on_setup_ok([{"host": "localhost", "port": 1, "protocol": "http"}])
+    QApplication.processEvents()
+    assert dispatched == list(enumerate(urls))
+    assert window.controls.pause_btn.isEnabled()
+
+
+@pytest.mark.parametrize("bad_last", [True, False])
+def test_mixed_queue_summary_is_independent_of_completion_order(window, monkeypatch, tmp_path, bad_last):
+    urls = ["https://mega.nz/file/EXAMPLE1#one", "https://mega.nz/file/EXAMPLE2#two"]
+    _start_offline(window, monkeypatch, tmp_path, urls)
+    done = lambda: window.orchestrator.all_done.emit(1)
+    abandoned = lambda: window.orchestrator.abandoned_detail.emit(0, urls[0], 1, "file_mac_mismatch", {})
+    for event in ((done, abandoned) if bad_last else (abandoned, done)):
+        event()
+        QApplication.processEvents()
+    assert window._status_lbl.text() == "Scaricati 1 · Falliti 0 · Abbandonati 1 · Annullati 0"
+    assert window.jobs_panel.model.restartable_count() == 1
+    window.orchestrator.all_done.emit(0)  # A late duplicate must not erase the failure.
+    QApplication.processEvents()
+    assert window.jobs_panel.model.aggregates()["abandoned"] == 1
+
+
+def test_cancelling_a_queued_folder_job_keeps_the_active_jobs_files(window, monkeypatch, tmp_path):
+    from src.core import output_store
+    from src.core.mega_links import build_folder_job_url, parse_folder_job_url
+    tree = ("Archive", "report.txt")
+    first = build_folder_job_url("SHARE1", "NODE1", "key1", tree, 16)
+    second = build_folder_job_url("SHARE2", "NODE2", "key2", tree, 17)
+    _start_offline(window, monkeypatch, tmp_path, [first])
+    window._add_links_to_session([second], at_top=False)
+    assert [parse_folder_job_url(u).rel_path[0] for u in window._links_by_id.values()] == ["Archive", "Archive (2)"]
+    orch = window.orchestrator
+    def hold(fid, url):
+        orch._active_count += 1
+    orch.max_concurrent = 1
+    monkeypatch.setattr(orch, "_launch_worker", hold)
+    orch._spawn_workers()
+    target = tmp_path.joinpath(*tree)
+    target.parent.mkdir()
+    partial = target.with_suffix(".txt.part")
+    partial.write_text("first transfer")
+    output_store.JobOutputs(tmp_path, first, 0).written(partial, partial=True)
+    target.write_text("previous final")
+    window._on_cancel_job_requested(1, True)
+    QApplication.processEvents()
+    assert target.read_text() == "previous final" and partial.read_text() == "first transfer"
+    assert window.jobs_panel.model.aggregates()["cancelled"] == 1

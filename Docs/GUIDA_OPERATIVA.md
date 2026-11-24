@@ -163,6 +163,8 @@ In **Dettagli sessione → Connessione**, **Velocità linea** indica la banda de
 
 In **Download**, incolla o importa i link e controlla l’anteprima prima di premere **Avvia**. La destinazione è indicata sotto il titolo. **⌘L** apre l’inserimento sul Mac e **⌘,** apre le impostazioni. Durante una sessione puoi ancora cambiare lingua e aspetto.
 
+Se la preparazione fallisce, **Riprova** riavvia la preparazione con gli stessi file e le stesse impostazioni. I link restano in coda. A fine sessione il riepilogo conta separatamente file scaricati, falliti, abbandonati e annullati. La CLI restituisce un codice di errore quando almeno un file fallisce.
+
 Durante una sessione i controlli disponibili sono pausa/ripresa e annullo, sia globali sia per singolo file dalla tabella. La pausa non comporta la perdita dei proxy: alla ripresa il lavoro riparte dal punto in cui era stato sospeso. La pausa agisce **al confine del pezzo in corso**: un chunk già in trasferimento viene portato a termine e solo dopo il lavoro si sospende (sospendere un pezzo a metà farebbe scadere i timeout di lettura). L'annullo di un singolo file può, a scelta, rimuoverne anche i dati già scaricati dal disco.
 
 **Aggiungere link a sessione in corso.** Il pulsante **Aggiungi link** resta attivo mentre si scarica: i link incollati entrano nella sessione corrente senza fermare nulla e senza rifare la raccolta dei proxy, che è la parte lenta dell'avvio. I download già partiti proseguono, e quelli aggiunti si mettono **in coda**: il numero di file scaricati contemporaneamente non cambia.
@@ -243,13 +245,13 @@ Una **suite di diagnostica passiva**, sempre attiva, integra questi log: traceba
 
 Il programma lascia su disco cinque cose: i file scaricati, lo storico dei download, lo stato della sessione da riprendere, i log e la cache dei proxy. Si azzerano dal menu **Impostazioni → «Manutenzione:» → «Azzera dati…»**, che apre una finestra dedicata.
 
-La finestra elenca le cinque voci con, accanto a ciascuna, **il conteggio e lo spazio reali letti dal disco in quel momento** — quante voci contiene lo storico, quanti link sono rimasti in sospeso, quanti file e quanti frammenti `.part` ci sono nella cartella dei download, quanto occupano i log. Nessuna casella è spuntata all'apertura: si scelgono le voci una per una. Una voce che non ha niente da cancellare è disattivata e lo dice («niente da cancellare»).
+La finestra elenca le cinque voci con, accanto a ciascuna, **il conteggio e lo spazio reali letti dal disco in quel momento** — quante voci contiene lo storico, quanti link sono rimasti in sospeso, quanti file e frammenti `.part` registrati ci sono nella destinazione, quanto occupano i log. Nessuna casella è spuntata all'apertura: si scelgono le voci una per una. Una voce che non ha niente da cancellare è disattivata e lo dice («niente da cancellare»).
 
 Cosa comporta ogni voce:
 
 - **Storico dei download** (`logs/download_history.log`): è ciò che alimenta l'avviso «già scaricato». Azzerandolo il programma non riconosce più i file presi in passato e non avvisa più se si reinserisce lo stesso link. Il controllo continua a funzionare, semplicemente non riconosce più nulla.
 - **Stato della sessione** (`session_state.json`): al prossimo avvio non verrà più proposto il ripristino dei link rimasti in sospeso. I file già a metà sul disco restano dove sono e il resume a livello di byte continua a funzionare.
-- **Cartella dei download**: svuota la cartella di download configurata (quella scelta da **Impostazioni → «Cartella download:»**, o la predefinita). È la voce più distruttiva: quello che sparisce va riscaricato da capo. La cartella stessa resta in piedi.
+- **Cartella dei download**. **Mostra dettagli** nella conferma elenca i singoli percorsi e le dimensioni dei file registrati da questa installazione. L’app ricontrolla ogni file prima di eliminarlo. I documenti personali, i file sostituiti e i vecchi download di provenienza incerta restano nella destinazione.
 - **Log e statistiche delle fonti**: `app.log` e i suoi archivi, `events.jsonl` e i suoi archivi, `terminal-log.txt`, le metriche per-fonte dei proxy e il registro dei link abbandonati. Servono solo alla diagnostica: azzerandoli non si perde nessun download. Restano fuori, di proposito, `logs/crash.log` e la telemetria in `logs/telemetry/`, che servono proprio quando qualcosa è andato storto.
 - **Cache dei proxy** (`proxy_cache.json`): il prossimo avvio rifà la raccolta da zero e sarà quindi più lento. Non si perde nessun dato. È la stessa operazione del pulsante **«Reset cache»** in **Dettagli sessione → Connessione**.
 

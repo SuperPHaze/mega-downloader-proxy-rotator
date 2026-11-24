@@ -859,6 +859,7 @@ class _FinestraFinta:
 
     def __init__(self, label):
         self._status_lbl = label
+        self._setup_error = None
         self._status_source = None
 
 

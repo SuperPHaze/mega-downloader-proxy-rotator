@@ -16,7 +16,7 @@ from src.core.config import (
     OUTPUT_DIR,
     PARALLEL_CONNECTIONS_PER_FILE,
 )
-from src.core import telemetry
+from src.core import output_store, telemetry
 from src.core.disk import InsufficientDiskSpaceError, has_complete_file
 from src.core.errors import error_payload, format_it
 from src.core.file_naming import (
@@ -133,7 +133,9 @@ class DownloadWorker(QThread):
         self.proxy_pool = proxy_pool
         self.session_state = session_state
         # Cartella radice dei download scelta dall'utente (None = default config).
-        self._output_root: Path = output_root or OUTPUT_DIR
+        self._output_root = (output_root or OUTPUT_DIR).resolve()
+        self._outputs = output_store.JobOutputs(self._output_root, mega_url, file_id)
+        self._discard_partial = False
         self._local_cancelled = False
         self._effective_state = _EffectiveSessionState(session_state, self)
         # Ultimo errore osservato fra i tentativi: serve a dare un motivo
@@ -189,10 +191,11 @@ class DownloadWorker(QThread):
             return False
         return time.monotonic() > self._file_deadline
 
-    def request_cancel(self) -> None:
+    def request_cancel(self, discard_partial: bool = False) -> None:
         # Chiamato dall'orchestrator quando l'utente cancella SOLO questo job.
         # Imposta il flag locale; il worker uscira' al prossimo checkpoint.
         log.info("[file %d] cancellazione locale richiesta", self.file_id)
+        self._discard_partial |= discard_partial
         self._local_cancelled = True
         self.session_state.wake_waiters()
 
@@ -227,6 +230,8 @@ class DownloadWorker(QThread):
                     log.info("[file %d] interrotto al ciclo %d", self.file_id, cycle)
                     if self._local_cancelled and not self.session_state.is_cancelled():
                         telemetry.event("file_cancelled", file_id=self.file_id)
+                        if self._discard_partial:
+                            self._outputs.discard_partial()
                         self.cancelled.emit(self.file_id)
                     return
 
@@ -262,6 +267,7 @@ class DownloadWorker(QThread):
             log.warning("[file %d] rinomina cartella fallita (%s → %s): %s",
                         self.file_id, base, destination, exc)
             return
+        self._outputs.moved(base.resolve(), destination.resolve())
         self._current_base_dir = destination
         self._last_final_path = (destination / relative).resolve()
 
@@ -426,6 +432,7 @@ class DownloadWorker(QThread):
                         chunk_size=self._chunk_size_bytes,
                         segment_max_duration_s=self._segment_max_duration_s,
                     )
+                    pd.outputs = self._outputs
                     final_path = pd.download(
                         self.mega_url,
                         cycle_dir,
@@ -440,6 +447,7 @@ class DownloadWorker(QThread):
                         file_id=self.file_id,
                     )
                 else:
+                    client.outputs = self._outputs
                     final_path = client.download(
                         self.mega_url,
                         cycle_dir,

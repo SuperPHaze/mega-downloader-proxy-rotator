@@ -53,3 +53,9 @@ def italian_ui():
     TR._preference, TR._language = "it", "it"
     yield
     TR._preference, TR._language = pref, lang
+
+
+@pytest.fixture(autouse=True)
+def isolated_output_index(tmp_path, monkeypatch):
+    from src.core import output_store
+    monkeypatch.setattr(output_store, "_INDEX", tmp_path / "output-index.sqlite3")

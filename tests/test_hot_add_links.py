@@ -143,6 +143,7 @@ def test_senza_selettore_la_posizione_e_in_fondo(qt_app, italian_ui):
 # ---- contabilita' della finestra -----------------------------------------
 
 class _FintaFinestra:
+    _preparing = False
     """Solo i campi che i metodi sotto test leggono e scrivono.
 
     I metodi chiamati sono quelli VERI della classe, con questo oggetto al
@@ -166,7 +167,7 @@ class _FakeFlag:
     def __init__(self) -> None:
         self.running = None
 
-    def set_running(self, running: bool) -> None:
+    def set_running(self, running: bool, *, can_pause: bool = True) -> None:
         self.running = running
 
 

@@ -422,7 +422,7 @@ class ControlsBar(QWidget):
         self.start_btn.setVisible(ready)
         self.start_btn.setEnabled(ready and self._start_allowed)
 
-    def set_running(self, running: bool) -> None:
+    def set_running(self, running: bool, *, can_pause: bool = True) -> None:
         self._running = running
         self._update_start_button()
         self._download_group.setEnabled(not running)
@@ -430,6 +430,8 @@ class ControlsBar(QWidget):
         for button in (self.pause_btn, self.cancel_btn):
             button.setVisible(running)
             button.setEnabled(running)
+        self.pause_btn.setVisible(running and can_pause)
+        self.pause_btn.setEnabled(running and can_pause)
         if running:
             self.paste_btn.show()
 

@@ -602,6 +602,12 @@ class JobsPanel(QWidget):
             FILTER_NOT_COMPLETED: agg["failed"] + agg["cancelled"] + agg["abandoned"],
         }
 
+    def set_waiting_for_setup(self, waiting: bool) -> None:
+        self._filter_label_keys[FILTER_IN_PROGRESS] = (
+            "jobs_panel.filter_waiting" if waiting else "jobs_panel.filter_in_progress"
+        )
+        self._update_filter_counts()
+
     def _update_filter_counts(self) -> dict[str, int]:
         self._filter_empty.setText(t("jobs_panel.filtered_empty"))
         counts = self._category_counts()

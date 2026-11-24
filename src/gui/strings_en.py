@@ -307,11 +307,7 @@ STRINGS: dict[str, str | dict[str, str]] = {
         "On the next start you will no longer be offered to resume the links "
         "left pending. Files already half-written on disk stay where they are."
     ),
-    "maintenance.warn_downloads": (
-        "Deletes the downloaded files and the half-finished fragments: "
-        "whatever goes has to be downloaded again from scratch. This is the "
-        "most destructive entry."
-    ),
+    "maintenance.warn_downloads": "Removes files and partial downloads recorded by this installation. Personal files and older downloads without a record are kept.",
     "maintenance.warn_logs": (
         "app.log, events.jsonl, terminal-log.txt, the source statistics and "
         "the abandoned links. They only serve to work out what happened: "
@@ -561,6 +557,13 @@ STRINGS: dict[str, str | dict[str, str]] = {
     ),
     "main_window.collecting_proxies": "Collecting proxies…",
     "main_window.pool_ready": "Valid proxies: {n}. Download started.",
+    "main_window.retry_setup": "Retry",
+    "main_window.setup_failed": "Could not start the queue. {error}",
+    "main_window.queue_result": "Downloaded {completed} · Failed {failed} · Abandoned {abandoned} · Cancelled {cancelled}",
+    "jobs_panel.filter_waiting": "Waiting",
+    "main_window.delete_recorded_body": "Delete the recorded files for download {file} from disk?",
+    "main_window.outputs_removed": "Removed {n} recorded files.",
+    "main_window.output_index_failed": "Could not assign the download destination. {error}",
     "main_window.pool_failed": "Proxy pool error: {error}",
     "main_window.validation_progress": (
         "Validating proxies: {done}/{total} (alive: {alive})"

@@ -51,6 +51,7 @@ from src.core.config import (
     TELEMETRY_SAMPLE_INTERVAL_S,
     USER_AGENT,
 )
+from src.core.output_store import JobOutputs
 from src.core.disk import ensure_free_space, has_complete_file
 from src.core.errors import UserFacingRuntimeError, error_payload
 from src.core.proxy_url import build_proxies_dict as _proxies_dict
@@ -114,7 +115,7 @@ def _save_progress(
     file_size: int,
     done: set[tuple[int, int]],
     chunk_size: int,
-) -> None:
+) -> bool:
     p = _progress_path(target_path)
     tmp = p.with_suffix(p.suffix + ".tmp")
     payload = {
@@ -126,8 +127,10 @@ def _save_progress(
     try:
         tmp.write_text(json.dumps(payload), encoding="utf-8")
         os.replace(tmp, p)
+        return True
     except OSError as exc:
         log.warning("[parallel] non posso salvare progress sidecar: %s", exc)
+        return False
 
 
 def _align_down(n: int, block: int = 16) -> int:
@@ -167,6 +170,7 @@ class ParallelMegaDownloader:
         chunk_size: int | None = None,
         segment_max_duration_s: int | None = None,
     ) -> None:
+        self.outputs: JobOutputs | None = None
         self.pool = proxy_pool
         self.n_connections = max(1, n_connections)
         self.session_state = session_state
@@ -278,6 +282,8 @@ class ParallelMegaDownloader:
             _progress_path(part_path).unlink(missing_ok=True)
             part_path.write_bytes(b"")
             promote_verified(part_path, final_path, 0, k, iv, meta_mac, self._verification_cancelled)
+            if self.outputs is not None:
+                self.outputs.written(final_path)
             if progress_callback:
                 progress_callback(100)
             log.info("[parallel] file da 0 byte: creato vuoto %s", final_path)
@@ -359,6 +365,7 @@ class ParallelMegaDownloader:
             output_dir, file_size - (part_size or 0), MIN_FREE_DISK_MARGIN_BYTES
         )
 
+        self._wrote_partial = part_size != file_size
         if part_size != file_size:
             with open(part_path, "wb") as fp:
                 fp.truncate(file_size)
@@ -441,6 +448,8 @@ class ParallelMegaDownloader:
             progress_stop.set()
             if progress_thread is not None:
                 progress_thread.join(timeout=2)
+            if self.outputs is not None and self._wrote_partial:
+                self.outputs.written(part_path, partial=True)
 
         if chunk_errors:
             # NON cancellare il .part ne' il sidecar: i chunk completati restano
@@ -458,6 +467,8 @@ class ParallelMegaDownloader:
 
         # Se il rename fallisce, i byte e il loro registro restano riprendibili.
         promote_verified(part_path, final_path, file_size, k, iv, meta_mac, self._verification_cancelled)
+        if self.outputs is not None:
+            self.outputs.written(final_path)
         try:
             _progress_path(part_path).unlink(missing_ok=True)
         except OSError:
@@ -741,6 +752,7 @@ class ParallelMegaDownloader:
                                     (time.monotonic() - _attempt_t0) * 1000, 1
                                 )
                             fp.write(aes.decrypt(net_chunk))
+                            self._wrote_partial = True
                             downloaded += len(net_chunk)
                             with self._bytes_lock:
                                 self._bytes_downloaded += len(net_chunk)
@@ -789,14 +801,12 @@ class ParallelMegaDownloader:
                 # Persisti il chunk nel sidecar prima di tornare.
                 with self._done_lock:
                     self._done_segments.add((start, end))
-                    done_snapshot = set(self._done_segments)
-                _save_progress(
-                    self._part_path,
-                    self._file_handle_str,
-                    self._file_size,
-                    done_snapshot,
-                    self._chunk_size,
-                )
+                    saved = _save_progress(
+                        self._part_path, self._file_handle_str, self._file_size,
+                        self._done_segments, self._chunk_size,
+                    )
+                    if saved and self.outputs is not None:
+                        self.outputs.written(_progress_path(self._part_path), partial=True)
                 self.pool.record_success(proxy)
                 # Leva B (sperimentale): segnale a costo zero, gia' disponibile
                 # al watchdog. Non influisce sulla modalita' "score" (default).

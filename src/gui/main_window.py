@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import logging
 import os
-import shutil
+import sqlite3
 import sys
 from pathlib import Path
 
@@ -18,6 +18,7 @@ from PyQt6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QProgressDialog,
+    QPushButton,
     QScrollArea,
     QSizePolicy,
     QToolButton,
@@ -25,7 +26,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from src.core import diagnostics, session_store
+from src.core import diagnostics, output_store, session_store
 from src.core.branding import resolve as resolve_branding
 from src.core.config import (
     APP_VERSION,
@@ -33,12 +34,11 @@ from src.core.config import (
     OUTPUT_DIR,
     PROXY_SPEEDTEST_STREAMS,
 )
-from src.core.file_naming import folder_job_output_dir, sanitize_file_name
 from src.core.icon_loader import build_app_icon
 from src.core.state import SessionState
 from src.downloader.orchestrator import DownloadOrchestrator
-from src.core.mega_links import is_folder_link, parse_folder_job_url
-from src.downloader.worker import job_output_dir
+from src.core.mega_links import is_folder_link
+from src.downloader.mega_folder import reserve_folder_links
 from src.gui.folder_expand_worker import FolderExpandWorker
 from src.gui.about_dialog import AboutDialog
 from src.gui.controls import ControlsBar
@@ -46,6 +46,7 @@ from src.gui.experimental_dialog import ExperimentalFeaturesDialog
 from src.gui.error_render import ABANDON_ALIASES, render_error, resolve_payloads
 from src.gui.i18n import TR, t, tn
 from src.gui.job_detail_dialog import JobDetailDialog
+from src.gui.jobs_model import STATUS_QUEUED, STATUS_RUNNING
 from src.gui.jobs_panel import JobsPanel, status_label
 from src.gui.maintenance_dialog import MaintenanceDialog
 from src.gui.link_panel import (
@@ -106,13 +107,14 @@ class MainWindow(QMainWindow):
         self._completed_files = 0
         self._open_dialogs: dict[int, JobDetailDialog] = {}
         self._links_by_id: dict[int, str] = {}
-        self._pending_delete: set[int] = set()
         # Cartella radice dei download della sessione corrente (None = default).
         # Serve anche a ritrovare la cartella di lavoro per l'eliminazione.
         self._active_output_root: Path | None = None
         # Link non ancora completati della sessione corrente (file_id -> url):
         # persistiti su disco per il ripristino all'avvio (2.7).
         self._session_incomplete: dict[int, str] = {}
+        self._setup_error: dict | None = None
+        self._preparing = False
         self._restore_pending = False
         self._next_file_id = 0
         self._dark_theme = False
@@ -180,6 +182,19 @@ class MainWindow(QMainWindow):
 
         layout.addWidget(self.update_banner)
         layout.addWidget(self.controls)
+        self._setup_notice = QWidget()
+        notice = QHBoxLayout(self._setup_notice)
+        notice.setContentsMargins(0, 0, 0, 0)
+        self._setup_reason = QLabel()
+        self._setup_reason.setWordWrap(True)
+        self._setup_reason.setTextFormat(Qt.TextFormat.PlainText)
+        notice.addWidget(self._setup_reason, 1)
+        self._retry_setup_btn = QPushButton(t("main_window.retry_setup"))
+        self._retry_setup_btn.setProperty("primary", "true")
+        self._retry_setup_btn.clicked.connect(self._retry_setup)
+        notice.addWidget(self._retry_setup_btn)
+        self._setup_notice.hide()
+        layout.addWidget(self._setup_notice)
         self.stats_bar.hide()
         layout.addWidget(self.stats_bar)
         self.jobs_panel.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Ignored)
@@ -480,22 +495,16 @@ class MainWindow(QMainWindow):
         )
 
     def _maybe_notify_queue_done(self) -> None:
-        """Avviso di coda completata: una volta per sessione, quando ogni job
-        e' arrivato a uno stato terminale (in qualunque modo)."""
-        if self._queue_done_notified:
-            return
-        if self._expected_files <= 0 or self._completed_files < self._expected_files:
-            return
-        self._queue_done_notified = True
         agg = self.jobs_panel.model.aggregates()
-        self._tray.notify(
-            t("tray.notify_queue_done_title"),
-            t(
-                "tray.notify_queue_done_body",
-                done=agg["completed"],
-                total=self._expected_files,
-            ),
-        )
+        if not agg["all_terminated"]:
+            return
+        self.controls.reset()
+        self._restore_session_ui()
+        counts = {key: agg[key] for key in ("completed", "failed", "abandoned", "cancelled")}
+        self._set_status_t("main_window.queue_result", **counts)
+        if not self._queue_done_notified:
+            self._queue_done_notified = True
+            self._tray.notify(t("tray.notify_queue_done_title"), t("main_window.queue_result", **counts))
 
     # ---- diagnostica -------------------------------------------------------
 
@@ -625,6 +634,8 @@ class MainWindow(QMainWindow):
             t(key, **rendered) if n is None else tn(key, n, **rendered)
         )
         self._status_lbl.setToolTip(self._status_lbl.text())
+        if self._setup_error is not None:
+            self._setup_reason.setText(t("main_window.setup_failed", **resolve_payloads({"error": self._setup_error})))
 
     # ---- avvio sessione --------------------------------------------------
 
@@ -697,7 +708,7 @@ class MainWindow(QMainWindow):
             return False
         if self.orchestrator.has_active_workers():
             return True
-        return self._session_is_open() and not self._session_queue_drained()
+        return self._setup_error is None and self._session_is_open() and not self._session_queue_drained()
 
     def _on_add_links_requested(self) -> None:
         """Il pulsante «Aggiungi link» ha tre esiti, secondo lo stato.
@@ -709,6 +720,9 @@ class MainWindow(QMainWindow):
         statistiche, cronometro e soprattutto il pool gia' validato — oppure
         ripartire pulito come un avvio nuovo.
         """
+        if self._setup_error is not None:
+            self._retry_setup_btn.setFocus()
+            return
         if not self.link_panel.isHidden() or not self._session_is_open():
             self.link_panel.open_paste_dialog()
             return
@@ -792,6 +806,9 @@ class MainWindow(QMainWindow):
         if not checked:
             self._set_status_t("main_window.add_nothing")
             return
+        checked = self._reserve_destinations(checked)
+        if not checked:
+            return
         ids = self.orchestrator.add_jobs(checked, at_top=at_top)
         if not ids:
             self._set_status_t("main_window.add_refused")
@@ -818,7 +835,7 @@ class MainWindow(QMainWindow):
         self._expected_files += len(pairs)
         # La coda non e' piu' finita: l'avviso di fine coda deve poter tornare.
         self._queue_done_notified = False
-        self.controls.set_running(True)
+        self.controls.set_running(True, can_pause=not self._preparing)
         self.link_panel.set_running(True)
 
     # ---- espansione dei link cartella ------------------------------------
@@ -946,6 +963,13 @@ class MainWindow(QMainWindow):
         else:
             self._add_links_to_session(unique, at_top=position == POSITION_TOP)
 
+    def _reserve_destinations(self, links: list[str]) -> list[str]:
+        try:
+            return reserve_folder_links(links, self._active_output_root or OUTPUT_DIR)
+        except (OSError, sqlite3.Error) as exc:
+            self._set_status_t("main_window.output_index_failed", error=str(exc))
+            return []
+
     def _start_with_links(self, links: list[str]) -> None:
         links = confirm_already_downloaded(links, self)
         if links is None:
@@ -967,6 +991,10 @@ class MainWindow(QMainWindow):
         else:
             jobs = dict(enumerate(links))
             self._next_file_id = len(jobs)
+        assigned = self._reserve_destinations(list(jobs.values()))
+        if not assigned:
+            return
+        jobs = dict(zip(jobs, assigned, strict=True))
         self.jobs_panel.reset(jobs)
         self.link_panel.set_links([])
         self._show_session()
@@ -975,14 +1003,15 @@ class MainWindow(QMainWindow):
         # ognuno viene rimosso quando termina (completato/abbandonato/annullato).
         self._session_incomplete = jobs.copy()
         self._session_persist()
-        self._pending_delete.clear()
         self._stats_panel.start_clock()
         self.proxy_bar.reset()
         self._set_status_t("main_window.collecting_proxies")
-        self._expected_files = len(links)
+        self._clear_setup_notice()
+        self._preparing = True
+        self._expected_files = len(jobs)
         self._completed_files = 0
         self._queue_done_notified = False
-        self.controls.set_running(True)
+        self.controls.set_running(True, can_pause=not self._preparing)
         self.link_panel.set_running(True)
 
         concurrency = self.controls.get_concurrency()
@@ -1011,20 +1040,8 @@ class MainWindow(QMainWindow):
         self.orchestrator.throughput.connect(self.jobs_panel.on_throughput, qc)
         self.orchestrator.file_resolved.connect(self.jobs_panel.on_file_resolved, qc)
         self.orchestrator.completed_info.connect(self.jobs_panel.on_completed_info, qc)
-        self.orchestrator.pool_ready.connect(
-            lambda n: (
-                self._set_status_t("main_window.pool_ready", n=n),
-                self.proxy_bar.on_validation_done(),
-            ),
-            qc,
-        )
-        self.orchestrator.pool_failed_t.connect(
-            lambda code, params: self._set_status_t(
-                "main_window.pool_failed",
-                error={"code": f"setup.{code}", "params": params},
-            ),
-            qc,
-        )
+        self.orchestrator.pool_ready.connect(self._on_pool_ready, qc)
+        self.orchestrator.pool_failed_t.connect(self._on_pool_failed, qc)
         self.orchestrator.setup_status_t.connect(
             lambda code, params: self._set_status_t(f"setup.{code}", **params),
             qc,
@@ -1041,7 +1058,7 @@ class MainWindow(QMainWindow):
         self.orchestrator.pool_size_changed.connect(self.proxy_bar.on_pool_size, qc)
         self.orchestrator.proxy_stats.connect(self.proxy_bar.on_proxy_stats, qc)
         self.orchestrator.start(
-            links,
+            list(jobs.values()),
             file_ids=list(jobs),
             next_file_id=self._next_file_id,
             concurrency=concurrency,
@@ -1054,6 +1071,45 @@ class MainWindow(QMainWindow):
             link_capacity_mbit=link_mbit if link_mbit > 0 else None,
             output_root=self._active_output_root,
         )
+
+    def _on_pool_ready(self, count: int) -> None:
+        if self.sender() is not self.orchestrator or self.session_state.is_cancelled():
+            return
+        self._preparing = False
+        if not self._session_queue_drained():
+            self.controls.set_running(True)
+        self._set_status_t("main_window.pool_ready", n=count)
+        self.proxy_bar.on_validation_done()
+
+    def _on_pool_failed(self, code: str, params: dict) -> None:
+        if (self.sender() is not self.orchestrator or self.session_state.is_cancelled()
+                or self._session_queue_drained()):
+            return
+        self._setup_error = {"code": f"setup.{code}", "params": params}
+        self._preparing = False
+        self.controls.pause_btn.hide()
+        self.controls.paste_btn.hide()
+        self.controls.maintenance_btn.setEnabled(True)
+        self.jobs_panel.set_waiting_for_setup(True)
+        self._set_status_t("main_window.setup_failed", error=self._setup_error)
+        self._status_lbl.hide()
+        self._setup_notice.show()
+        self._retry_setup_btn.setFocus()
+
+    def _clear_setup_notice(self) -> None:
+        self._setup_error = None
+        self._setup_notice.hide()
+        self._status_lbl.show()
+        self.jobs_panel.set_waiting_for_setup(False)
+
+    def _retry_setup(self) -> None:
+        if self._setup_error is None or not self.orchestrator.retry_setup():
+            return
+        self._clear_setup_notice()
+        self._preparing = True
+        self.controls.set_running(True, can_pause=False)
+        self.proxy_bar.reset()
+        self._set_status_t("main_window.collecting_proxies")
 
     # ---- pausa / annullo globale -----------------------------------------
 
@@ -1078,7 +1134,7 @@ class MainWindow(QMainWindow):
         # volta (i .part restano comunque su disco per un eventuale riavvio).
         self._session_incomplete.clear()
         session_store.clear()
-        self._set_status_t("main_window.cancelled")
+        self._maybe_notify_queue_done()
 
     # ---- ripristino sessione (2.7) ---------------------------------------
 
@@ -1114,14 +1170,26 @@ class MainWindow(QMainWindow):
             session_store.clear()
 
     def _restore_session_ui(self) -> None:
+        self._preparing = False
+        self._clear_setup_notice()
+        self.controls.paste_btn.show()
         self.link_panel.set_running(False)
 
     # ---- terminazione download -------------------------------------------
 
+    def _awaits_outcome(self, file_id: int) -> bool:
+        sender = self.sender()
+        if isinstance(sender, DownloadOrchestrator) and sender is not self.orchestrator:
+            return False
+        job = self.jobs_panel.model.get_job(file_id)
+        return job is not None and job.status in (STATUS_QUEUED, STATUS_RUNNING)
+
     def _on_file_done(self, file_id: int) -> None:
+        if not self._awaits_outcome(file_id):
+            return
         self.jobs_panel.on_all_done(file_id)
         self._session_mark_finished(file_id)
-        self._completed_files += 1
+        self._completed_files = self.jobs_panel.model.aggregates()["terminated_count"]
         self._set_status_t(
             "main_window.file_done",
             file=file_id + 1,
@@ -1129,13 +1197,11 @@ class MainWindow(QMainWindow):
             total=self._expected_files,
         )
         self._notify_completed(file_id)
-        if self._completed_files >= self._expected_files:
-            self._set_status_t("main_window.all_completed")
-            self.controls.reset()
-            self._restore_session_ui()
         self._maybe_notify_queue_done()
 
     def _on_fatal_error(self, file_id: int, code: str, params: dict) -> None:
+        if not self._awaits_outcome(file_id):
+            return
         self.jobs_panel.on_fatal(file_id, code, params)
         # E' l'unico dialogo che compare da solo, senza che l'utente abbia
         # chiesto niente: con la finestra nascosta nell'area di notifica
@@ -1158,19 +1224,18 @@ class MainWindow(QMainWindow):
             error={"code": code, "params": params},
         )
         self._session_mark_finished(file_id)
-        self._completed_files += 1
+        self._completed_files = self.jobs_panel.model.aggregates()["terminated_count"]
         self._notify_failed(file_id, code, params)
-        if self._completed_files >= self._expected_files:
-            self.controls.reset()
-            self._restore_session_ui()
         self._maybe_notify_queue_done()
 
     def _on_abandoned(
         self, file_id: int, url: str, attempts: int, code: str, params: dict,
     ) -> None:
+        if not self._awaits_outcome(file_id):
+            return
         self.jobs_panel.on_abandoned(file_id, url, attempts, code, params)
         self._session_mark_finished(file_id)
-        self._completed_files += 1
+        self._completed_files = self.jobs_panel.model.aggregates()["terminated_count"]
         # Stesso alias applicato dal pannello: il canale porta il codice del
         # tentativo fallito (con le parentesi), l'abbandono si legge coi due
         # punti. Vedi `error_render.ABANDON_ALIASES`.
@@ -1181,164 +1246,61 @@ class MainWindow(QMainWindow):
             error={"code": ABANDON_ALIASES.get(code, code), "params": params},
         )
         self._notify_failed(file_id, ABANDON_ALIASES.get(code, code), params)
-        if self._completed_files >= self._expected_files:
-            self._set_status_t("main_window.all_terminated")
-            self.controls.reset()
-            self._restore_session_ui()
         self._maybe_notify_queue_done()
 
     # ---- cancellazione per-job ------------------------------------------
 
     def _on_cancel_job_requested(self, file_id: int, delete_folder: bool) -> None:
         if self.orchestrator is None:
-            if delete_folder:
-                self._delete_folder_for(file_id)
             self.jobs_panel.model.mark_cancelled(file_id)
             return
-        state = self.orchestrator.cancel_job(file_id)
-        if state == "unknown":
-            if delete_folder:
-                self._delete_folder_for(file_id)
-            return
-        if delete_folder:
-            self._pending_delete.add(file_id)
+        state = self.orchestrator.cancel_job(file_id, discard_partial=delete_folder)
         if state == "running":
             self._set_status_t(
                 "main_window.job_cancelling", file=file_id + 1
             )
 
     def _on_job_cancelled(self, file_id: int) -> None:
+        if not self._awaits_outcome(file_id):
+            return
         self.jobs_panel.model.mark_cancelled(file_id)
         self._session_mark_finished(file_id)
-        if file_id in self._pending_delete:
-            self._pending_delete.discard(file_id)
-            self._delete_folder_for(file_id)
-        self._completed_files += 1
+        self._completed_files = self.jobs_panel.model.aggregates()["terminated_count"]
         self._set_status_t(
             "main_window.job_cancelled",
             file=file_id + 1,
             done=self._completed_files,
             total=self._expected_files,
         )
-        if self._completed_files >= self._expected_files:
-            self._set_status_t("main_window.all_terminated")
-            self.controls.reset()
-            self._restore_session_ui()
         self._maybe_notify_queue_done()
 
     def _on_delete_folder_requested(self, file_id: int) -> None:
-        url = self._links_by_id.get(file_id)
-        is_folder_job = url is not None and parse_folder_job_url(url) is not None
-        # Le due varianti erano costruite a pezzi attorno al numero del
-        # file: un frammento come « dalla cartella scaricata?» non e'
-        # traducibile da solo, quindi ognuna e' ora una chiave intera.
-        body_key = (
-            "main_window.delete_folder_job_body" if is_folder_job
-            else "main_window.delete_folder_body"
-        )
         confirm = QMessageBox.question(
             self,
             t("main_window.delete_title"),
-            t(body_key, file=file_id + 1),
+            t("main_window.delete_recorded_body", file=file_id + 1),
         )
         if confirm != QMessageBox.StandardButton.Yes:
             return
         self._delete_folder_for(file_id)
 
     def _delete_folder_for(self, file_id: int) -> None:
-        # Job nato dall'espansione di una cartella: la cartella su disco e'
-        # CONDIVISA con gli altri file dello stesso albero (alcuni magari
-        # ancora in corso o gia' completati). Si elimina solo questo file.
-        folder_url = self._links_by_id.get(file_id)
-        if folder_url is not None and parse_folder_job_url(folder_url) is not None:
-            self._delete_folder_job_file(file_id, folder_url)
-            return
-        # Usa il path corrente dal modello se disponibile (la cartella potrebbe
-        # essere stata rinominata col nome file dopo il resolve).
-        path: Path | None = None
-        job = self.jobs_panel.model.get_job(file_id)
-        if job and job.output_path:
-            p = Path(job.output_path)
-            # output_path è il file finale: OUTPUT_DIR/<nome>_<id>/ciclo_N/<file>
-            # La cartella base è 2 livelli sopra.
-            candidate = p.parent.parent
-            if candidate.is_dir():
-                path = candidate
-        if path is None:
-            url = self._links_by_id.get(file_id)
-            if url is None:
-                log.warning("Delete folder: file_id=%d non trovato", file_id)
-                return
-            path = job_output_dir(url, file_id, self._active_output_root)
-        if not path.exists():
-            self._set_status_t(
-                "main_window.delete_missing", file=file_id + 1
-            )
-            return
-        try:
-            shutil.rmtree(path)
-            log.info("Cartella eliminata: %s", path)
-            self._set_status_t(
-                "main_window.delete_done", file=file_id + 1, name=path.name
-            )
-        except OSError as exc:
-            log.exception("Impossibile eliminare %s", path)
-            QMessageBox.warning(
-                self,
-                t("main_window.delete_failed_title"),
-                t("main_window.delete_failed_body", path=path, error=exc),
-            )
-
-    def _delete_folder_job_file(self, file_id: int, url: str) -> None:
-        """Elimina il singolo file di un job-cartella (mai l'albero condiviso).
-
-        Rimuove il file finale, il `.part` e i sidecar di resume, poi pota le
-        cartelle rimaste vuote risalendo fino alla radice dei download
-        (esclusa): se altri file dell'albero esistono ancora, la potatura si
-        ferma da sola alla prima cartella non vuota.
-        """
-        job = parse_folder_job_url(url)
-        if job is None:
+        url = self._links_by_id.get(file_id)
+        if url is None:
             return
         root = self._active_output_root or OUTPUT_DIR
-        directory = folder_job_output_dir(job.rel_path, self._active_output_root)
-        name = sanitize_file_name(job.file_name, fallback=f"mega_{job.node_handle}")
-        targets = [
-            directory / name,
-            directory / f"{name}.part",
-            directory / f"{name}.part.progress.json",
-            directory / f"{name}.progress.json",   # sidecar del vecchio schema
-        ]
-        removed = 0
-        for target in targets:
-            try:
-                if target.is_file():
-                    target.unlink()
-                    removed += 1
-            except OSError as exc:
-                log.warning("Impossibile eliminare %s: %s", target, exc)
-        if removed == 0:
-            self._set_status_t(
-                "main_window.delete_nothing", file=file_id + 1
-            )
-            return
-        # Potatura delle cartelle rimaste vuote (mai la radice dei download).
-        current = directory
+        owner = output_store.job_owner(url, file_id)
         try:
-            root_resolved = root.resolve()
-            while current.resolve() != root_resolved and current.is_dir():
-                if any(current.iterdir()):
-                    break
-                parent = current.parent
-                current.rmdir()
-                log.info("Cartella vuota rimossa: %s", current)
-                current = parent
-        except OSError as exc:
-            log.debug("Potatura cartelle interrotta su %s: %s", current, exc)
-        log.info("File del job-cartella eliminato: %s", directory / name)
-        self._set_status_t(
-            "main_window.delete_file_done", file=file_id + 1, name=name
-        )
+            removed, _, errors = output_store.remove(root, output_store.receipts(root, owner))
+        except (OSError, sqlite3.Error) as exc:
+            removed, errors = 0, [str(exc)]
+        if errors:
+            QMessageBox.warning(self, t("main_window.delete_failed_title"),
+                                t("main_window.delete_failed_body", path=root, error="; ".join(errors)))
+        elif removed:
+            self._set_status_t("main_window.outputs_removed", n=removed)
+        else:
+            self._set_status_t("main_window.delete_nothing", file=file_id + 1)
 
     # ---- tema chiaro/scuro ----------------------------------------------
 
@@ -1374,6 +1336,7 @@ class MainWindow(QMainWindow):
         log.info("Ritraduzione interfaccia in corso: %s", lang)
         self._refresh_window_title()
         self._details_toggle.setText(t("workspace.details"))
+        self._retry_setup_btn.setText(t("main_window.retry_setup"))
         if self._file_menu is not None:
             self._file_menu.setTitle(t("workspace.file_menu"))
         for key, action in self._actions.items():
@@ -1410,7 +1373,7 @@ class MainWindow(QMainWindow):
         self._completed_files = self.jobs_panel.model.aggregates()["terminated_count"]
         # La coda non e' piu' finita: l'avviso di fine coda deve poter tornare.
         self._queue_done_notified = False
-        self.controls.set_running(True)
+        self.controls.set_running(True, can_pause=not self._preparing)
         self.link_panel.set_running(True)
 
     def _on_restart_job_requested(self, file_id: int) -> None:

@@ -159,6 +159,8 @@ Under **Session details → Connection**, **Line speed** is the bandwidth of the
 
 In **Downloads**, paste or import links and review them before pressing **Start**. The destination is shown below the heading. On Mac, **⌘L** opens link entry and **⌘,** opens settings. Language and appearance remain available during a session.
 
+If preparation fails, **Retry** repeats it with the same queued files and settings. The final summary counts downloaded, failed, abandoned and cancelled files separately. The CLI returns an error code when any file fails.
+
 During a session, the available controls are pause/resume and cancel, both globally and per individual file from the table. Pausing does not lose the proxies: on resume, work continues from where it was suspended. Pausing takes effect **at the boundary of the current piece**: a chunk already in transfer is completed and only then does work suspend (suspending a piece mid-transfer would make the read timeouts expire). Canceling a single file can optionally also remove its already-downloaded data from disk.
 
 **Adding links to a running session.** The **Add links** button stays active while downloading: pasted links join the current session without stopping anything and without redoing the proxy collection, which is the slow part of starting up. Downloads already under way keep going, and the added ones join the **queue**: the number of files downloaded at the same time does not change.
@@ -239,13 +241,13 @@ A **passive diagnostics suite**, always on, complements these logs: native crash
 
 The program leaves five things on disk: the downloaded files, the download history, the saved session to resume, the logs and the proxy cache. They are cleared from the **Settings → "Maintenance:" → "Clear data…"** menu, which opens a dedicated window.
 
-The window lists the five entries with, next to each one, **the real count and size read from disk at that moment** — how many entries the history holds, how many links are still pending, how many files and how many `.part` fragments are in the download folder, how much the logs take up. Nothing is ticked when the window opens: entries are picked one by one. An entry with nothing to clear is disabled and says so ("nothing to clear").
+The window lists the five entries with, next to each one, **the real count and size read from disk at that moment** — how many entries the history holds, how many links are still pending, how many recorded files and `.part` fragments are in the destination, how much the logs take up. Nothing is ticked when the window opens: entries are picked one by one. An entry with nothing to clear is disabled and says so ("nothing to clear").
 
 What each entry costs you:
 
 - **Download history** (`logs/download_history.log`): this is what feeds the "already downloaded" warning. Clear it and the program no longer recognises files taken in the past, nor warns you when you paste the same link again. The check keeps working, it simply recognises nothing any more.
 - **Saved session** (`session_state.json`): on the next start you will no longer be offered to resume the links left pending. Files already half-written on disk stay where they are and byte-level resume keeps working.
-- **Download folder**: empties the configured download folder (the one picked under **Settings → "Download folder:"**, or the default). This is the most destructive entry: whatever goes has to be downloaded again from scratch. The folder itself stays in place.
+- **Download folder**. **Show Details** in the confirmation lists individual paths and sizes recorded by this installation. The app checks each file again before removing it. Personal documents, replaced files and older downloads of uncertain origin stay in the destination.
 - **Logs and source statistics**: `app.log` and its archives, `events.jsonl` and its archives, `terminal-log.txt`, the per-source proxy metrics and the abandoned-links log. They only serve diagnostics: clearing them loses no download. Deliberately left out are `logs/crash.log` and the telemetry under `logs/telemetry/`, which are needed precisely when something has gone wrong.
 - **Proxy cache** (`proxy_cache.json`): the next start collects the proxies from scratch and will therefore be slower. No data is lost. It is the same operation as the **"Reset cache"** button in **Session details → Connection**.
 

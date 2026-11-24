@@ -324,10 +324,7 @@ STRINGS: dict[str, str | dict[str, str]] = {
         "Al prossimo avvio non verrà più proposto il ripristino dei link "
         "rimasti in sospeso. I file già a metà sul disco restano dove sono."
     ),
-    "maintenance.warn_downloads": (
-        "Cancella i file scaricati e i frammenti a metà: quello che sparisce "
-        "va riscaricato da capo. È la voce più distruttiva."
-    ),
+    "maintenance.warn_downloads": "Rimuove i file e i parziali registrati da questa installazione. I documenti personali e i vecchi download senza registrazione vengono conservati.",
     "maintenance.warn_logs": (
         "app.log, events.jsonl, terminal-log.txt, le statistiche delle fonti "
         "e i link abbandonati. Servono solo a capire cosa è successo: "
@@ -603,6 +600,13 @@ STRINGS: dict[str, str | dict[str, str]] = {
     ),
     "main_window.collecting_proxies": "Raccolta proxy in corso…",
     "main_window.pool_ready": "Proxy validi: {n}. Download avviato.",
+    "main_window.retry_setup": "Riprova",
+    "main_window.setup_failed": "Avvio non riuscito. {error}",
+    "main_window.queue_result": "Scaricati {completed} · Falliti {failed} · Abbandonati {abandoned} · Annullati {cancelled}",
+    "jobs_panel.filter_waiting": "In attesa",
+    "main_window.delete_recorded_body": "Eliminare dal disco i file registrati per il download {file}?",
+    "main_window.outputs_removed": "File registrati eliminati: {n}.",
+    "main_window.output_index_failed": "Impossibile assegnare la destinazione. {error}",
     "main_window.pool_failed": "Errore pool proxy: {error}",
     "main_window.validation_progress": (
         "Validazione proxy: {done}/{total} (vivi: {alive})"

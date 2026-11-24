@@ -6,6 +6,10 @@ Tutte le modifiche rilevanti del progetto. Formato basato su [Keep a Changelog](
 
 ## [Non rilasciato]
 
+- Le cartelle aggiunte in momenti diversi mantengono destinazioni distinte anche dopo il ripristino. Annullare un file in attesa conserva i dati degli altri download.
+- La manutenzione elenca e rimuove soltanto i file registrati dall’app e ancora riconoscibili sul disco.
+- Dopo un avvio fallito, **Riprova** conserva la coda. Il riepilogo della GUI e il codice di uscita della CLI tengono conto di tutti gli esiti.
+
 - Verifica del MAC MEGA prima di completare o riutilizzare un file.
 - Il ripristino conserva gli identificativi dei download parziali anche quando cambia l’ordine della coda.
 

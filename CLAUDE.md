@@ -51,6 +51,7 @@ src/
 │   │                     #   (`/file/<n>`, `/folder/<n>`, legacy `#F!id!key!node`) e la forma INTERNA dei
 │   │                     #   job-cartella. Ordine di match dal più specifico al più generico.
 │   │                     #   `extract_handle` vive qui (download_history vi delega)
+│   ├── output_store.py    # Registro locale SQLite delle destinazioni per share/nodo e delle impronte dei file prodotti. Manutenzione e annullo eliminano solo file registrati ancora identici.
 │   ├── maintenance.py     # manutenzione: MISURA (survey/survey_all: quanti file, quante voci,
 │   │                     #   quanto spazio) e CANCELLA (clear/clear_items) i dati lasciati su
 │   │                     #   disco — storico, stato di sessione, cartella download, log. Non sa
@@ -115,8 +116,7 @@ src/
     │                      #   `_begin_folder_expansion(links, hot_position)` serve entrambi i casi: a
     │                      #   caldo la finestra di avanzamento e' NON modale (i download proseguono) e
     │                      #   Avvia NON va riabilitato a fine espansione;
-    │                      #   _delete_folder_job_file elimina il SINGOLO file di un job-cartella
-    │                      #   (+ .part + sidecar) e pota le cartelle vuote, mai l'albero condiviso; ripristino sessione all'avvio (prompt "Riprendi sessione precedente?" da session_store, differito con QTimer.singleShot); propaga la cartella download scelta a orchestrator.start(output_root=...) e la usa per il delete cartella; _on_language_changed fa il fan-out della ritraduzione su TUTTE le superfici persistenti (gemello di _on_theme_toggle), riga di stato compresa: _set_status_t/_set_status_tn ricordano chiave+parametri in _status_source e _refresh_status la riscrive, mentre _set_status (grezzo) azzera la memoria;
+    │                      #   _delete_folder_for usa il registro dei file prodotti dal job; ripristino sessione all'avvio (prompt "Riprendi sessione precedente?" da session_store, differito con QTimer.singleShot); propaga la cartella download scelta a orchestrator.start(output_root=...) e la usa per il delete cartella; _on_language_changed fa il fan-out della ritraduzione su TUTTE le superfici persistenti (gemello di _on_theme_toggle), riga di stato compresa: _set_status_t/_set_status_tn ricordano chiave+parametri in _status_source e _refresh_status la riscrive, mentre _set_status (grezzo) azzera la memoria;
     │                      #   changeEvent intercetta la RIDUZIONE A ICONA e differisce la decisione con
     │                      #   QTimer.singleShot(0) (dentro il gestore dell'evento la finestra sta ancora
     │                      #   cambiando stato): _handle_minimized chiede o applica la preferenza,

@@ -6,7 +6,7 @@ from concurrent.futures import CancelledError
 import pytest
 from Crypto.Cipher import AES
 
-from src.core import session_store
+from src.core import maintenance, session_store
 from src.core.file_naming import final_output_dir
 from src.core.mega_links import build_folder_job_url
 from src.downloader.file_integrity import FileIntegrityError
@@ -79,6 +79,7 @@ def test_first_transfer_and_reported_paths(tmp_path, monkeypatch, offline_file, 
     destination = worker.job_output_dir(URL, 0, tmp_path) if existing_destination else named
     assert completed == [destination / "ciclo_1" / FILE_NAME]
     assert completed[0].read_bytes() == CONTENTS
+    assert list(maintenance.survey(maintenance.ITEM_DOWNLOADS, output_root=tmp_path).paths) == completed
     if existing_destination:
         assert (named / "keep.txt").read_bytes() == b"existing"
 

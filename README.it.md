@@ -60,7 +60,7 @@ App **desktop per Windows e macOS** (Python + PyQt6) che scarica file **e intere
 - **Coda di download** con anteprima dei link, filtri per stato, velocità e tempo rimanente. Puoi aprire **Dettagli sessione** sotto la coda per consultare statistiche e connessione.
 - **Interfaccia bilingue italiano/inglese**: al primo avvio segue la lingua del sistema, poi si sceglie da Impostazioni (Automatica / Italiano / English) e il cambio è immediato, senza riavviare. È tradotta tutta l'interfaccia, messaggi d'errore compresi; i messaggi nei file di log restano in italiano perché servono alla diagnosi.
 - **Riduzione della finestra** nel Dock su macOS. Su Windows puoi scegliere tra barra delle applicazioni e area di notifica. Il menu dell’icona permette di riaprire la finestra.
-- **Manutenzione dei dati su disco**: da Impostazioni si azzerano storico dei download, sessione salvata, cartella dei download, log e cache dei proxy. Ogni voce mostra quanto occupa davvero, niente è pre-selezionato, l'elenco di ciò che sparisce viene mostrato prima di cancellare e con un download in corso le voci pericolose sono disattivate.
+- **Manutenzione dei dati su disco**. In Impostazioni puoi controllare e rimuovere i singoli download registrati dall’app, compresi i parziali. I file personali nella stessa cartella vengono conservati. Storico, sessione salvata, log e cache dei proxy sono selezionabili separatamente.
 - **Modalità CLI** per macchine headless.
 
 ## ⚡ Installazione rapida (Windows 10/11)

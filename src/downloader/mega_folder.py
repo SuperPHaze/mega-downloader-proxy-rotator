@@ -15,9 +15,15 @@
 from __future__ import annotations
 
 import base64
+import json
 import logging
+import sqlite3
+import unicodedata
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable
+
+from src.core import output_store
 
 from src.core.config import MEGA_FOLDER_LIST_TIMEOUT, MEGA_FOLDER_MAX_FILES
 from src.core.file_naming import (
@@ -296,6 +302,7 @@ def _suffixed_name(stem: str, dot: str, ext: str, n: int) -> str:
     terminerebbe mai, perche' ogni n produrrebbe lo stesso nome troncato.
     """
     suffix = f" ({n})"
+    ext = ext[:MAX_FILE_NAME_LEN - len(suffix) - len(dot) - 1]
     budget = MAX_FILE_NAME_LEN - len(suffix) - len(dot) - len(ext)
     trimmed = stem[:budget].rstrip() if budget > 0 else ""
     return sanitize_file_name(
@@ -583,6 +590,134 @@ def deduplicate_job_urls(urls: list[str]) -> tuple[list[str], int]:
                 )
             )
     return out, removed
+
+
+def _path_key(path: tuple[str, ...]) -> str:
+    return unicodedata.normalize("NFC", "/".join(path)).casefold()
+
+
+def _legacy_partial(path: Path, job: MegaFolderJobLink) -> bool:
+    """An older partial is reusable only with a matching checkpoint."""
+    try:
+        partial = path.with_name(path.name + ".part")
+        checkpoint = partial.with_name(partial.name + ".progress.json")
+        if not partial.is_file() or partial.is_symlink() or checkpoint.is_symlink():
+            return False
+        data = json.loads(checkpoint.read_text(encoding="utf-8"))
+        return (isinstance(data, dict) and data.get("file_handle") == job.node_handle
+                and data.get("file_size") == partial.stat().st_size
+                and job.size in (None, data["file_size"]))
+    except (OSError, ValueError, KeyError):
+        return False
+
+
+# The final name and the temporary names used by the two download clients
+# share one namespace. A real file can itself be named e.g. "report.part".
+_OUTPUT_SUFFIXES = ("", ".part", ".part.progress.json", ".part.progress.json.tmp", ".progress.json")
+
+
+def _available_on_disk(
+    root: Path, target: Path, job: MegaFolderJobLink, db: sqlite3.Connection | None = None,
+) -> bool:
+    """All existing names must belong to this assignment or a matching older checkpoint."""
+    present = {}
+    for suffix in _OUTPUT_SUFFIXES:
+        path = target.with_name(target.name + suffix)
+        if path.is_symlink():
+            return False
+        if path.exists():
+            present[suffix] = path
+    if not present:
+        return True
+    if set(present) == {".part", ".part.progress.json"} and _legacy_partial(target, job):
+        return True
+    return db is not None and all(output_store.unchanged(db, root, path) for path in present.values())
+
+
+class _FolderDestinations:
+    def __init__(self, root, rows):
+        self.root = root
+        self.assigned = {(share, node): tuple(path.split("/")) for share, node, path in rows}
+        self.roots = {share: p[0] for (share, _), p in self.assigned.items() if len(p) > 1}
+        self.used_roots = {_path_key((name,)) for name in self.roots.values()}
+        self.files = set()
+        self.directories = set()
+        for path in self.assigned.values():
+            self.remember(path)
+
+    def remember(self, path):
+        key = _path_key(path)
+        self.files.update(key + suffix for suffix in _OUTPUT_SUFFIXES)
+        self.directories.update(_path_key(path[:i]) for i in range(1, len(path)))
+
+    def parent_for(self, job):
+        parts = [sanitize_folder_name(seg) for seg in job.rel_path[:-1]]
+        parent = ()
+        for i, base in enumerate(parts):
+            top = i == 0
+            name = self.roots.get(job.folder_id, base) if top else base
+            n = 2
+            while True:
+                proposed = parent + (name,)
+                key = _path_key(proposed)
+                directory = self.root.joinpath(*proposed)
+                other_share = top and name != self.roots.get(job.folder_id) and key in self.used_roots
+                if (not other_share and key not in self.files and not directory.is_symlink()
+                        and (not directory.exists() or directory.is_dir())):
+                    break
+                name = _suffixed_folder_name(base, n)
+                n += 1
+            if top:
+                self.roots[job.folder_id] = name
+                self.used_roots.add(key)
+            parent = proposed
+        return parent
+
+    def allocate(self, job):
+        parent = self.parent_for(job)
+        base = sanitize_file_name(job.file_name)
+        name, n = base, 2
+        while True:
+            path = parent + (name,)
+            key = _path_key(path)
+            target = self.root.joinpath(*path)
+            if all(key + s not in self.files and key + s not in self.directories for s in _OUTPUT_SUFFIXES):
+                if _available_on_disk(self.root, target, job):
+                    self.remember(path)
+                    return path
+            ext = Path(base).suffix
+            name = _suffixed_name(Path(base).stem, "." if ext else "", ext[1:], n)
+            n += 1
+
+
+def reserve_folder_links(links: list[str], root: Path) -> list[str]:
+    """Assign once per destination and MEGA node, including subsequent imports."""
+    jobs = [parse_folder_job_url(url) for url in links]
+    if not any(jobs):
+        return links
+    root = root.resolve()
+    with output_store.transaction() as db:
+        rows = db.execute("SELECT share, node, path FROM destinations WHERE root=?", (str(root),))
+        names = _FolderDestinations(root, rows)
+        result = []
+        for url, job in zip(links, jobs):
+            if job is None:
+                result.append(url)
+                continue
+            identity = (job.folder_id, job.node_handle)
+            path = names.assigned.get(identity)
+            if path is not None:
+                target = root.joinpath(*path)
+                # A user may have replaced or redirected a previously assigned file.
+                if target.parent.resolve() != target.parent or not _available_on_disk(root, target, job, db):
+                    path = None
+            if path is None:
+                path = names.allocate(job)
+                db.execute("INSERT OR REPLACE INTO destinations VALUES (?,?,?,?)",
+                           (str(root), *identity, "/".join(path)))
+                names.assigned[identity] = path
+            result.append(build_folder_job_url(*identity, job.node_key_b64, path, job.size))
+        return result
 
 
 def expand_folder_link(

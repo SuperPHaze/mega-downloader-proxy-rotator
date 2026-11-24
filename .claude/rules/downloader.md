@@ -61,8 +61,7 @@ paths: ["src/downloader/**/*.py"]
 - La cartella è CONDIVISA con gli altri file dello stesso albero. Conseguenze vincolanti: il check
   di resume deve guardare il NOME ESATTO del file (non "un file finale qualsiasi nella cartella"),
   e la pulizia dei temporanei `megapy_*` va saltata (non sono nostri).
-- Cancellare/eliminare un job-cartella rimuove SOLO quel file (+ `.part` + sidecar) e pota le
-  cartelle rimaste vuote fino alla radice dei download esclusa: mai `rmtree` dell'albero condiviso.
+- Il worker registra i file effettivamente scritti in `core/output_store.py`. La rimozione dei parziali richiesti dall’utente avviene a file chiusi, prima che il worker segnali il proprio arresto.
 - **Due job non possono condividere la destinazione su disco.** La de-collisione dentro una
   cartella la fa `build_folder_expansion`; quella GLOBALE (piu' cartelle nello stesso avvio) la fa
   `deduplicate_job_urls`, chiamata dal `FolderExpandWorker` perche' e' l'unico punto che vede
@@ -71,6 +70,7 @@ paths: ["src/downloader/**/*.py"]
   gli alberi non si mescolano), file che si chiamerebbe come una cartella sorella (vince la
   cartella). I link a FILE SINGOLO passano invariati: i loro duplicati sono leciti (finiscono in
   cartelle distinte grazie al suffisso `_<file_id>`) e li governa la checkbox «Consenti duplicati».
+  Le aggiunte successive e i ripristini usano inoltre `reserve_folder_links` per conservare i percorsi già assegnati nella destinazione.
 - Il suffisso di de-collisione va calcolato con il BUDGET di lunghezza del nome
   (`_suffixed_name` per i file su `MAX_FILE_NAME_LEN`, `_suffixed_folder_name` per le cartelle su
   `_TREE_SEGMENT_MAX_LEN`): accodarlo e basta lo farebbe ritagliare via dalla ri-sanificazione a

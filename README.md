@@ -64,7 +64,7 @@ A **desktop app for Windows and macOS** (Python + PyQt6) that downloads files **
 - **Download queue** with a link preview, status filters, current speed and time remaining. Open **Session details** below the queue to see statistics and connection information.
 - **Bilingual Italian/English interface**: on first launch it follows the system language, then you choose it in Settings (Automatic / Italiano / English) and the change is immediate, with no restart. The whole interface is translated, error messages included; messages in the log files stay in Italian because they are there for diagnostics.
 - **Minimize to the Dock** on macOS. On Windows you can choose the taskbar or the notification area. The icon menu can reopen the window.
-- **Disk data maintenance**: from Settings you can clear the download history, the saved session, the download folder, the logs and the proxy cache. Each entry shows how much it actually takes up, nothing is pre-selected, the list of what will go is shown before anything is deleted, and while a download is running the dangerous entries are disabled.
+- **Disk data maintenance**. In Settings you can review and remove individual downloads recorded by the app, including partial files. Personal files in the same folder are preserved. History, saved session, logs and proxy cache can be selected separately.
 - **CLI mode** for headless machines.
 
 ## ⚡ Quick install (Windows 10/11)

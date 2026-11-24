@@ -579,6 +579,25 @@ class DownloadOrchestrator(QObject):
         self._setup.failed_t.connect(self.pool_failed_t)
         self._setup.start()
 
+    def retry_setup(self) -> bool:
+        """Retry preparation with the same pending IDs, options and signal connections."""
+        if (not self._setup_failed or not self._pending_jobs or self._setup is None
+                or self._shutdown_requested or self.session_state.is_cancelled()):
+            return False
+        self._setup_failed = False
+        self._hot_started = False
+        self._retry_when_idle()
+        return True
+
+    def _retry_when_idle(self) -> None:
+        if self._shutdown_requested or self.session_state.is_cancelled() or not self._pending_jobs:
+            return
+        if self._setup.isRunning():
+            # Failure can reach the UI while the previous run is still unwinding.
+            QTimer.singleShot(20, self._retry_when_idle)
+        else:
+            self._setup.start()
+
     def stop_background_tasks(self) -> None:
         # Ferma subito refresher e timer, senza aspettare _on_slot_freed.
         # Usato dalla GUI su Annulla e da shutdown(). Idempotente.
@@ -1016,7 +1035,7 @@ class DownloadOrchestrator(QObject):
         """Riavvia una lista di job (file_id, url). Ritorna quanti accettati."""
         return sum(1 for fid, url in jobs if self.restart_job(fid, url))
 
-    def cancel_job(self, file_id: int) -> str:
+    def cancel_job(self, file_id: int, *, discard_partial: bool = False) -> str:
         # Cancella un singolo job. Ritorna lo stato precedente:
         #   "queued"   -> rimosso dalla coda, GUI gia' aggiornata
         #   "running"  -> richiesta cancellazione al worker (asincrona)
@@ -1033,6 +1052,6 @@ class DownloadOrchestrator(QObject):
                 return "queued"
         for w in self._workers:
             if w.file_id == file_id and w.isRunning() and not w.is_local_cancelled():
-                w.request_cancel()
+                w.request_cancel(discard_partial=discard_partial)
                 return "running"
         return "unknown"

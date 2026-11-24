@@ -22,6 +22,7 @@ from src.core.config import (
 )
 from src.core.disk import ensure_free_space, has_complete_file
 from src.core.errors import UserFacingRuntimeError
+from src.core.output_store import JobOutputs, write_partial
 from src.core.proxy_url import build_proxies_dict, build_proxy_url
 from src.downloader.file_integrity import matches_file_mac, promote_verified
 from src.downloader.mega_api import MegaApiError, MegaPublicClient
@@ -43,6 +44,7 @@ _CHUNK = 64 * 1024
 
 class MegaClient:
     def __init__(self, proxy: dict) -> None:
+        self.outputs: JobOutputs | None = None
         self.proxy = proxy
         self._proxy_url = build_proxy_url(proxy)
         self._proxies = build_proxies_dict(proxy)
@@ -133,7 +135,7 @@ class MegaClient:
             # La modalità seriale riparte da zero: i checkpoint della precedente
             # scrittura parallela devono sparire prima di troncare il parziale.
             part_path.with_name(part_path.name + ".progress.json").unlink(missing_ok=True)
-            with part_path.open("wb") as fp:
+            with write_partial(part_path, self.outputs) as fp:
                 for chunk in resp.iter_content(chunk_size=_CHUNK):
                     if should_abort and should_abort():
                         raise CancelledError()
@@ -170,6 +172,8 @@ class MegaClient:
             )
         # Download verificato: promuovi il .part al nome finale.
         promote_verified(part_path, final_path, file_size, k, iv, meta_mac, should_abort)
+        if self.outputs is not None:
+            self.outputs.written(final_path)
         if progress_callback:
             try:
                 progress_callback(100)

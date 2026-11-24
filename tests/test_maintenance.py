@@ -6,12 +6,12 @@
 # ancora aperto — qui non si peggiora).
 import json
 import logging
-import shutil
+from pathlib import Path
 from logging.handlers import RotatingFileHandler
 
 import pytest
 
-from src.core import logging_setup, maintenance
+from src.core import logging_setup, maintenance, output_store
 
 
 # ---- impalcatura: un finto albero di lavoro su tmp_path --------------------
@@ -65,6 +65,10 @@ def workspace(tmp_path, monkeypatch):
     _write(downloads / "primo_0" / "ciclo_1" / "video.mp4", "x" * 10)
     _write(downloads / "primo_0" / "ciclo_1" / "video2.mp4.part", "y" * 5)
     _write(downloads / "Cartella Mega" / "sub" / "doc.pdf", "z" * 7)
+    for path in downloads.rglob("*"):
+        if path.is_file():
+            output_store.record(downloads, "test-owner", path, path.suffix == ".part")
+    _write(downloads / "primo_0" / "ciclo_1" / "personal.txt", "mine")
     return tmp_path
 
 
@@ -91,9 +95,7 @@ def test_survey_downloads_counts_files_parts_and_bytes(workspace):
     assert survey.count == 3          # due file finiti + un .part
     assert survey.extra_count == 1    # solo il .part
     assert survey.total_bytes == 10 + 5 + 7
-    # I percorsi mostrati sono i figli di primo livello: e' cio' che verra'
-    # rimosso, non l'albero intero (sarebbero migliaia di righe a video).
-    assert [p.name for p in survey.paths] == ["Cartella Mega", "primo_0"]
+    assert [p.name for p in survey.paths] == ["doc.pdf", "video.mp4", "video2.mp4.part"]
 
 
 def test_survey_logs_excludes_crash_log_and_telemetry(workspace):
@@ -159,7 +161,7 @@ def test_clear_session_touches_only_the_session_state(workspace):
     assert (workspace / "downloads" / "primo_0").exists()
 
 
-def test_clear_downloads_empties_the_root_but_keeps_it(workspace):
+def test_clear_downloads_preserves_unowned_files_and_directories(workspace):
     survey = maintenance.survey(maintenance.ITEM_DOWNLOADS)
     result = maintenance.clear(maintenance.ITEM_DOWNLOADS)
 
@@ -167,7 +169,7 @@ def test_clear_downloads_empties_the_root_but_keeps_it(workspace):
     assert result.freed_bytes == survey.total_bytes
     downloads = workspace / "downloads"
     assert downloads.is_dir()             # la cartella resta: la si aspetta
-    assert list(downloads.iterdir()) == []
+    assert [p.name for p in downloads.rglob("*") if p.is_file()] == ["personal.txt"]
     assert (workspace / "logs" / "app.log").exists()
 
 
@@ -198,10 +200,14 @@ def test_clear_items_runs_only_the_selected_ones(workspace):
 def test_a_failure_on_one_item_does_not_stop_the_others(workspace, monkeypatch):
     """Requisito esplicito: se una voce fallisce, le altre proseguono e il
     resoconto dice quale non e' riuscita."""
-    def _esplode(path, *a, **kw):
-        raise OSError("cartella occupata")
+    unlink = Path.unlink
 
-    monkeypatch.setattr(shutil, "rmtree", _esplode)
+    def _esplode(path, *args, **kwargs):
+        if path.name == "doc.pdf":
+            raise OSError("cartella occupata")
+        return unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", _esplode)
     results = maintenance.clear_items(
         [maintenance.ITEM_DOWNLOADS, maintenance.ITEM_SESSION]
     )
