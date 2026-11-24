@@ -53,7 +53,7 @@ from src.core.config import (
     TELEMETRY_SAMPLE_INTERVAL_S,
     USER_AGENT,
 )
-from src.core.disk import ensure_free_space
+from src.core.disk import ensure_free_space, has_complete_file
 from src.core.errors import UserFacingRuntimeError, error_payload
 from src.core.proxy_url import build_proxies_dict as _proxies_dict
 from src.core.state import SessionState
@@ -88,14 +88,20 @@ def _load_progress(
         return set()
     try:
         data = json.loads(p.read_text(encoding="utf-8"))
-        if (data.get("file_handle") != file_handle
+        if (not isinstance(data, dict)
+                or data.get("file_handle") != file_handle
                 or data.get("file_size") != file_size
                 or data.get("chunk_size") != chunk_size):
             log.info(
                 "[parallel] sidecar invalido (handle/size/chunk_size diversi), ignoro"
             )
             return set()
-        done = {(int(s), int(e)) for s, e in data.get("done", [])}
+        ranges = data.get("done")
+        if not isinstance(ranges, list):
+            return set()
+        done = {(pair[0], pair[1]) for pair in ranges
+                if isinstance(pair, list) and len(pair) == 2
+                and all(type(offset) is int for offset in pair)}
         log.info("[parallel] resume: %d chunk gia' scaricati da run precedente", len(done))
         return done
     except (json.JSONDecodeError, OSError, ValueError) as exc:
@@ -201,6 +207,7 @@ class ParallelMegaDownloader:
         speed_callback: Callable[[float, int, int], None] | None = None,
         resolved_callback: Callable[[str, object, "Path"], None] | None = None,
         file_id: int | None = None,
+        reuse_existing: bool = False,
     ) -> Path:
         """Scarica un link Mega in parallelo usando una coda di chunk a dimensione fissa.
 
@@ -258,6 +265,11 @@ class ParallelMegaDownloader:
             except Exception:
                 pass
 
+        if reuse_existing and has_complete_file(final_path, file_size):
+            if progress_callback:
+                progress_callback(100)
+            return final_path
+
         # File da 0 byte: nessun chunk da scaricare. Con _split_chunks(0) si
         # otterrebbe un range 0--1 e un header "Range: bytes=0--1" invalido, che
         # fallirebbe a ripetizione fino all'abbandono. Crea il file finale vuoto
@@ -305,8 +317,17 @@ class ParallelMegaDownloader:
         # Il sidecar include chunk_size: se cambia, i range salvati sono
         # incompatibili e si reinizia. Con chunk_size fisso il resume e' valido
         # indipendentemente da N connessioni (al contrario dei vecchi segmenti).
-        already_done = _load_progress(part_path, file_handle, file_size, self.chunk_size)
-        already_done = already_done & set(chunks)
+        try:
+            part_size = part_path.stat().st_size
+        except FileNotFoundError:
+            part_size = None
+        if part_size == file_size:
+            already_done = _load_progress(part_path, file_handle, file_size, self.chunk_size) & set(chunks)
+        else:
+            # Prima della riallocazione: anche un crash subito dopo non deve
+            # far risultare completati i byte del precedente file parziale.
+            _progress_path(part_path).unlink(missing_ok=True)
+            already_done = set()
 
         telemetry.event(
             "file_plan", file_id=file_id, url_hash=self._url_hash,
@@ -334,24 +355,13 @@ class ParallelMegaDownloader:
         # pre-allocato a dimensione piena: meglio un errore chiaro pre-volo che
         # un OSError grezzo a metà setup. Su resume lo spazio del .part esistente
         # è già riservato: si richiede solo il delta mancante.
-        _existing_part = part_path.stat().st_size if part_path.exists() else 0
         ensure_free_space(
-            output_dir, file_size - _existing_part, MIN_FREE_DISK_MARGIN_BYTES
+            output_dir, file_size - (part_size or 0), MIN_FREE_DISK_MARGIN_BYTES
         )
 
-        # Pre-alloca il .part (sparse) SOLO se non esiste gia' (resume).
-        if not part_path.exists():
+        if part_size != file_size:
             with open(part_path, "wb") as fp:
-                if file_size > 0:
-                    fp.seek(file_size - 1)
-                    fp.write(b"\0")
-        elif part_path.stat().st_size != file_size:
-            # .part esiste ma dimensione errata: rigenera (sidecar invalidato sopra).
-            log.warning("[parallel] .part esistente con size errato, rialloco")
-            with open(part_path, "wb") as fp:
-                if file_size > 0:
-                    fp.seek(file_size - 1)
-                    fp.write(b"\0")
+                fp.truncate(file_size)
         # Niente write_lock globale: ogni segmento apre un proprio file handle
         # sul .part e scrive su un range disgiunto dagli altri; seek+write su
         # offset non sovrapposti con handle separati non hanno race.
@@ -446,13 +456,12 @@ class ParallelMegaDownloader:
                 children=chunk_details[:3],
             )
 
-        # Successo totale: rimuovi il sidecar, poi promuovi il .part al nome
-        # finale con rename atomico. Solo da qui il file "esiste" davvero.
+        # Se il rename fallisce, i byte e il loro registro restano riprendibili.
+        os.replace(part_path, final_path)
         try:
             _progress_path(part_path).unlink(missing_ok=True)
         except OSError:
             pass
-        os.replace(part_path, final_path)
         if progress_callback:
             progress_callback(100)
         log.info("[parallel] download completato: %s (%d B)", final_path, file_size)

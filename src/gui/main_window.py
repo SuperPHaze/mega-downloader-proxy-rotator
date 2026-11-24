@@ -960,10 +960,12 @@ class MainWindow(QMainWindow):
             self._set_status_t("main_window.resumed")
 
     def _on_cancel(self) -> None:
-        self.session_state.cancel()
         if self.orchestrator is not None:
-            self.orchestrator.stop_background_tasks()
+            self.orchestrator.cancel_all()
+        else:
+            self.session_state.cancel()
         self.jobs_panel.on_cancel_all()
+        self._completed_files = self.jobs_panel.model.aggregates()["terminated_count"]
         self.controls.reset()
         self._restore_session_ui()
         # Annullo esplicito dell'utente: niente prompt di ripristino la prossima
@@ -1296,6 +1298,16 @@ class MainWindow(QMainWindow):
 
     # ---- riavvio job ----------------------------------------------------
 
+    def _record_restarts(self, ids: list[int]) -> None:
+        for file_id in ids:
+            self._session_incomplete[file_id] = self._links_by_id[file_id]
+        self._session_persist()
+        self._completed_files = self.jobs_panel.model.aggregates()["terminated_count"]
+        # La coda non e' piu' finita: l'avviso di fine coda deve poter tornare.
+        self._queue_done_notified = False
+        self.controls.set_running(True)
+        self.link_panel.set_running(True)
+
     def _on_restart_job_requested(self, file_id: int) -> None:
         url = self._links_by_id.get(file_id)
         if url is None:
@@ -1322,11 +1334,7 @@ class MainWindow(QMainWindow):
                 "main_window.restart_failed", file=file_id + 1
             )
             return
-        self._completed_files = max(0, self._completed_files - 1)
-        # La coda non e' piu' finita: l'avviso di fine coda deve poter tornare.
-        self._queue_done_notified = False
-        self.controls.set_running(True)
-        self.link_panel.set_running(True)
+        self._record_restarts([file_id])
         self._set_status_t("main_window.restart_queued", file=file_id + 1)
 
     def _on_restart_all_failed_requested(self) -> None:
@@ -1336,18 +1344,15 @@ class MainWindow(QMainWindow):
         restartable = list(self.jobs_panel.model.iter_restartable())
         if not restartable:
             return
-        jobs: list[tuple[int, str]] = []
+        restarted = []
         for job in restartable:
             url = self._links_by_id.get(job.file_id)
-            if url is not None:
+            if url is not None and self.orchestrator.restart_job(job.file_id, url):
                 self.jobs_panel.model.restart_job(job.file_id)
-                jobs.append((job.file_id, url))
-        n_started = self.orchestrator.restart_all_failed(jobs)
+                restarted.append(job.file_id)
+        n_started = len(restarted)
         if n_started > 0:
-            self._completed_files = max(0, self._completed_files - n_started)
-            self._queue_done_notified = False
-            self.controls.set_running(True)
-            self.link_panel.set_running(True)
+            self._record_restarts(restarted)
             self._set_status_tn("main_window.restart_all_done", n_started)
 
     # ---- dettaglio job --------------------------------------------------
