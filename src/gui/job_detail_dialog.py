@@ -16,6 +16,8 @@ from __future__ import annotations
 
 import time
 
+from PyQt6.QtCore import Qt
+
 from PyQt6.QtWidgets import (
     QDialog,
     QFrame,
@@ -83,15 +85,11 @@ class JobDetailDialog(QDialog):
         # Nascosto di default; mostrato in _refresh() se status == abbandonato.
         self.abandoned_box = QFrame()
         self.abandoned_box.setFrameShape(QFrame.Shape.StyledPanel)
-        self.abandoned_box.setStyleSheet(
-            "QFrame { background-color: #fee2e2; border: 1px solid #dc2626;"
-            " border-radius: 6px; padding: 6px; }"
-            "QLabel { color: #7f1d1d; }"
-        )
+        self.abandoned_box.setObjectName("failureNotice")
         ab_layout = QVBoxLayout(self.abandoned_box)
         ab_layout.setContentsMargins(8, 6, 8, 6)
         self.abandoned_title = QLabel(t("job_detail.abandoned_title"))
-        self.abandoned_title.setStyleSheet("color: #991b1b; font-weight: bold;")
+        self.abandoned_title.setObjectName("failureTitle")
         ab_layout.addWidget(self.abandoned_title)
         ab_url_row = QHBoxLayout()
         self.abandoned_url = QTextEdit()
@@ -103,6 +101,7 @@ class JobDetailDialog(QDialog):
         ab_url_row.addWidget(self.abandoned_copy_btn)
         ab_layout.addLayout(ab_url_row)
         self.abandoned_info = QLabel()
+        self.abandoned_info.setTextFormat(Qt.TextFormat.PlainText)
         self.abandoned_info.setWordWrap(True)
         ab_layout.addWidget(self.abandoned_info)
         self.abandoned_box.setVisible(False)
@@ -123,7 +122,9 @@ class JobDetailDialog(QDialog):
 
         # KPI summary line.
         self.summary_label = QLabel()
-        self.summary_label.setStyleSheet("color: #4b5563; padding: 4px 0;")
+        self.summary_label.setObjectName("secondaryText")
+        self.summary_label.setTextFormat(Qt.TextFormat.PlainText)
+        self.summary_label.setWordWrap(True)
         layout.addWidget(self.summary_label)
 
         # Cronologia IP.
@@ -144,7 +145,8 @@ class JobDetailDialog(QDialog):
         # Divider.
         line = QFrame()
         line.setFrameShape(QFrame.Shape.HLine)
-        line.setStyleSheet("color: #d7dbe0;")
+        line.setObjectName("hairline")
+        line.setFixedHeight(1)
         layout.addWidget(line)
 
         # Log dettagliato.

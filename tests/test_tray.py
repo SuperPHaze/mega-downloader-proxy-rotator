@@ -12,6 +12,8 @@ import os
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+import sys
+
 import pytest
 
 pytest.importorskip("PyQt6.QtWidgets")
@@ -71,9 +73,11 @@ def test_resolve_preferenza_ignota_torna_a_chiedere():
 
 # ---- 2. preferenza: giro completo di salvataggio e rilettura ----------------
 
-def test_preferenza_riduzione_default_e_chiedi(tmp_path, monkeypatch):
+@pytest.mark.parametrize(("platform", "expected"), [("win32", MINIMIZE_ASK), ("darwin", MINIMIZE_TASKBAR)])
+def test_preferenza_riduzione_default(tmp_path, monkeypatch, platform, expected):
+    monkeypatch.setattr(sys, "platform", platform)
     monkeypatch.setattr(preferences, "_PREFS_PATH", tmp_path / "preferences.json")
-    assert preferences.load_minimize_target() == MINIMIZE_ASK
+    assert preferences.load_minimize_target() == expected
 
 
 def test_preferenza_riduzione_giro_completo(tmp_path, monkeypatch):
@@ -156,14 +160,14 @@ def _rispondi_al_dialogo(chiave_pulsante: str, ricorda: bool) -> None:
 
 
 def test_dialogo_scelta_area_di_notifica(qt_app, italian_ui):
-    _rispondi_al_dialogo("tray.ask_tray", ricorda=False)
+    _rispondi_al_dialogo("tray.ask_menu_bar" if sys.platform == "darwin" else "tray.ask_tray", ricorda=False)
     scelta, ricorda = ask_minimize_target(None)
     assert scelta == MINIMIZE_TRAY
     assert ricorda is False
 
 
 def test_dialogo_scelta_barra_con_ricorda(qt_app, italian_ui):
-    _rispondi_al_dialogo("tray.ask_taskbar", ricorda=True)
+    _rispondi_al_dialogo("tray.ask_dock" if sys.platform == "darwin" else "tray.ask_taskbar", ricorda=True)
     scelta, ricorda = ask_minimize_target(None)
     assert scelta == MINIMIZE_TASKBAR
     assert ricorda is True

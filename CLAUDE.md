@@ -149,7 +149,7 @@ src/
     ├── jobs_panel.py      # lista job a righe-card (QScrollArea + _JobCard widget per riga);
     │                      #   `append_jobs()` aggiunge card senza toccare quelle esistenti (l'ordine resta
     │                      #   cronologico anche per i link messi in TESTA alla coda: chi sta scaricando lo
-    │                      #   dice il proprio stato); filtri a pulsanti esclusivi (QButtonGroup), senza etichetta; ogni pulsante mostra il conteggio file per categoria ("In corso (N)"/"Completati (N)"/"Non completati (N)"), aggiornato da _update_filter_counts su aggregates_changed; i18n: retranslate() ricasca su _EmptyState e su ogni _JobCard; le card rendono l'ultimo errore dal PAYLOAD del modello con error_render.render_error(), e on_abandoned applica ABANDON_ALIASES al confine col segnale
+    │                      #   dice il proprio stato); filtri a pulsanti esclusivi (QButtonGroup), con Tutti selezionato all’avvio; ogni pulsante mostra il conteggio file per categoria ("In corso (N)"/"Completati (N)"/"Non completati (N)"), aggiornato da _update_filter_counts su aggregates_changed; i18n: retranslate() ricasca su _EmptyState e su ogni _JobCard; le card rendono l'ultimo errore dal PAYLOAD del modello con error_render.render_error(), e on_abandoned applica ABANDON_ALIASES al confine col segnale
     ├── job_detail_dialog.py # dialog non-modale dettaglio job (doppio clic); UNICO dialogo PERSISTENTE del progetto:
     │                      #   ha `retranslate()` ed e' nel fan-out di `_on_language_changed`. `_refresh(force=True)` e'
     │                      #   obbligatorio al cambio lingua: il ridisegno normale salta log e tabella IP quando il NUMERO
@@ -166,16 +166,14 @@ src/
     ├── format_helpers.py  # helper di formattazione condivisi: fmt_speed/fmt_bytes/fmt_mmss/fmt_hhmmss (puro, no Qt); build_header_summary passa da t() → dipende dalla lingua (le unità di misura no)
     ├── session_clock.py   # SessionClock: tempo sessione con auto-freeze a fine sessione (puro, no Qt/I/O)
     ├── session_speed.py   # SessionSpeedStats: media/picco/minima di sessione (puro, no Qt/I/O), campionato 1x/s da StatsBar
-    ├── stats_bar.py       # cruscotto "spinta" compatto: zona velocita' (RadialGauge con % del picco + picco/media/minima/ETA/tempo) e zona Download (totale + SegmentBar + conteggi), separate da una linea verticale interna
-    ├── stats_panel.py     # StatsPanel: cruscotto Statistiche collassabile (header riassuntivo sempre visibile + corpo espandibile); metriche: volume, throughput effettivo, media per-download, picco/min, durata con auto-freeze, dettaglio per-job, pulsante copia riepilogo
-    ├── proxy_bar.py       # (i18n: retranslate() ricasca su ogni _MetricCard, che tiene la CHIAVE dell'etichetta) ProxyBar: zona proxy in stile "conservativo" — griglia 2x4 di card compatte su due righe (vivi/validazione/scartati/ricariche/ultimo refill/banda/banda proxy; min width 112px = etichetta più lunga non tagliata al resize) + colonna verticale di pulsanti "↻ Banda" (speed test linea diretta), "↻ Banda proxy" (speed test attraverso il pool live, abilitato solo con proxy vivi) e "Reset cache"; popolata da pool_size_changed/setup_progress/proxy_stats dell'orchestrator. Card "Banda" verde (accent_ok) vs "Banda proxy" blu (accent_info) per differenziare le due misure
+    ├── stats_bar.py       # velocità attuale, volume scaricato e tempo rimanente sopra la coda
+    ├── stats_panel.py     # statistiche nei dettagli sotto la coda, durata con arresto automatico, velocità relative al picco, completamento e copia del riepilogo per file
+    ├── proxy_bar.py       # misure e comandi di connessione nei dettagli sessione. Le misure del pool compaiono durante i trasferimenti
     ├── speedtest_worker.py # SpeedTestWorker (banda linea diretta, senza proxy) + ProxySpeedTestWorker (banda aggregata del pool live, uno stream per proxy campionato, resiliente ai proxy lenti/caduti); entrambi QThread, emettono finished_test(mbit, ok)
-    ├── controls.py        # barra comandi: Avvia/Pausa/Annulla/Paralleli/Incolla/Tema/Info; menu Impostazioni con Paralleli/Limite/Pezzo/"Cartella download:" (QFileDialog, getter get_download_dir, segnale download_dir_changed) + "Lingua:" (QComboBox Automatica/Italiano/English → TR.set_preference); PRIMO pannello migrato a i18n: testi via t("controls.*") e retranslate() per il cambio a caldo
-    │                      #   + "Manutenzione:" (pulsante «Azzera dati…» → segnale maintenance_requested,
-    │                      #   apre MaintenanceDialog). NB: `set_running(True)` disabilita il pulsante
-    │                      #   Impostazioni, quindi a sessione VIVA il menu — e con esso la manutenzione —
-    │                      #   non è raggiungibile: il rifiuto per voce serve dopo un Annulla globale,
-    │                      #   quando i comandi tornano attivi ma i worker stanno ancora scrivendo
+    ├── controls.py        # Comandi di sessione e QDialog Impostazioni. Lingua e tema sono disponibili
+    │                      #   anche durante i download. Parametri della sessione e manutenzione sono
+    │                      #   disattivati fino al termine. Dopo un annullo i controlli di manutenzione
+    │                      #   verificano anche i worker ancora attivi prima di intervenire sui file.
     ├── experimental_dialog.py # ExperimentalFeaturesDialog: 3 controlli con descrizione breve inline e icona "i" (QToolButton) → QMessageBox estesa: "Connessioni per file" (spinbox), "Budget per pezzo (s)" (spinbox), "Selezione per velocità" (checkbox + spinbox soglia KB/s); tutti persistono in preferences.json; i18n: t("experimental.*"), le descrizioni brevi/estese stanno nei dizionari
     ├── folder_expand_worker.py # FolderExpandWorker(QThread): espande i link cartella prima dell'avvio; le righe di report passano da t()/tn() (clausole opzionali autonome: separatore incluso nella chiave)
     │                      #   (rete fuori dal thread GUI); i link non-cartella passano invariati e
