@@ -83,6 +83,18 @@ Un solo comando prepara tutto: dipendenze runtime (`requirements.txt`), dipenden
 
 > **Lingua degli script** — `install.ps1` e `package.ps1` mostrano i messaggi in **inglese per impostazione predefinita**. Per l'italiano, eseguili con `-Lang IT`, es. `powershell -ExecutionPolicy Bypass -File install.ps1 -Lang IT`.
 
+## Avvio dai sorgenti su macOS
+
+Apri il Terminale nella cartella del progetto estratto o clonato. Con Python 3.14 installato, esegui:
+
+```sh
+python3.14 -m venv venv
+venv/bin/python -m pip install -r requirements.txt
+venv/bin/python -m src.main
+```
+
+In una prova manuale su Apple Silicon con Python 3.14.10, la finestra si è aperta e il download è partito.
+
 ## 🔧 Uso in breve
 
 1. Incolla uno o più link `https://mega.nz/...` — a **file singolo** o a **cartella** — (o importali da un file `.txt`).
