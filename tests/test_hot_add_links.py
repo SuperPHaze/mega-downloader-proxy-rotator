@@ -175,6 +175,7 @@ def _finta_finestra():
     win.jobs_panel = _FakePanel()
     win.controls = _FakeFlag()
     win.link_panel = _FakeFlag()
+    win._next_file_id = 1
     win._links_by_id = {0: FILE_A}
     win._session_incomplete = {0: FILE_A}
     win._expected_files = 1
@@ -209,3 +210,35 @@ def test_il_file_di_ripristino_contiene_anche_i_link_aggiunti(
     MainWindow._register_added_jobs(win, [1], [FILE_B])
 
     assert session_store.load() == [FILE_A, FILE_B]
+
+
+@pytest.mark.parametrize("bulk", [False, True])
+def test_retries_persist_only_the_jobs_accepted_by_the_engine(qt_app, monkeypatch, tmp_path, bulk):
+    from types import SimpleNamespace
+    from src.gui.jobs_model import STATUS_FAILED
+
+    monkeypatch.setattr(session_store, "_path", lambda: tmp_path / "session.json")
+    from src.gui import preferences
+    monkeypatch.setattr(preferences, "_PREFS_PATH", tmp_path / "prefs.json")
+    for startup in ("_run_speedtest", "_maybe_check_updates_on_startup", "_maybe_restore_session"):
+        monkeypatch.setattr(MainWindow, startup, lambda self: None)
+    win = MainWindow()
+    model = win.jobs_panel.model
+    win._links_by_id = {0: FILE_A, 1: FILE_B}
+    win._session_incomplete.clear()
+    win._completed_files = 2
+    model.reset([FILE_A, FILE_B])
+    for fid in win._links_by_id:
+        model.mark_failed_fatal(fid, "unknown_reason")
+    win.orchestrator = SimpleNamespace(restart_job=lambda fid, url: fid == 1)
+    if bulk:
+        MainWindow._on_restart_all_failed_requested(win)
+    else:
+        MainWindow._on_restart_job_requested(win, 1)
+    assert model.get_job(0).status == STATUS_FAILED
+    assert model.get_job(1).status == STATUS_QUEUED
+    assert win._completed_files == 1
+    assert session_store.load() == [FILE_B]
+    win.orchestrator = None
+    win.close()
+    win.deleteLater()

@@ -1,5 +1,9 @@
 # Test puri per il sidecar di resume (_save_progress/_load_progress).
 # Usa tmp_path di pytest: nessun file reale persistente nel progetto.
+import json
+
+import pytest
+
 from src.downloader.parallel_client import _load_progress, _save_progress
 
 
@@ -52,3 +56,12 @@ def test_completed_chunks_recognized_and_filtered(tmp_path):
     loaded = _load_progress(target, "HANDLE1", 48, chunk_size=16)
     remaining = [c for c in all_chunks if c not in loaded]
     assert remaining == [(16, 31)]
+
+
+@pytest.mark.parametrize("record", [[], None, {"done": None}, {"done": [None, [0], ["0", 15]]}])
+def test_malformed_record_never_claims_completed_bytes(tmp_path, record):
+    target = tmp_path / "file.bin.part"
+    if isinstance(record, dict):
+        record.update(file_handle="HANDLE1", file_size=16, chunk_size=16)
+    target.with_name(target.name + ".progress.json").write_text(json.dumps(record), encoding="utf-8")
+    assert _load_progress(target, "HANDLE1", 16, chunk_size=16) == set()

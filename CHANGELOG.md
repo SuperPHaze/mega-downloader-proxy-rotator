@@ -6,6 +6,9 @@ All notable changes to this project. Format based on [Keep a Changelog](https://
 
 ## [Unreleased]
 
+- Verify the MEGA file MAC before completing a transfer or reusing a file.
+- Restore partial downloads by their original IDs even when the queue order changes.
+
 ## [2.3.0] — 2026-09-22
 
 ### Added

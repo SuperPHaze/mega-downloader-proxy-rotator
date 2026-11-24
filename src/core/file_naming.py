@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import re
@@ -74,6 +75,10 @@ def sanitize_file_name(
         keep = max_len - len(ext)
         base = (stem[:keep] + ext) if keep > 0 else base[:max_len]
     return base or fallback
+
+
+def job_url_hash(url: str) -> str:
+    return hashlib.sha1(url.encode("utf-8")).hexdigest()[:12]
 
 
 def final_output_dir(

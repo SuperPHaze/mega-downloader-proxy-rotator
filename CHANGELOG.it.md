@@ -6,6 +6,9 @@ Tutte le modifiche rilevanti del progetto. Formato basato su [Keep a Changelog](
 
 ## [Non rilasciato]
 
+- Verifica del MAC MEGA prima di completare o riutilizzare un file.
+- Il ripristino conserva gli identificativi dei download parziali anche quando cambia l’ordine della coda.
+
 ## [2.3.0] — 2026-09-22
 
 ### Aggiunto

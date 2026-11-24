@@ -3,12 +3,12 @@
 # Niente piu' mega.py: usa MegaPublicClient (resolve URL + decifratura
 # attributi) + requests con `proxies=` nativo per il transfer dal CDN.
 # Decifratura AES-CTR a blocchi durante lo streaming, scrittura diretta
-# sul file finale (niente temp file, niente WinError 32).
+# sul .part, verifica del MAC e rinomina a file chiusi.
 from __future__ import annotations
 
 import logging
-import os
 import time
+from concurrent.futures import CancelledError
 from pathlib import Path
 from typing import Callable
 
@@ -20,9 +20,10 @@ from src.core.config import (
     PROXY_TIMEOUT,
     USER_AGENT,
 )
-from src.core.disk import ensure_free_space
+from src.core.disk import ensure_free_space, has_complete_file
 from src.core.errors import UserFacingRuntimeError
 from src.core.proxy_url import build_proxies_dict, build_proxy_url
+from src.downloader.file_integrity import matches_file_mac, promote_verified
 from src.downloader.mega_api import MegaApiError, MegaPublicClient
 from src.downloader.mega_crypto import a32_to_str
 
@@ -68,6 +69,8 @@ class MegaClient:
         progress_callback: Callable[[int], None] | None = None,
         speed_callback: Callable[[float, int, int], None] | None = None,
         resolved_callback: Callable[[str, object, "Path"], None] | None = None,
+        should_abort: Callable[[], bool] | None = None,
+        reuse_existing: bool = False,
     ) -> Path:
         try:
             from Crypto.Cipher import AES
@@ -78,17 +81,14 @@ class MegaClient:
             ) from exc
 
         output_dir.mkdir(parents=True, exist_ok=True)
-        api = MegaPublicClient(self.proxy, timeout=max(PROXY_TIMEOUT * 4, 30))
+        api = MegaPublicClient(self.proxy, timeout=max(PROXY_TIMEOUT * 4, 30), should_abort=should_abort)
         info = api.resolve_public_url(mega_url)
         file_name = info["file_name"]
         file_size = info["file_size"]
         cdn_url = info["cdn_url"]
         k = info["k"]
         iv = info["iv"]
-        # Check spazio disco PRIMA di scaricare: a disco pieno un OSError grezzo
-        # a metà stream verrebbe scambiato per fallimento del proxy e brucerebbe
-        # i tentativi. InsufficientDiskSpaceError è gestita a monte dal worker.
-        ensure_free_space(output_dir, file_size, MIN_FREE_DISK_MARGIN_BYTES)
+        meta_mac = info["meta_mac"]
         final_path = output_dir / file_name
         # Pattern .part + rename atomico: il client seriale non ha resume,
         # ma un download interrotto non deve mai lasciare un file con il nome
@@ -106,6 +106,12 @@ class MegaClient:
             except Exception:
                 pass
 
+        if (reuse_existing and has_complete_file(final_path, file_size)
+                and matches_file_mac(final_path, file_size, k, iv, meta_mac, should_abort)):
+            if progress_callback:
+                progress_callback(100)
+            return final_path
+        ensure_free_space(output_dir, file_size, MIN_FREE_DISK_MARGIN_BYTES)
         k_str = a32_to_str(k)
         initial_counter = ((iv[0] << 32) + iv[1]) << 64
         counter = Counter.new(128, initial_value=initial_counter)
@@ -113,49 +119,57 @@ class MegaClient:
 
         headers = {"User-Agent": USER_AGENT, "Accept-Encoding": "identity"}
         timeout = (PROXY_TIMEOUT, max(PROXY_TIMEOUT * 4, 60))
-        resp = requests.get(
-            cdn_url, headers=headers, proxies=self._proxies,
-            timeout=timeout, stream=True,
-        )
-        resp.raise_for_status()
-
         downloaded = 0
         last_pct = -1
         _speed_t = time.monotonic()
         _speed_bytes = 0
-        with open(part_path, "wb") as fp:
-            for chunk in resp.iter_content(chunk_size=_CHUNK):
-                if not chunk:
-                    continue
-                fp.write(aes.decrypt(chunk))
-                downloaded += len(chunk)
-                if file_size > 0:
-                    pct = min(99, int(downloaded * 100 / file_size))
-                    if progress_callback and pct != last_pct:
-                        try:
-                            progress_callback(pct)
-                        except Exception:
-                            pass
-                        last_pct = pct
-                    if speed_callback:
-                        _speed_bytes += len(chunk)
-                        now = time.monotonic()
-                        dt = now - _speed_t
-                        if dt >= 0.5:
-                            bps = _speed_bytes / dt
-                            _speed_t = now
-                            _speed_bytes = 0
+        if should_abort and should_abort():
+            raise CancelledError()
+        with requests.get(cdn_url, headers=headers, proxies=self._proxies,
+                          timeout=timeout, stream=True) as resp:
+            resp.raise_for_status()
+            if should_abort and should_abort():
+                raise CancelledError()
+            # La modalità seriale riparte da zero: i checkpoint della precedente
+            # scrittura parallela devono sparire prima di troncare il parziale.
+            part_path.with_name(part_path.name + ".progress.json").unlink(missing_ok=True)
+            with part_path.open("wb") as fp:
+                for chunk in resp.iter_content(chunk_size=_CHUNK):
+                    if should_abort and should_abort():
+                        raise CancelledError()
+                    if not chunk:
+                        continue
+                    fp.write(aes.decrypt(chunk))
+                    downloaded += len(chunk)
+                    if file_size > 0:
+                        pct = min(99, int(downloaded * 100 / file_size))
+                        if progress_callback and pct != last_pct:
                             try:
-                                speed_callback(bps, downloaded, file_size)
+                                progress_callback(pct)
                             except Exception:
                                 pass
+                            last_pct = pct
+                        if speed_callback:
+                            _speed_bytes += len(chunk)
+                            now = time.monotonic()
+                            dt = now - _speed_t
+                            if dt >= 0.5:
+                                bps = _speed_bytes / dt
+                                _speed_t = now
+                                _speed_bytes = 0
+                                try:
+                                    speed_callback(bps, downloaded, file_size)
+                                except Exception:
+                                    pass
 
-        if file_size and downloaded != file_size:
+        if should_abort and should_abort():
+            raise CancelledError()
+        if downloaded != file_size:
             raise MegaApiError(
                 "download_incomplete", downloaded=downloaded, expected=file_size
             )
         # Download verificato: promuovi il .part al nome finale.
-        os.replace(part_path, final_path)
+        promote_verified(part_path, final_path, file_size, k, iv, meta_mac, should_abort)
         if progress_callback:
             try:
                 progress_callback(100)

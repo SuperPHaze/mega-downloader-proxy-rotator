@@ -784,6 +784,7 @@ STRINGS: dict[str, str | dict[str, str]] = {
     "err.folder_listing_unavailable": (
         "folder listing not available (response: {response})"
     ),
+    "err.file_mac_mismatch": "MEGA integrity check failed. Restart the download to fetch a fresh copy.",
     "err.download_incomplete": "incomplete download: {downloaded}/{expected} bytes",
     "err.crypto_not_importable": (
         "pycryptodome could not be imported ({error}). "
