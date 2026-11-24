@@ -87,13 +87,13 @@ Tutti i segnali hanno `file_id: int` come primo parametro per permettere alla GU
 - `fatal_error(file_id, motivo)` — errore permanente d'ambiente (es. `MegaCryptoDependencyError`): il worker termina senza emettere `all_done`. L'orchestrator libera lo slot.
 - `all_done(file_id)` — emesso una sola volta a fine ciclo N
 - `completed_info(file_id, url, file_name, file_size, path)` — metadati del download riuscito, emesso UNA volta subito prima di `all_done`. `file_size` è tipato `object` per non troncare file > 2 GB. L'orchestrator lo persiste in `download_history.log` (JSONL, dedup per handle Mega).
-- `cancelled(file_id)` — emesso SOLO in caso di cancellazione locale per-job (flag `_local_cancelled`), MAI per annullo globale (gia' coperto da `SessionState`). Permette all'orchestrator di liberare lo slot e alla GUI di rimuovere la cartella di lavoro.
-- `abandoned(file_id, url, attempts, last_error)` — emesso quando il cap `MAX_ATTEMPTS_PER_FILE` viene raggiunto: l'orchestrator persiste l'evento in `failed_links.log` (JSONL) e libera lo slot.
+- `cancelled(file_id)` — emesso SOLO in caso di cancellazione locale per-job (flag `_local_cancelled`), MAI per annullo globale (gia' coperto da `SessionState`). La GUI può quindi eseguire l'eventuale rimozione richiesta per quel job.
+- `abandoned(file_id, url, attempts, last_error)` — emesso quando il cap `MAX_ATTEMPTS_PER_FILE` viene raggiunto: l'orchestrator persiste l'evento in `failed_links.log` (JSONL). Lo slot di ogni worker viene liberato da `QThread.finished`, anche dopo un annullo globale.
 
 ## Cancellazione per-job
-- `DownloadWorker.request_cancel()` setta solo il flag locale `_local_cancelled`. Non emette nulla direttamente.
+- `DownloadWorker.request_cancel()` setta il flag locale `_local_cancelled` e sveglia chi attende la fine della pausa.
 - I checkpoint del worker e il `ParallelMegaDownloader` non leggono `session_state` direttamente: usano `_EffectiveSessionState`, che fa OR fra flag locale e stato globale. Quando si aggiunge un nuovo checkpoint nel worker, usare `self._effective_state`, mai `self.session_state`.
-- Il segnale `cancelled` viene emesso nel `finally` di `run()` e solo se `_local_cancelled and not session_state.is_cancelled()`.
+- Il segnale `cancelled` viene emesso all'uscita da un ciclo interrotto e solo se `_local_cancelled and not session_state.is_cancelled()`.
 - La formula del path di output di un job (`downloads/<sha1(url)[:12]>_<file_id>/`) e' centralizzata in `worker.job_output_dir(url, file_id)`: usare quella funzione, non duplicare l'hashing.
 
 ## Identificativi dei job: mai riusati

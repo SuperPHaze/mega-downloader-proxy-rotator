@@ -8,6 +8,17 @@ from pathlib import Path
 from src.core.errors import UserFacingOSError
 
 
+def has_complete_file(path: Path, expected_size: int | None) -> bool:
+    """Controlla il file atteso ed esclude i parziali del vecchio formato."""
+    if path.is_symlink() or not path.is_file() or path.with_name(path.name + ".progress.json").exists():
+        return False
+    try:
+        size = path.stat().st_size
+    except OSError:
+        return False
+    return size == expected_size if expected_size is not None else size > 0
+
+
 class InsufficientDiskSpaceError(UserFacingOSError):
     """Spazio su disco insufficiente per il file richiesto.
 

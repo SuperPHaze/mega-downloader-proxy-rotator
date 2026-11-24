@@ -265,3 +265,64 @@ def test_add_jobs_rifiutato_durante_la_chiusura(qt_app, monkeypatch):
     orch._spawn_workers()
     orch._shutdown_requested = True
     assert orch.add_jobs(["u1"]) == []
+
+
+def test_cancel_and_restart_during_setup_respect_the_queue(qt_app, monkeypatch):
+    orch, launched = _make(monkeypatch, ["a", "b", "c"], concurrency=3)
+    cancelled = []
+    orch.job_cancelled.connect(cancelled.append)
+    assert orch.cancel_job(1) == "queued"
+    assert orch.cancel_job(2) == "queued"
+    assert cancelled == [1, 2]
+    assert orch.restart_job(2, "c")
+    assert not orch.restart_job(2, "c")
+    assert not launched
+    orch._spawn_workers()
+    assert launched == [(0, "a"), (2, "c")]
+
+
+def test_failed_setup_refuses_a_restart(qt_app, monkeypatch):
+    orch, launched = _make(monkeypatch, ["a"])
+    orch._on_setup_ok([])
+    assert not orch.restart_job(0, "a")
+    assert not launched
+
+
+def test_global_cancel_does_not_reschedule_the_old_queue(qt_app, monkeypatch):
+    orch, launched = _make(monkeypatch, ["a", "b"], concurrency=1)
+    orch._spawn_workers()
+    orch.cancel_all()
+    orch._on_slot_freed(0)
+    assert orch.add_jobs(["c"]) == [2]
+    assert launched == [(0, "a"), (2, "c")]
+
+
+def test_thread_exit_without_a_terminal_signal_releases_its_slot(qt_app, monkeypatch):
+    from threading import Event
+    from src.downloader.worker import DownloadWorker
+
+    entered, release = Event(), Event()
+    def run(worker):
+        if worker.file_id == 0:
+            entered.set()
+            release.wait(3)
+
+    monkeypatch.setattr(DownloadWorker, "run", run)
+    orch, _ = _make(monkeypatch, ["a", "b"], concurrency=1)
+    monkeypatch.setattr(orch, "_launch_worker", DownloadOrchestrator._launch_worker.__get__(orch))
+    monkeypatch.setattr(orch, "_persist_cache", lambda: None)
+    orch._spawn_workers()
+    first = orch._workers[0]
+    try:
+        assert entered.wait(2)
+        orch.cancel_all()
+        assert orch.add_jobs(["too soon"]) == []
+    finally:
+        release.set()
+        assert first.wait(3000)
+    qt_app.processEvents()
+    assert not orch._workers and orch._active_count == 0
+    assert orch.add_jobs(["fresh"]) == [2]
+    assert orch._workers[0].wait(3000)
+    qt_app.processEvents()
+    assert orch._active_count == 0
