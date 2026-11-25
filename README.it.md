@@ -51,6 +51,7 @@ App **desktop per Windows e macOS** (Python + PyQt6) che scarica file **e intere
 - **Decifratura in streaming** su disco (RAM costante anche su file da molti GB), pattern `.part` + rinomina atomica.
 - **Resume** dei download interrotti e **riavvio** di falliti/abbandonati/annullati (riprende solo i chunk mancanti).
 - **Limite di tempo per file** configurabile; oltre la soglia il file viene abbandonato.
+- **Recupera download** è disponibile anche con la coda vuota. Seleziona un file interrotto nella cartella di destinazione per vedere i byte salvati e riprendere i blocchi mancanti. Se manca il registro dei blocchi, puoi confermare **Ricomincia da zero**. A coda aperta, trovi lo stesso elenco in **Parziali**.
 - **Storico** mostra i download completati nelle sessioni precedenti e in quella corrente. Cerca un file per nome, controlla data e dimensione o apri la cartella in cui è stato salvato.
 - **Aggiunta di link a sessione in corso**: i nuovi link entrano in coda senza fermare i download né rifare la raccolta dei proxy; si sceglie se metterli in fondo o subito dopo il file in corso, e i link già presenti nella sessione vengono segnalati prima di aggiungerli.
 - **Link a cartella Mega** (`/folder/`): la cartella viene espansa nei singoli file, salvati ad albero sotto un'unica cartella col nome originale (vedi la guida).

@@ -41,7 +41,7 @@ from PyQt6.QtWidgets import (
 )
 
 from src.gui import style as _style
-from src.gui.i18n import TR, t
+from src.gui.i18n import TR, t, tn
 from src.gui.error_render import ABANDON_ALIASES, render_error, render_queue_cause
 from src.gui.format_helpers import fmt_bytes as _fmt_bytes, fmt_speed as _fmt_speed_stat, link_caption
 from src.gui.jobs_model import (
@@ -443,9 +443,11 @@ class _EmptyState(QWidget):
 
     paste_clicked = pyqtSignal()
     import_clicked = pyqtSignal()
+    recover_clicked = pyqtSignal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self._partial_count = 0
         self.setObjectName("queueSurface")
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground)
         layout = QVBoxLayout(self)
@@ -468,11 +470,15 @@ class _EmptyState(QWidget):
         self._btn.setProperty("primary", "true")
         self.setFocusProxy(self._btn)
         self._btn.clicked.connect(self.paste_clicked)
+        self._recover = QPushButton()
+        self._recover.clicked.connect(self.recover_clicked)
         actions.addWidget(self._btn)
         self._import_btn = QPushButton()
         self._import_btn.clicked.connect(self.import_clicked)
         actions.addWidget(self._import_btn)
+        actions.addWidget(self._recover)
         actions.addStretch()
+        self._actions = actions
         layout.addSpacing(6)
         layout.addLayout(actions)
         layout.addStretch()
@@ -495,11 +501,33 @@ class _EmptyState(QWidget):
         _style.utility_icon("download", p["accent_active"]).paint(painter, rect.adjusted(11, 11, -11, -11))
 
     def retranslate(self) -> None:
-        button_label = t("controls.paste_links")
-        self._msg.setText(t("jobs_panel.empty_title"))
-        self._sub.setText(t("jobs_panel.empty_hint"))
-        self._btn.setText(button_label)
+        count = self._partial_count
+        self._msg.setText(tn("partial.count", count) if count else t("jobs_panel.empty_title"))
+        self._sub.setText(t("partial.start_hint") if count else t("jobs_panel.empty_hint"))
+        self._recover.setText(t("partial.title"))
+        self._btn.setText(t("controls.paste_links"))
         self._import_btn.setText(t("link_panel.import"))
+
+    def set_partial_count(self, count: int) -> None:
+        if count == self._partial_count:
+            return
+        previous_default = self.focusProxy()
+        self._partial_count = count
+        primary_button = self._recover if count else self._btn
+        order = (self._recover, self._btn, self._import_btn) if count else (self._btn, self._import_btn, self._recover)
+        for index, button in enumerate(order, start=1):
+            self._actions.removeWidget(button)
+            self._actions.insertWidget(index, button)
+        for button, primary in ((self._btn, not count), (self._recover, bool(count))):
+            button.setProperty("primary", "true" if primary else "false")
+            button.style().unpolish(button)
+            button.style().polish(button)
+            button.updateGeometry()
+        self.setFocusProxy(primary_button)
+        if previous_default.hasFocus():
+            primary_button.setFocus(Qt.FocusReason.OtherFocusReason)
+        self.layout().activate()
+        self.retranslate()
 
     def refresh_theme(self) -> None:
         self.update()
@@ -512,6 +540,7 @@ class JobsPanel(QWidget):
     cancel_job_requested = pyqtSignal(int, bool)  # file_id, delete_folder
     delete_folder_requested = pyqtSignal(int)  # file_id
     import_requested = pyqtSignal()
+    recovery_requested = pyqtSignal()
     paste_links_requested = pyqtSignal()      # empty-state paste button
     restart_job_requested = pyqtSignal(int)   # file_id
     restart_all_failed_requested = pyqtSignal()
@@ -577,6 +606,7 @@ class JobsPanel(QWidget):
         self.setFocusProxy(self._empty)
         self._empty.paste_clicked.connect(self.paste_links_requested)
         self._empty.import_clicked.connect(self.import_requested)
+        self._empty.recover_clicked.connect(self.recovery_requested)
         layout.addWidget(self._empty, 1)
 
         # Scroll area per le card: solo scroll verticale, mai orizzontale.
@@ -599,6 +629,9 @@ class JobsPanel(QWidget):
         self._on_aggregates_changed()
 
     # ---- gestione card ---------------------------------------------------
+
+    def set_partial_count(self, count: int) -> None:
+        self._empty.set_partial_count(count)
 
     def _update_visibility(self, counts: dict[str, int] | None = None) -> None:
         has_cards = bool(self._cards)

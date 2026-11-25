@@ -46,6 +46,7 @@ from src.core.config import (
 from src.core.download_history import extract_handle, record_completed
 from src.core.failed_log import log_failed_link
 from src.core.sources_stats import log_validation_result
+from src.core.partial_downloads import PartialDownload
 from src.core.state import SessionState
 from src.downloader.worker import DownloadWorker
 from src.proxy import proxy_cache
@@ -322,6 +323,7 @@ class DownloadOrchestrator(QObject):
         # raccoglie i proxy). Portano gia' il file_id definitivo, altrimenti
         # un'aggiunta a caldo in quella finestra riceverebbe identificativi
         # che _spawn_workers poi rinumera.
+        self.recovery_targets: dict[int, PartialDownload] = {}
         self._pending_jobs: list[tuple[int, str]] = []
         # Coda dei link non ancora avviati, come (file_id, url).
         # Mantiene il file_id originale per coerenza con le righe del ProgressPanel.
@@ -400,6 +402,7 @@ class DownloadOrchestrator(QObject):
         speed_admission_bps: int | None = None,
         link_capacity_mbit: float | None = None,
         output_root: Path | None = None,
+        recoveries: dict[str, PartialDownload] | None = None,
     ) -> None:
         if concurrency is not None:
             self.max_concurrent = max(1, int(concurrency))
@@ -551,6 +554,8 @@ class DownloadOrchestrator(QObject):
         self._workers_spawned = False
         self._setup_failed = False
         self._pending_jobs = [(self._allocate_file_id(), u) for u in links]
+        remaining = dict(recoveries or {})
+        self.recovery_targets = {fid: remaining.pop(url) for fid, url in self._pending_jobs if url in remaining}
         # F3/F4: passa il cap e i parametri speed test al thread di setup.
         # use_speed_test copre sia speed_selection (throughput+N5) sia
         # speed_admission disaccoppiato (solo ammissione, score+N normale).
@@ -745,6 +750,7 @@ class DownloadOrchestrator(QObject):
             connections_per_file=self.connections_per_file,
             segment_max_duration_s=self.segment_max_duration_s,
             output_root=self.output_root,
+            **({"recovery": self.recovery_targets[file_id]} if file_id in self.recovery_targets else {}),
         )
         worker.setObjectName(f"Worker-{file_id}")
         worker.progress.connect(self.progress)
@@ -913,7 +919,7 @@ class DownloadOrchestrator(QObject):
         if not self._cache_save_timer.isActive():
             self._cache_save_timer.start()
 
-    def add_jobs(self, links: list[str], at_top: bool = False) -> list[int]:
+    def add_jobs(self, links: list[str], at_top: bool = False, *, recovery: PartialDownload | None = None) -> list[int]:
         """Aggiunge link a una sessione GIA' avviata, senza rifare la raccolta
         dei proxy e senza toccare i download in corso.
 
@@ -936,7 +942,11 @@ class DownloadOrchestrator(QObject):
         if self._setup_failed:
             log.warning("add_jobs senza proxy validi: rifiutato")
             return []
+        if recovery and len(links) != 1:
+            return []
         entries = [(self._allocate_file_id(), url) for url in links]
+        if recovery:
+            self.recovery_targets[entries[0][0]] = recovery
         self._reactivate_session()
         target = self._queue if self._workers_spawned else self._pending_jobs
         if at_top:

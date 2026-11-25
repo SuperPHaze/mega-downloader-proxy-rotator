@@ -109,6 +109,12 @@ def load_history() -> dict[str, dict]:
     return {rec["handle"]: rec for rec in _records(_path())}
 
 
+def completion_records() -> Iterator[dict]:
+    """Completamenti dal più recente, inclusi i registri ruotati."""
+    for path in history_paths(LOGS_DIR):
+        yield from reversed(list(_records(path)))
+
+
 @dataclass(frozen=True)
 class HistoryEntry:
     name: str
@@ -120,14 +126,13 @@ class HistoryEntry:
 def history_entries() -> list[HistoryEntry]:
     """Tutti i completamenti conservati, dal più recente, inclusi i download ripetuti."""
     entries = []
-    for path in history_paths(LOGS_DIR):
-        for rec in reversed(list(_records(path))):
-            name, date = rec.get("file_name"), rec.get("completed_at")
-            size, destination = rec.get("file_size"), rec.get("path")
-            entries.append(HistoryEntry(
-                name if isinstance(name, str) and name else rec["handle"],
-                date if isinstance(date, str) else "",
-                size if isinstance(size, int) else -1,
-                destination if isinstance(destination, str) else "",
-            ))
+    for rec in completion_records():
+        name, date = rec.get("file_name"), rec.get("completed_at")
+        size, destination = rec.get("file_size"), rec.get("path")
+        entries.append(HistoryEntry(
+            name if isinstance(name, str) and name else rec["handle"],
+            date if isinstance(date, str) else "",
+            size if isinstance(size, int) else -1,
+            destination if isinstance(destination, str) else "",
+        ))
     return entries

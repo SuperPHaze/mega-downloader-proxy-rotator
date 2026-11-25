@@ -55,6 +55,7 @@ A **desktop app for Windows and macOS** (Python + PyQt6) that downloads files **
 - **Streaming decryption** to disk (constant RAM even for multi-GB files), `.part` pattern + atomic rename.
 - **Resume** of interrupted downloads and **restart** of failed/abandoned/cancelled ones (only the missing fragments are re-fetched).
 - **Configurable per-file time limit**; past the threshold the file is abandoned.
+- **Recover downloads** is available even when the queue is empty. Select an interrupted file in the download folder to see the saved bytes and resume the missing chunks. If there is no chunk record, you can confirm **Restart from zero**. With the queue open, the same list is available under **Partial files**.
 - **History** lists completed downloads from this and previous sessions. Search by file name, check the completion date and size, or open the folder where a file was saved.
 - **Add links to a running session**: new links join the queue without stopping the downloads or redoing the proxy collection; you choose whether to put them at the end or right after the current file, and links already in the session are flagged before they are added.
 - **Mega folder links** (`/folder/`): the folder is expanded into its individual files, saved as a tree under a single folder carrying the original name (see the guide).

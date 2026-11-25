@@ -6,8 +6,9 @@ import os
 import shutil
 import sys
 from pathlib import Path
+from threading import Event
 
-from PyQt6.QtCore import QEvent, QSize, Qt, QTimer, QUrl
+from PyQt6.QtCore import QEvent, QSize, Qt, QThreadPool, QTimer, QUrl
 from PyQt6.QtGui import QAction, QDesktopServices, QKeySequence
 from PyQt6.QtWidgets import (
     QApplication,
@@ -37,9 +38,11 @@ from src.core.config import (
 )
 from src.core.file_naming import folder_job_output_dir, sanitize_file_name
 from src.core.icon_loader import build_app_icon
+from src.core.partial_downloads import PartialDownload, RecoveryChanged, forget_source, link_handle
 from src.core.state import SessionState
 from src.downloader.orchestrator import DownloadOrchestrator
 from src.core.mega_links import is_folder_link, parse_folder_job_url
+from src.downloader.target_file import target_lock
 from src.downloader.worker import job_output_dir
 from src.gui.folder_expand_worker import FolderExpandWorker
 from src.gui.about_dialog import AboutDialog
@@ -50,7 +53,9 @@ from src.gui.error_render import ABANDON_ALIASES, render_error, resolve_payloads
 from src.gui.i18n import TR, t, tn
 from src.gui.history_dialog import HistoryDialog
 from src.gui.job_detail_dialog import JobDetailDialog
+from src.gui.jobs_model import STATUS_QUEUED, STATUS_RUNNING
 from src.gui.jobs_panel import JobsPanel, status_label
+from src.gui.partial_dialog import PartialDialog, PartialScan, ScanSignals
 from src.gui.maintenance_dialog import MaintenanceDialog
 from src.gui.link_panel import (
     LinkPanel,
@@ -110,6 +115,16 @@ class MainWindow(QMainWindow):
         self._completed_files = 0
         self._open_dialogs: dict[int, JobDetailDialog] = {}
         self._history_dialog: HistoryDialog | None = None
+        self._partial_dialog: PartialDialog | None = None
+        self._partials: list[PartialDownload] = []
+        self._partial_root: Path | None = None
+        self._partial_generation = 0
+        self._partial_stop = Event()
+        self._partial_scan_pending = False
+        self._restored_urls: set[str] = set()
+        self._partial_signals = ScanSignals()
+        self._partial_signals.finished.connect(self._partials_found, Qt.ConnectionType.QueuedConnection)
+        self._draft_recoveries: dict[str, PartialDownload] = {}
         self._links_by_id: dict[int, str] = {}
         self._pending_delete: set[int] = set()
         # Cartella radice dei download della sessione corrente (None = default).
@@ -239,7 +254,7 @@ class MainWindow(QMainWindow):
         self.jobs_panel.setFocus(Qt.FocusReason.OtherFocusReason)
         self._setup_menu_actions()
         self._debug_panel.hide_requested.connect(lambda: self._actions["debug.button"].setChecked(False))
-        for key in ("history.button", "debug.button"):
+        for key in ("partial.button", "history.button", "debug.button"):
             button = QToolButton()
             button.setObjectName("utilityAction")
             button.setDefaultAction(self._actions[key])
@@ -247,6 +262,9 @@ class MainWindow(QMainWindow):
             button.setIconSize(QSize(16, 16))
             button.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
             footer.addWidget(button)
+            if key == "partial.button":
+                self._partial_shortcut = button
+                button.hide()
         self._refresh_utility_actions()
 
         # Connessioni.
@@ -270,6 +288,7 @@ class MainWindow(QMainWindow):
         self.jobs_panel.delete_folder_requested.connect(self._on_delete_folder_requested)
         self.jobs_panel.paste_links_requested.connect(self._on_add_links_requested)
         self.jobs_panel.import_requested.connect(self.link_panel.import_btn.click)
+        self.jobs_panel.recovery_requested.connect(self._open_partials)
         self.jobs_panel.restart_job_requested.connect(self._on_restart_job_requested)
         self.jobs_panel.restart_all_failed_requested.connect(self._on_restart_all_failed_requested)
 
@@ -292,6 +311,7 @@ class MainWindow(QMainWindow):
         self._run_speedtest()
         # Ripristino sessione: differito all'avvio del loop eventi (dopo che la
         # finestra è visibile), così il prompt ha un parent valido.
+        QTimer.singleShot(0, self._scan_partials)
         QTimer.singleShot(0, self._maybe_restore_session)
 
         # Heartbeat diagnostico: una riga INFO periodica su app.log con
@@ -311,6 +331,7 @@ class MainWindow(QMainWindow):
         role = QAction.MenuRole
         for key, shortcut, menu_role, slot in (
             ("controls.paste_links", "Ctrl+L", role.NoRole, self._on_add_links_requested),
+            ("partial.button", "Ctrl+Shift+R", role.NoRole, self._open_partials),
             ("history.button", "Ctrl+Y", role.NoRole, self._open_history),
             ("debug.button", "Ctrl+Shift+D", role.NoRole, self._show_debug),
             ("controls.settings", "Ctrl+,", role.PreferencesRole, self.controls.show_settings),
@@ -331,11 +352,115 @@ class MainWindow(QMainWindow):
             self._actions[key] = action
 
     def _refresh_utility_actions(self) -> None:
+        partial = self._actions["partial.button"]
+        partial.setIcon(utility_icon("download", CURRENT_PALETTE["text_dim"]))
+        partial.setToolTip(t("partial.title"))
         for key in ("history", "debug"):
             action = self._actions[f"{key}.button"]
             action.setIcon(utility_icon(key, CURRENT_PALETTE["text_dim"]))
             shortcut = action.shortcut().toString(QKeySequence.SequenceFormat.NativeText)
             action.setToolTip(f"{t(f'{key}.tooltip')} ({shortcut})")
+
+    def _scan_partials(self) -> None:
+        root = Path(self.controls.get_download_dir() or OUTPUT_DIR).absolute()
+        if root != self._partial_root:
+            self._partials = []
+            self.jobs_panel.set_partial_count(0)
+            self._partial_root = root
+        self._partial_generation += 1
+        self._partial_scan_pending = True
+        if self._restored_urls:
+            self.controls.start_btn.setEnabled(False)
+        if self._partial_dialog:
+            self._partial_dialog.set_root(root)
+            self._partial_dialog.set_entries(self._available_partials(), busy=True)
+        links = [*self._links_by_id.values(), *self.link_panel.get_links()]
+        self._partial_stop.set()
+        self._partial_stop = Event()
+        task = PartialScan(root, links, self._partial_generation, self._partial_signals, self._partial_stop)
+        QThreadPool.globalInstance().start(task)
+
+    def _active_handles(self) -> set[str]:
+        return {handle for j in self.jobs_panel.model.jobs_iter()
+                if j.status in (STATUS_QUEUED, STATUS_RUNNING) and (handle := link_handle(j.url))}
+
+    def _available_partials(self) -> list[PartialDownload]:
+        active = self._active_handles()
+        selected = {entry.target for entry in self._draft_recoveries.values()}
+        return [p for p in self._partials if p.target not in selected
+                and (p.handle or link_handle(p.url)) not in active]
+
+    def _partials_found(self, generation: int, entries: list[PartialDownload], error: str) -> None:
+        if generation != self._partial_generation:
+            return
+        self._partial_scan_pending = False
+        self._partials = entries
+        self._match_restored_partials()
+        available = self._available_partials()
+        self.jobs_panel.set_partial_count(len(available))
+        if self._partial_dialog:
+            self._partial_dialog.set_entries(available, error=error)
+
+    def _match_restored_partials(self) -> None:
+        if not self._restored_urls:
+            return
+        if self._partial_scan_pending:
+            self.controls.start_btn.setEnabled(False)
+            return
+        for url in self._restored_urls:
+            handle = link_handle(url)
+            candidates = [p for p in self._partials if p.saved and p.handle == handle]
+            if len(candidates) == 1:
+                self._draft_recoveries.setdefault(url, candidates[0])
+        self.controls.set_link_count(len(self.link_panel.get_links()))
+
+    def _open_partials(self) -> None:
+        if not self._partial_dialog:
+            self._partial_dialog = PartialDialog(self)
+            self._partial_dialog.refresh_requested.connect(self._scan_partials)
+            self._partial_dialog.recover_requested.connect(self._recover_partial)
+        self._partial_dialog.showNormal()
+        self._partial_dialog.raise_()
+        self._partial_dialog.activateWindow()
+        self._scan_partials()
+
+    def _recover_partial(self, item: PartialDownload, url: str) -> None:
+        dialog = self._partial_dialog
+        handle = link_handle(url)
+        if not handle or handle in self._active_handles() or item not in self._available_partials():
+            QMessageBox.information(dialog, t("partial.title"), t("partial.busy"))
+            self._scan_partials()
+            return
+        try:
+            with target_lock(item.target):
+                item.validate(handle, item.expected_size or item.size, item.target)
+        except RecoveryChanged:
+            QMessageBox.warning(dialog, t("partial.title"), t("err.partial_changed"))
+            self._scan_partials()
+            return
+        draft = self.link_panel.get_links()
+        if draft:
+            # I link già preparati restano una bozza finché l'utente preme Avvia.
+            duplicate = next((u for u in draft if link_handle(u) == handle), None)
+            if duplicate:
+                draft[draft.index(duplicate)] = url
+            else:
+                draft.append(url)
+            self._restored_urls.discard(url)
+            self._draft_recoveries[url] = item
+            self.link_panel.set_links(draft)
+            self._set_status_t("partial.draft")
+        elif self._session_is_open():
+            ids = self.orchestrator.add_jobs([url], recovery=item)
+            if not ids:
+                QMessageBox.information(dialog, t("partial.title"), t("main_window.add_refused"))
+                return
+            self._register_added_jobs(ids, [url])
+            self.jobs_panel.model.set_recovery_info(ids[0], item.target, item.saved, item.expected_size)
+            self._show_session()
+        elif not self._start_with_links([url], recoveries={url: item}):
+            return
+        dialog.accept()
 
     def _open_history(self) -> None:
         if self._history_dialog is None:
@@ -392,6 +517,10 @@ class MainWindow(QMainWindow):
 
     def _show_link_draft(self, count: int) -> None:
         self.controls.set_link_count(count)
+        links = set(self.link_panel.get_links())
+        self._restored_urls.intersection_update(links)
+        self._draft_recoveries = {u: p for u, p in self._draft_recoveries.items() if u in links}
+        self._partial_shortcut.setVisible(bool(count) or self._session_is_open())
         self.link_panel.setVisible(bool(count))
         self.jobs_panel.setVisible(not count)
         show_session = not count and self._session_is_open()
@@ -399,6 +528,7 @@ class MainWindow(QMainWindow):
         self.controls.paste_btn.setVisible(show_session)
 
     def _show_session(self) -> None:
+        self._partial_shortcut.show()
         self.proxy_bar.set_session_visible(True)
         self.link_panel.hide()
         self.jobs_panel.show()
@@ -694,9 +824,11 @@ class MainWindow(QMainWindow):
             )
             self.controls.set_download_dir("")
             save_download_dir("")
+            self._scan_partials()
             self._set_status_t("main_window.dir_reset")
             return
         save_download_dir(path)
+        self._scan_partials()
         if path:
             self._set_status_t("main_window.dir_set", path=path)
         else:
@@ -1001,20 +1133,31 @@ class MainWindow(QMainWindow):
         else:
             self._add_links_to_session(unique, at_top=position == POSITION_TOP)
 
-    def _start_with_links(self, links: list[str]) -> None:
-        links = confirm_already_downloaded(links, self)
-        if links is None:
-            return
+    def _start_with_links(self, links: list[str], *, recoveries: dict[str, PartialDownload] | None = None) -> bool:
+        recoveries = dict(self._draft_recoveries if recoveries is None else recoveries)
+        # La scelta esplicita del parziale tiene conto dell'avviso mostrato nello storico.
+        explicit = recoveries.keys() - self._restored_urls
+        normal = [url for url in links if url not in explicit]
+        checked = confirm_already_downloaded(normal, self) if normal else []
+        if checked is None:
+            return False
+        accepted = set(checked) | explicit
+        links = [url for url in links if url in accepted]
         if not links:
             self._set_status_t("main_window.nothing_to_download")
-            return
+            return False
 
         if self.orchestrator is not None:
             if not self.orchestrator.shutdown():
                 self._set_status_t("main_window.previous_session_closing")
-                return
+                return False
 
         self.jobs_panel.reset(links)
+        remaining = dict(recoveries)
+        for file_id, url in enumerate(links):
+            item = remaining.pop(url, None)
+            if item:
+                self.jobs_panel.model.set_recovery_info(file_id, item.target, item.saved, item.expected_size)
         self.link_panel.set_links([])
         self._show_session()
         self._links_by_id = {i: u for i, u in enumerate(links)}
@@ -1100,7 +1243,9 @@ class MainWindow(QMainWindow):
             speed_selection_min_bps=speed_min_bps,
             link_capacity_mbit=link_mbit if link_mbit > 0 else None,
             output_root=self._active_output_root,
+            **({"recoveries": recoveries} if recoveries else {}),
         )
+        return True
 
     # ---- pausa / annullo globale -----------------------------------------
 
@@ -1151,7 +1296,9 @@ class MainWindow(QMainWindow):
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if reply == QMessageBox.StandardButton.Yes:
+            self._restored_urls = set(urls)
             self.link_panel.set_links(urls)
+            self._match_restored_partials()
             self._set_status_tn(
                 "main_window.restored_status", len(urls)
             )
@@ -1274,12 +1421,13 @@ class MainWindow(QMainWindow):
 
     def _on_delete_folder_requested(self, file_id: int) -> None:
         url = self._links_by_id.get(file_id)
-        is_folder_job = url is not None and parse_folder_job_url(url) is not None
+        single_file = ((url is not None and parse_folder_job_url(url) is not None)
+                       or (self.orchestrator and file_id in self.orchestrator.recovery_targets))
         # Le due varianti erano costruite a pezzi attorno al numero del
         # file: un frammento come « dalla cartella scaricata?» non e'
         # traducibile da solo, quindi ognuna e' ora una chiave intera.
         body_key = (
-            "main_window.delete_folder_job_body" if is_folder_job
+            "main_window.delete_folder_job_body" if single_file
             else "main_window.delete_folder_body"
         )
         confirm = QMessageBox.question(
@@ -1295,6 +1443,18 @@ class MainWindow(QMainWindow):
         # Job nato dall'espansione di una cartella: la cartella su disco e'
         # CONDIVISA con gli altri file dello stesso albero (alcuni magari
         # ancora in corso o gia' completati). Si elimina solo questo file.
+        recovery = self.orchestrator.recovery_targets.get(file_id) if self.orchestrator else None
+        if recovery is not None:
+            # Il vecchio ciclo può contenere altri file. Rimuovi solo l'inode selezionato.
+            try:
+                with target_lock(recovery.target):
+                    recovery.remove()
+            except (OSError, RecoveryChanged):
+                QMessageBox.warning(self, t("partial.title"), t("err.partial_changed"))
+                return
+            self._set_status_t("main_window.delete_file_done", file=file_id + 1, name=recovery.target.name)
+            self._scan_partials()
+            return
         folder_url = self._links_by_id.get(file_id)
         if folder_url is not None and parse_folder_job_url(folder_url) is not None:
             self._delete_folder_job_file(file_id, folder_url)
@@ -1322,7 +1482,10 @@ class MainWindow(QMainWindow):
             )
             return
         try:
+            parts = list(path.rglob("*.part"))
             shutil.rmtree(path)
+            for part in parts:
+                forget_source(part)
             log.info("Cartella eliminata: %s", path)
             self._set_status_t(
                 "main_window.delete_done", file=file_id + 1, name=path.name
@@ -1360,6 +1523,8 @@ class MainWindow(QMainWindow):
             try:
                 if target.is_file():
                     target.unlink()
+                    if target.name.endswith(".part"):
+                        forget_source(target)
                     removed += 1
             except OSError as exc:
                 log.warning("Impossibile eliminare %s: %s", target, exc)
@@ -1425,6 +1590,8 @@ class MainWindow(QMainWindow):
         for key, action in self._actions.items():
             action.setText(t(key))
         self._refresh_utility_actions()
+        if self._partial_dialog is not None:
+            self._partial_dialog.retranslate()
         if self._history_dialog is not None:
             self._history_dialog.retranslate()
         self._debug_panel.retranslate()
@@ -1553,6 +1720,8 @@ class MainWindow(QMainWindow):
         # e lasciarlo li' vuol dire lasciare un'icona fantasma finche' non ci
         # si passa sopra col mouse. Stessa ragione dell'attesa dei thread qui
         # sopra: cio' che l'app ha montato, l'app lo smonta.
+        self._partial_stop.set()
+        self._partial_generation += 1
         self._tray.shutdown()
         # Marcatore di chiusura volontaria: se nel log compare un SESSION
         # START senza questo prima del successivo START, e' stato un crash o

@@ -10,6 +10,9 @@ import logging
 import os
 import time
 from pathlib import Path
+
+from src.core.partial_downloads import forget_source, remember_source
+from src.downloader.target_file import target_lock
 from typing import Callable
 
 import requests
@@ -67,7 +70,7 @@ class MegaClient:
         output_dir: Path,
         progress_callback: Callable[[int], None] | None = None,
         speed_callback: Callable[[float, int, int], None] | None = None,
-        resolved_callback: Callable[[str, object, "Path"], None] | None = None,
+        resolved_callback: Callable[[str, object, Path], Path | None] | None = None,
     ) -> Path:
         try:
             from Crypto.Cipher import AES
@@ -93,7 +96,6 @@ class MegaClient:
         # Pattern .part + rename atomico: il client seriale non ha resume,
         # ma un download interrotto non deve mai lasciare un file con il nome
         # finale che il check del worker scambierebbe per completo.
-        part_path = final_path.with_suffix(final_path.suffix + ".part")
         log.info(
             "[serial] resolve ok: name=%s size=%d cdn_host=%s",
             file_name, file_size,
@@ -102,10 +104,19 @@ class MegaClient:
         # Notifica immediata al worker: nome file noto appena risolto.
         if resolved_callback is not None:
             try:
-                resolved_callback(file_name, file_size, final_path)
+                relocated = resolved_callback(file_name, file_size, final_path)
+                if isinstance(relocated, Path):
+                    final_path = relocated
             except Exception:
                 pass
 
+        with target_lock(final_path):
+            return self._transfer(mega_url, final_path, cdn_url, file_size, k, iv,
+                                  progress_callback, speed_callback, AES, Counter)
+
+    def _transfer(self, mega_url, final_path, cdn_url, file_size, k, iv, progress_callback,
+                  speed_callback, AES, Counter) -> Path:
+        part_path = final_path.with_name(final_path.name + ".part")
         k_str = a32_to_str(k)
         initial_counter = ((iv[0] << 32) + iv[1]) << 64
         counter = Counter.new(128, initial_value=initial_counter)
@@ -123,7 +134,11 @@ class MegaClient:
         last_pct = -1
         _speed_t = time.monotonic()
         _speed_bytes = 0
-        with open(part_path, "wb") as fp:
+        # Anche al cambio di modalità i blocchi registrati devono appartenere ai dati su disco.
+        with part_path.open("r+b" if part_path.exists() else "xb") as fp:
+            part_path.with_name(part_path.name + ".progress.json").unlink(missing_ok=True)
+            fp.truncate(0)
+            remember_source(part_path, mega_url, file_size)
             for chunk in resp.iter_content(chunk_size=_CHUNK):
                 if not chunk:
                     continue
@@ -156,6 +171,7 @@ class MegaClient:
             )
         # Download verificato: promuovi il .part al nome finale.
         os.replace(part_path, final_path)
+        forget_source(part_path)
         if progress_callback:
             try:
                 progress_callback(100)
