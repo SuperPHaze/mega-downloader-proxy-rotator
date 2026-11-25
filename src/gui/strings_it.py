@@ -24,6 +24,23 @@ STRINGS: dict[str, str | dict[str, str]] = {
     "workspace.details": "Dettagli sessione",
     "workspace.queue_title": "Coda di download",
     "workspace.file_menu": "File",
+    "history.button": "Storico",
+    "history.tooltip": "Mostra i download completati",
+    "history.title": "Storico dei download",
+    "history.search": "Cerca per nome del file",
+    "history.name": "Nome file",
+    "history.date": "Completato il",
+    "history.size": "Dimensione",
+    "history.empty": "I download completati appariranno qui.",
+    "history.no_match": "Nessun file corrisponde alla ricerca.",
+    "history.count": {"one": "{n} elemento", "other": "{n} elementi"},
+    "history.open_folder": "Apri cartella",
+    "history.unavailable": "La cartella registrata per questo download non è disponibile su questo computer.",
+    "debug.button": "Debug",
+    "debug.tooltip": "Mostra o nascondi il log nella finestra",
+    "debug.title": "Log di debug",
+    "debug.empty": "In attesa dei messaggi di questa sessione…",
+    "debug.hide": "Nascondi",
     "workspace.speed": "Velocità attuale",
     "workspace.volume": "Dati scaricati",
     "workspace.remaining": "Tempo rimanente",
@@ -37,7 +54,7 @@ STRINGS: dict[str, str | dict[str, str]] = {
     "controls.minimize_tooltip_tray_mac": "La finestra si nasconde nella barra dei menu. Premi per scegliere di nuovo.",
     "tray.ask_dock": "Nel Dock",
     "tray.ask_menu_bar": "Nella barra dei menu",
-    "link_panel.edit": "Modifica link",
+    "link_panel.edit": "Apri elenco link",
     "jobs_panel.filter_all": "Tutti",
     "jobs_panel.filtered_empty": "Nessun download in questa vista. Seleziona Tutti per vedere la coda.",
     "jobs_panel.details": "Dettagli",
@@ -208,7 +225,10 @@ STRINGS: dict[str, str | dict[str, str]] = {
 
     # ---- finestra "Incolla link Mega" --------------------------------------
     "paste.title": "Incolla link Mega",
-    "paste.instructions": "Incolla link Mega (uno per riga):",
+    "paste.instructions": "Incolla un link Mega per riga.",
+    "paste.list_title": "Elenco link",
+    "paste.list_hint": "Puoi aggiungere, correggere o rimuovere i link. Inserisci un link per riga.",
+    "paste.save_list": "Salva elenco",
     "paste.valid": "Validi: {n}",
     "paste.folders": "Cartelle: {n}",
     "paste.invalid": "Non validi: {n}",
@@ -260,6 +280,14 @@ STRINGS: dict[str, str | dict[str, str]] = {
     "proxy_bar.card_band": "Velocità linea",
     "proxy_bar.card_band_proxy": "Velocità proxy",
     "proxy_bar.speedtest_button": "Misura linea",
+    "proxy_bar.speedtest_running": "Misurazione…",
+    "proxy_bar.speedtest_retry": "Riprova misura",
+    "proxy_bar.unavailable": "Non disponibile",
+    "proxy_bar.line_http": "Il server di misura ha risposto con HTTP {status}. Riprova tra poco.",
+    "proxy_bar.line_timeout": "Il server di misura non ha risposto in tempo.",
+    "proxy_bar.line_network": "Il test non è riuscito. Controlla la connessione e riprova.",
+    "proxy_bar.line_incomplete": "Il trasferimento di prova si è interrotto.",
+    "proxy_bar.last_measurement": "È visibile l’ultima misura riuscita.",
     "proxy_bar.speedtest_tooltip": (
         "Misura la banda della linea (download diretto, senza proxy)."
     ),
@@ -824,24 +852,23 @@ STRINGS: dict[str, str | dict[str, str]] = {
     "job_log.restart": "----- Riavvio richiesto -----",
 
     # ---- finestra di dettaglio di un job ------------------------------------
-    "job_detail.title": "Dettaglio job #{file}",
+    "job_detail.title": "Dettagli download {file}",
+    "job_detail.named_title": "Dettagli · {name}",
     "job_detail.abandoned_title": "Link abbandonato",
     "job_detail.copy": "Copia",
-    "job_detail.abandoned_info": (
-        "Tentativi falliti: {attempts}  •  Ultimo errore: {error}"
-    ),
     "job_detail.not_available": "n/d",
-    "job_detail.url_label": "URL:",
-    "job_detail.summary": (
-        "Stato: <b>{status}</b>  •  Avanzamento: {progress}%  •  "
-        "Tentativi: {attempts}  •  Errori: {errors}  •  "
-        "Durata: {duration}"
-    ),
-    "job_detail.summary_last_error": "  •  Ultimo errore: {error}",
-    "job_detail.ip_history": "Cronologia IP usati:",
-    "job_detail.col_timestamp": "Timestamp",
+    "job_detail.url_label": "URL del download",
+    "job_detail.status": "Stato",
+    "job_detail.progress": "Avanzamento",
+    "job_detail.attempts": "Tentativi",
+    "job_detail.errors": "Errori",
+    "job_detail.duration": "Durata",
+    "job_detail.no_ips": "Nessun indirizzo IP registrato.",
+    "job_detail.no_attempts": "Nessun tentativo registrato.",
+    "job_detail.ip_history": "Cronologia IP",
+    "job_detail.col_timestamp": "Ora",
     "job_detail.col_ip": "IP",
-    "job_detail.attempts_log": "Log dei tentativi:",
+    "job_detail.attempts_log": "Log dei tentativi",
     "job_detail.close": "Chiudi",
 
     # ---- errori: il catalogo del motore, innestato ---------------------------

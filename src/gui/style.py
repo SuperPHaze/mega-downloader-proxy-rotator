@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import QPointF, QRectF, Qt
 from PyQt6.QtGui import QColor, QFont, QFontDatabase, QIcon, QPainter, QPainterPath, QPalette, QPen, QPixmap
 from PyQt6.QtWidgets import QApplication
 
@@ -16,27 +16,27 @@ MARGIN_SM = 6
 MARGIN_MD = 8
 MARGIN_LG = 12
 
-# Superfici neutre ispirate a Tokyo Night Day/Night. Il corallo del progetto segna azioni e avanzamento.
+# Il viola distingue i trasferimenti attivi; il rosso è riservato agli errori.
 PALETTE_LIGHT: dict[str, str] = {
-    "bg": "#eff0f4",
-    "panel": "#fafafd",
-    "panel_alt": "#e1e2e8",
+    "bg": "#f3f2f7",
+    "panel": "#ffffff",
+    "panel_alt": "#e8e6ef",
     "text": "#242738",
     "text_dim": "#545b70",
     "border": "#d8dae3",
     "border_strong": "#b7bbcb",
     "scroll_thumb": "#8a90a4",
     "scroll_hover": "#686e84",
-    "accent_ok": "#556078",
-    "completed_track": "#969caf",
-    "accent_info": "#a82f36",
+    "accent_ok": "#34694f",
+    "completed_track": "#66967f",
+    "accent_info": "#6344a5",
     "accent_warn": "#815326",
     "accent_fail": "#a12d37",
-    "accent_active": "#c53a3f",
-    "primary": "#c53a3f",
+    "accent_active": "#7452b2",
+    "primary": "#68469f",
     "on_primary": "#ffffff",
-    "primary_hover": "#ae3037",
-    "primary_pressed": "#95272f",
+    "primary_hover": "#5b3b92",
+    "primary_pressed": "#4c307c",
     "primary_disabled_bg": "#dfe0e7",
     "primary_disabled_fg": "#585f73",
     "danger": "#ac303a",
@@ -45,52 +45,52 @@ PALETTE_LIGHT: dict[str, str] = {
     "row": "#fafafd",
     "row_alt": "#f1f2f6",
     "status_bg_queued": "#e8e9ef",
-    "status_bg_running": "#f6e6e9",
-    "status_bg_completed": "#e8e9ef",
+    "status_bg_running": "#efe9fa",
+    "status_bg_completed": "#e5f1ea",
     "status_bg_failed": "#f6e6e9",
     "status_bg_cancelled": "#eceaf0",
     "status_bg_abandoned": "#f6e6e9",
     "card_bg": "#fafafd",
     "card_border": "#dcdee7",
-    "selection_bg": "#e0e2ec",
+    "selection_bg": "#e8e2f3",
 }
 
 PALETTE_DARK: dict[str, str] = {
-    "bg": "#1a1b26",
-    "panel": "#222430",
-    "panel_alt": "#313443",
+    "bg": "#232331",
+    "panel": "#2e2e40",
+    "panel_alt": "#3d3d50",
     "text": "#e2e5f0",
     "text_dim": "#aab0c4",
-    "border": "#353849",
-    "border_strong": "#53586d",
+    "border": "#414154",
+    "border_strong": "#5a596d",
     "scroll_thumb": "#60667f",
     "scroll_hover": "#8b91aa",
-    "accent_ok": "#b0b7ce",
-    "completed_track": "#676d84",
-    "accent_info": "#ff8186",
+    "accent_ok": "#9bd3b5",
+    "completed_track": "#75a58b",
+    "accent_info": "#c9aaff",
     "accent_warn": "#e3bb87",
     "accent_fail": "#ffa0a6",
-    "accent_active": "#ff777b",
-    "primary": "#ff777b",
+    "accent_active": "#bb97eb",
+    "primary": "#c0a1ed",
     "on_primary": "#20202b",
-    "primary_hover": "#ff8c90",
-    "primary_pressed": "#ed666f",
+    "primary_hover": "#d1b8f4",
+    "primary_pressed": "#a98cda",
     "primary_disabled_bg": "#383b4b",
     "primary_disabled_fg": "#a5abc0",
     "danger": "#ff9499",
     "danger_hover_bg": "#40303d",
     "danger_hover": "#4a303d",
-    "row": "#222430",
-    "row_alt": "#282a38",
-    "status_bg_queued": "#303242",
-    "status_bg_running": "#40303d",
-    "status_bg_completed": "#303242",
+    "row": "#2e2e40",
+    "row_alt": "#333346",
+    "status_bg_queued": "#3a3a4c",
+    "status_bg_running": "#463a5a",
+    "status_bg_completed": "#32473e",
     "status_bg_failed": "#402e3a",
     "status_bg_cancelled": "#393644",
     "status_bg_abandoned": "#402e3a",
-    "card_bg": "#222430",
-    "card_border": "#343747",
-    "selection_bg": "#363a4e",
+    "card_bg": "#2e2e40",
+    "card_border": "#414154",
+    "selection_bg": "#49405b",
 }
 
 # Palette corrente: aggiornata da apply_theme() in-place cosi' i riferimenti
@@ -196,7 +196,7 @@ QPushButton[danger="true"]:disabled {{
     background-color: {panel_alt};
 }}
 
-QLineEdit, QTextEdit, QPlainTextEdit, QListWidget, QComboBox, QSpinBox {{
+QLineEdit#historySearch, QTextEdit, QPlainTextEdit, QListWidget {{
     background-color: {panel};
     color: {text};
     border: 1px solid {border};
@@ -206,15 +206,20 @@ QLineEdit, QTextEdit, QPlainTextEdit, QListWidget, QComboBox, QSpinBox {{
     selection-color: {text};
 }}
 QPlainTextEdit, QTextEdit {{
-    font-size: 9pt;
     background-color: {panel_alt};
 }}
-QComboBox QAbstractItemView {{
-    background-color: {panel};
-    color: {text};
-    selection-background-color: {selection_bg};
-    border: 1px solid {border};
+QTextEdit#linkEditor {{ background: {panel}; padding: 2px; border-radius: 8px; }}
+QTextEdit#linkEditor:focus {{ border: 1px solid {accent_info}; }}
+QLineEdit#historySearch {{ border-radius: 7px; min-height: 24px; padding: 3px 10px; }}
+QLineEdit#detailUrl {{
+    background: {panel}; color: {text}; border: 1px solid {border_strong}; border-radius: 6px;
+    padding: 4px 10px; min-height: 22px; font-size: 14px; selection-background-color: {selection_bg};
+    selection-color: {text};
 }}
+QLineEdit#detailUrl:focus {{ border-color: {accent_info}; }}
+QFrame#detailMetrics {{ background: {panel}; border: 1px solid {border}; border-radius: 8px; }}
+QLabel#detailCaption {{ color: {text_dim}; font-size: 13px; }}
+QLabel#detailValue {{ color: {text}; font-size: 16px; font-weight: 600; }}
 
 QTableView {{
     background-color: {panel};
@@ -269,35 +274,43 @@ QLabel#pageTitle {{ font-size: 22px; font-weight: 600; }}
 QLabel#emptyTitle {{ font-size: 18px; font-weight: 500; }}
 QLabel#sectionTitle {{ font-size: 14px; font-weight: 500; }}
 QLabel#metricValue {{ font-size: 18px; font-weight: 500; }}
-QLabel#fileName {{ font-size: 14px; font-weight: 500; }}
+QLabel#fileName {{ font-size: 15px; font-weight: 600; }}
 QLabel#statusBadge, QLabel#secondaryText, QLabel#transferRate {{
     color: {text_dim}; font-size: 12px; font-weight: 400;
 }}
 QLabel#transferPercent {{ color: {text}; font-size: 12px; }}
-QWidget#queueSurface {{ background: {panel}; border: 1px solid {border}; border-radius: 8px; }}
-QWidget#queueList {{ background: {panel}; }}
-QFrame#card {{ background: {panel}; border: none; border-bottom: 1px solid {card_border}; }}
+QWidget#queueSurface, QWidget#queueList, QScrollArea#transferList {{ background: {bg}; border: none; }}
+QFrame#card {{ background: {panel}; border: 1px solid {card_border}; border-radius: 10px; }}
+QFrame#utilityBar, QFrame#debugPanel {{ background: {panel}; border: 1px solid {border}; border-radius: 11px; }}
+QPlainTextEdit#debugOutput {{ background: {bg}; padding: 3px 5px; border-radius: 5px; }}
+QPlainTextEdit#debugOutput:focus {{ border-color: {accent_info}; }}
+QFrame#filterGroup {{ background: {panel_alt}; border-radius: 7px; }}
+QTableView#historyTable {{ border-radius: 6px; }}
+QTableView#ipHistory::item, QTableView#historyTable::item {{ padding: 0 8px; }}
 QFrame#jobDetails {{ border: none; border-top: 1px solid {border}; }}
 QFrame#failureNotice {{ background: {status_bg_failed}; border-radius: 5px; }}
 QLabel#failureTitle {{ color: {accent_fail}; font-weight: 500; }}
 QFrame#hairline {{ background: {border}; }}
 QWidget#updateBanner {{ background: {panel_alt}; border-radius: 5px; }}
 QPushButton#queueFilter {{
-    background: transparent; color: {text_dim}; border: none; border-bottom: 2px solid transparent;
-    border-radius: 0; min-height: 22px; padding: 2px 8px;
+    background: transparent; color: {text_dim}; border: 1px solid transparent;
+    border-radius: 5px; min-height: 20px; padding: 1px 7px;
 }}
-QPushButton#queueFilter:checked {{ border-bottom-color: {accent_active}; color: {text}; }}
-QToolButton#detailsToggle, QPushButton#textAction, QToolButton#rowAction, QToolButton#rowMenu {{
+QPushButton#queueFilter:checked {{ background: {panel}; border-color: {border}; color: {text}; }}
+QToolButton#detailsToggle, QToolButton#utilityAction, QPushButton#textAction, QToolButton#rowAction, QToolButton#rowMenu {{
     background: transparent; color: {text_dim}; border: 1px solid transparent;
     border-radius: 4px; min-height: 22px; padding: 1px 5px;
 }}
-QToolButton#detailsToggle:hover, QPushButton#textAction:hover, QPushButton#queueFilter:hover,
+QToolButton#detailsToggle:hover, QToolButton#utilityAction:hover, QPushButton#textAction:hover, QPushButton#queueFilter:hover,
 QToolButton#rowAction:hover, QToolButton#rowMenu:hover {{
     background: {selection_bg}; color: {text};
 }}
 QPushButton#textAction:disabled {{ color: {text_dim}; }}
 QToolButton#rowAction {{ padding: 0; min-width: 24px; }}
-QToolButton#rowMenu {{ padding: 0 4px; min-width: 24px; font-size: 17px; }}
+QToolButton#utilityAction, QToolButton#detailsToggle {{ font-size: 13px; padding: 2px 7px; }}
+QToolButton#utilityAction:checked {{ background: {selection_bg}; color: {text}; }}
+QToolButton#rowMenu {{ background: {panel_alt}; padding: 0; border-radius: 7px; }}
+QToolButton#rowMenu:hover {{ background: {selection_bg}; border-color: {border_strong}; }}
 QToolButton#rowMenu::menu-indicator {{ image: none; width: 0; height: 0; }}
 
 QScrollBar:vertical {{ background: {bg}; width: 11px; margin: 0; border: none; }}
@@ -322,7 +335,8 @@ QListWidget::item {{ padding: 8px 6px; }}
 QListWidget::item:selected {{ background: {selection_bg}; color: {text}; }}
 QPushButton:focus, QPushButton#cancelQueue:focus, QPushButton#queueFilter:focus, QToolButton#rowAction:focus,
 QPushButton#textAction:focus, QToolButton#rowMenu:focus, QToolButton#detailsToggle:focus,
-QTextEdit:focus, QListWidget:focus, QComboBox:focus, QSpinBox:focus {{
+QToolButton#utilityAction:focus, QLineEdit#historySearch:focus, QTableView#historyTable:focus,
+QTextEdit:focus, QListWidget:focus {{
     border: 1px solid {accent_info};
 }}
 QPushButton[primary="true"]:focus {{ border-color: {text}; }}
@@ -353,6 +367,44 @@ def disclosure_icon(expanded: bool, ink: str) -> QIcon:
         path.lineTo(4, 10)
     painter.drawPath(path)
     painter.end()
+    return QIcon(pixmap)
+
+
+@lru_cache(maxsize=32)
+def utility_icon(symbol: str, ink: str) -> QIcon:
+    """Simboli a tratto con la stessa griglia in entrambe le piattaforme."""
+    pixmap = QPixmap(64, 64)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pixmap)
+    painter.scale(4, 4)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    painter.setPen(QPen(QColor(ink), 1.35, Qt.PenStyle.SolidLine,
+                        Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+    if symbol == "history":
+        painter.drawEllipse(QRectF(1.7, 1.7, 12.6, 12.6))
+        painter.drawPolyline([QPointF(8, 4.2), QPointF(8, 8.2), QPointF(10.9, 9.7)])
+    elif symbol == "debug":
+        painter.drawRoundedRect(QRectF(1.3, 2.7, 13.4, 10.6), 2, 2)
+        painter.drawPolyline([QPointF(4.3, 5.8), QPointF(6.5, 8), QPointF(4.3, 10.2)])
+        painter.drawLine(QPointF(8.6, 10.2), QPointF(11.5, 10.2))
+    elif symbol == "download":
+        painter.drawLine(QPointF(8, 1.6), QPointF(8, 9))
+        painter.drawPolyline([QPointF(4.8, 6.2), QPointF(8, 9.4), QPointF(11.2, 6.2)])
+        painter.drawPolyline([QPointF(1.8, 10.1), QPointF(1.8, 13.6),
+                              QPointF(14.2, 13.6), QPointF(14.2, 10.1)])
+    elif symbol == "check":
+        painter.drawPolyline([QPointF(2.5, 8.2), QPointF(6.3, 12), QPointF(13.5, 4)])
+    elif symbol == "more":
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(ink))
+        for x in (3.5, 8.0, 12.5):
+            painter.drawEllipse(QPointF(x, 8), 1.25, 1.25)
+    elif symbol == "alert":
+        painter.drawEllipse(QRectF(1.7, 1.7, 12.6, 12.6))
+        painter.drawLine(QPointF(8, 4.3), QPointF(8, 8.2))
+        painter.drawPoint(QPointF(8, 11))
+    painter.end()
+    pixmap.setDevicePixelRatio(4)
     return QIcon(pixmap)
 
 

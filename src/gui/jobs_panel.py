@@ -14,12 +14,13 @@ from __future__ import annotations
 from pathlib import Path
 
 from PyQt6.QtCore import (
+    QRect,
     QSize,
     QUrl,
     Qt,
     pyqtSignal,
 )
-from PyQt6.QtGui import QDesktopServices
+from PyQt6.QtGui import QColor, QDesktopServices, QPainter
 from PyQt6.QtWidgets import (
     QApplication,
     QButtonGroup,
@@ -99,6 +100,14 @@ _PROGRESS_COLOR_KEY = {
     STATUS_QUEUED: "text_dim",
 }
 
+_STATUS_ICON = {
+    STATUS_QUEUED: ("history", "text_dim", "status_bg_queued"),
+    STATUS_RUNNING: ("download", "accent_active", "status_bg_running"),
+    STATUS_COMPLETED: ("check", "accent_ok", "status_bg_completed"),
+    STATUS_FAILED: ("alert", "accent_fail", "status_bg_failed"),
+    STATUS_ABANDONED: ("alert", "accent_fail", "status_bg_abandoned"),
+    STATUS_CANCELLED: ("alert", "accent_warn", "status_bg_cancelled"),
+}
 
 class _ElidedLabel(QLabel):
     """QLabel che tronca il testo con elisione automatica al resize.
@@ -114,7 +123,6 @@ class _ElidedLabel(QLabel):
         parent: "QWidget | None" = None,
     ) -> None:
         super().__init__(parent)
-        self.setTextFormat(Qt.TextFormat.PlainText)
         self.setTextFormat(Qt.TextFormat.PlainText)
         self._full_text = ""
         self._elide_mode = elide_mode
@@ -170,24 +178,29 @@ class _JobCard(QFrame):
         self.setObjectName("card")
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         grid = QGridLayout(self)
-        grid.setContentsMargins(8, 7, 12, 11)
-        grid.setHorizontalSpacing(5)
+        grid.setContentsMargins(12, 8, 12, 11)
+        grid.setHorizontalSpacing(8)
         grid.setVerticalSpacing(4)
         grid.setColumnStretch(1, 1)
+        self._status_icon = QLabel()
+        self._status_icon.setFixedSize(32, 32)
+        self._status_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        grid.addWidget(self._status_icon, 0, 0, 2, 1, Qt.AlignmentFlag.AlignVCenter)
         self._expand_btn = QToolButton()
         self._expand_btn.setObjectName("rowAction")
         self._expand_btn.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._expand_btn.setCheckable(True)
         self._expand_btn.setIconSize(QSize(12, 12))
         self._expand_btn.toggled.connect(self._set_expanded)
-        grid.addWidget(self._expand_btn, 0, 0)
+        grid.addWidget(self._expand_btn, 0, 2)
 
         self._name_lbl = _ElidedLabel(Qt.TextElideMode.ElideMiddle)
         self._name_lbl.setObjectName("fileName")
         grid.addWidget(self._name_lbl, 0, 1)
         self._action_btn = QToolButton()
         self._action_btn.setObjectName("rowMenu")
-        self._action_btn.setText("…")
+        self._action_btn.setIconSize(QSize(16, 16))
+        self._action_btn.setFixedSize(28, 26)
         self._action_btn.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._action_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         menu = QMenu(self._action_btn)
@@ -196,7 +209,7 @@ class _JobCard(QFrame):
         self._file_action = menu.addAction("")
         self._file_action.triggered.connect(self._on_action)
         self._action_btn.setMenu(menu)
-        grid.addWidget(self._action_btn, 0, 2)
+        grid.addWidget(self._action_btn, 0, 3, 2, 1, Qt.AlignmentFlag.AlignTop)
 
         meta = QHBoxLayout()
         meta.setSpacing(10)
@@ -207,20 +220,24 @@ class _JobCard(QFrame):
         self._speed_lbl.setObjectName("transferRate")
         meta.addWidget(self._speed_lbl)
         meta.addStretch()
-        self._percent_lbl = QLabel()
-        self._percent_lbl.setObjectName("transferPercent")
-        meta.addWidget(self._percent_lbl)
         grid.addLayout(meta, 1, 1, 1, 2)
+        progress_row = QHBoxLayout()
+        progress_row.setContentsMargins(0, 0, 0, 0)
+        progress_row.setSpacing(9)
         self._progress = QProgressBar()
         self._progress.setRange(0, 100)
         self._progress.setTextVisible(False)
         self._progress.setObjectName("transferProgress")
-        self._progress.setFixedHeight(3)
-        grid.addWidget(self._progress, 2, 1, 1, 2)
+        self._progress.setFixedHeight(5)
+        progress_row.addWidget(self._progress, 1)
+        self._percent_lbl = QLabel()
+        self._percent_lbl.setObjectName("transferPercent")
+        progress_row.addWidget(self._percent_lbl)
+        grid.addLayout(progress_row, 2, 1, 1, 3)
 
         self._terminal_stats_lbl = QLabel()
         self._terminal_stats_lbl.hide()
-        grid.addWidget(self._terminal_stats_lbl, 3, 1, 1, 2)
+        grid.addWidget(self._terminal_stats_lbl, 3, 1, 1, 3)
 
         self._detail = QFrame()
         self._detail.setObjectName("jobDetails")
@@ -254,7 +271,7 @@ class _JobCard(QFrame):
             label.setTextFormat(Qt.TextFormat.PlainText)
             label.setObjectName("secondaryText")
         self._detail.hide()
-        grid.addWidget(self._detail, 4, 1, 1, 2)
+        grid.addWidget(self._detail, 4, 1, 1, 3)
 
     # ---- segnali/slot interni --------------------------------------------
 
@@ -316,9 +333,14 @@ class _JobCard(QFrame):
 
         title = job.file_name or link_caption(job.url)
         self._name_lbl.setText(title)
-        speed = _fmt_speed(job.speed) if job.status == STATUS_RUNNING else ""
-        self._speed_lbl.setText(speed)
-        self._speed_lbl.setVisible(bool(speed))
+        metrics = []
+        if job.status == STATUS_RUNNING:
+            if job.total_bytes > 0:
+                metrics.append(f"{_fmt_bytes(job.downloaded_bytes)} / {_fmt_bytes(job.total_bytes)}")
+            if job.speed >= 1:
+                metrics.append(_fmt_speed(job.speed))
+        self._speed_lbl.setText("  ·  ".join(metrics))
+        self._speed_lbl.setVisible(bool(metrics))
         state = status_label(job.status)
         self._badge.setText(state)
         self._expand_btn.setAccessibleName(t("jobs_panel.details_for", name=title))
@@ -342,17 +364,25 @@ class _JobCard(QFrame):
         self._progress.setValue(pct)
         self._progress.setAccessibleName(f"{title} · {state}")
         self._percent_lbl.setText(f"{pct}%")
+        known = pct > 0 or (job.status == STATUS_RUNNING and job.total_bytes > 0)
+        self._progress.setVisible(known)
+        self._percent_lbl.setVisible(known)
 
         # I campioni di velocità non richiedono di riapplicare lo stile di Qt.
         appearance = (job.status, p["panel"])
         if getattr(self, "_appearance", None) != appearance:
             self._appearance = appearance
             self._expand_btn.setIcon(_style.disclosure_icon(self._expanded, p["text_dim"]))
+            self._action_btn.setIcon(_style.utility_icon("more", p["text"]))
+            symbol, foreground, background = _STATUS_ICON[job.status]
+            self._status_icon.setPixmap(_style.utility_icon(symbol, p[foreground]).pixmap(
+                QSize(18, 18), self.devicePixelRatioF()))
+            self._status_icon.setStyleSheet(f"background: {p[background]}; border-radius: 8px;")
             color = p[_PROGRESS_COLOR_KEY.get(job.status, "text_dim")]
             self._progress.setStyleSheet(
-                f"QProgressBar#transferProgress {{ background: {p['panel_alt']}; border: none; border-radius: 1px;"
-                "height: 3px; min-height: 3px; max-height: 3px; padding: 0; }"
-                f"QProgressBar#transferProgress::chunk {{ background: {color}; border-radius: 1px; }}"
+                f"QProgressBar#transferProgress {{ background: {p['panel_alt']}; border: none; border-radius: 2px;"
+                "height: 5px; min-height: 5px; max-height: 5px; padding: 0; }"
+                f"QProgressBar#transferProgress::chunk {{ background: {color}; border-radius: 2px; }}"
             )
 
         # Riga statistiche finali (job terminato con byte scaricati).
@@ -419,8 +449,8 @@ class _EmptyState(QWidget):
         self.setObjectName("queueSurface")
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground)
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 24, 24, 24)
-        layout.setSpacing(10)
+        layout.setContentsMargins(16, 10, 16, 10)
+        layout.setSpacing(8)
         layout.addStretch()
         self._msg = QLabel()
         self._msg.setObjectName("emptyTitle")
@@ -447,6 +477,22 @@ class _EmptyState(QWidget):
         layout.addLayout(actions)
         layout.addStretch()
         self.retranslate()
+        self.refresh_theme()
+
+    def paintEvent(self, event) -> None:  # noqa: N802
+        super().paintEvent(event)
+        # Il simbolo usa solo lo spazio libero sopra il messaggio. Non cambia
+        # l'altezza minima quando si aprono i dettagli su una finestra piccola.
+        rect = QRect((self.width() - 48) // 2, self._msg.y() - 60, 48, 48)
+        if rect.top() < 8:
+            return
+        p = _style.CURRENT_PALETTE
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(p["status_bg_running"]))
+        painter.drawRoundedRect(rect, 14, 14)
+        _style.utility_icon("download", p["accent_active"]).paint(painter, rect.adjusted(11, 11, -11, -11))
 
     def retranslate(self) -> None:
         button_label = t("controls.paste_links")
@@ -456,7 +502,7 @@ class _EmptyState(QWidget):
         self._import_btn.setText(t("link_panel.import"))
 
     def refresh_theme(self) -> None:
-        pass  # colori ereditati da QSS globale
+        self.update()
 
 
 class JobsPanel(QWidget):
@@ -486,7 +532,12 @@ class JobsPanel(QWidget):
         self._filters = QWidget()
         filter_row = QHBoxLayout(self._filters)
         filter_row.setContentsMargins(0, 0, 0, 8)
-        filter_row.setSpacing(5)
+        segment = QFrame()
+        segment.setObjectName("filterGroup")
+        segments = QHBoxLayout(segment)
+        segments.setSpacing(1)
+        segments.setContentsMargins(3, 3, 3, 3)
+        filter_row.addWidget(segment)
         self._filter_group = QButtonGroup(self)
         self._filter_group.setExclusive(True)
         self._filter_buttons: dict[str, QPushButton] = {}
@@ -506,7 +557,7 @@ class JobsPanel(QWidget):
             btn.clicked.connect(lambda _checked, c=category: self._on_filter_button_clicked(c))
             self._filter_group.addButton(btn)
             self._filter_buttons[category] = btn
-            filter_row.addWidget(btn)
+            segments.addWidget(btn)
         filter_row.addStretch(1)
         # Pulsante bulk per riavviare tutti i job falliti/abbandonati/annullati.
         self._restart_all_btn = QPushButton(t("jobs_panel.restart_all", n=0))
@@ -539,7 +590,7 @@ class JobsPanel(QWidget):
         self._content.setAttribute(Qt.WidgetAttribute.WA_StyledBackground)
         self._cards_layout = QVBoxLayout(self._content)
         self._cards_layout.setContentsMargins(0, 0, 0, 0)
-        self._cards_layout.setSpacing(0)
+        self._cards_layout.setSpacing(6)
         self._cards_layout.addStretch(1)  # spazio in fondo
         self._scroll.setWidget(self._content)
         self._scroll.setVisible(False)

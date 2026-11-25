@@ -8,8 +8,11 @@ Tutte le modifiche rilevanti del progetto. Formato basato su [Keep a Changelog](
 
 ### Interfaccia e macOS
 
-- Tema chiaro e tema scuro con superfici neutre e accento rosso corallo. Ogni download ha una barra di avanzamento sottile e un menu **…** per le azioni sul file.
-- Avvio dal Finder con `avvia.command`, riduzione nel Dock e scorciatoie Mac per aggiungere link e aprire le impostazioni.
+- Coda con accento viola, comandi di riga e avanzamento accanto alla percentuale. I download in attesa mostrano lo stato. I selettori e i campi numerici delle impostazioni usano i controlli di sistema.
+- **Storico** permette di cercare i download completati e aprirne la cartella. **Debug** mostra il log in tempo reale sotto la coda. Su Windows l’installer crea un collegamento diretto all’app grafica.
+- **Apri elenco link** riapre una bozza modificabile con **Salva elenco**. Il dettaglio del download mostra un solo URL copiabile e cinque misure disposte in griglia.
+- **Misura linea** usa un endpoint HTTPS e mostra avanzamento della misura, risultato o errore con possibilità di riprovare.
+- Avvio dal Finder con **Mega Downloader Proxy Rotator.app**, riduzione nel Dock e scorciatoie Mac per aggiungere link e aprire le impostazioni.
 - Coda, avanzamento per file e destinazione sono in un’unica finestra. Statistiche e connessione si aprono sotto l’elenco. La vista iniziale si adatta anche agli schermi piccoli. La conferma di annullamento conserva i dati parziali salvo scelta esplicita.
 - I percorsi di Windows mostrano il nome corretto su Mac. Se la destinazione proviene da un altro sistema, l’app chiede una cartella locale prima del download.
 

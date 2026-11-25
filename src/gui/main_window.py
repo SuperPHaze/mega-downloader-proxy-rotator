@@ -30,8 +30,10 @@ from src.core.branding import resolve as resolve_branding
 from src.core.config import (
     APP_VERSION,
     HEARTBEAT_INTERVAL_S,
+    LOGS_DIR,
     OUTPUT_DIR,
     PROXY_SPEEDTEST_STREAMS,
+    TERMINAL_LOG,
 )
 from src.core.file_naming import folder_job_output_dir, sanitize_file_name
 from src.core.icon_loader import build_app_icon
@@ -42,9 +44,11 @@ from src.downloader.worker import job_output_dir
 from src.gui.folder_expand_worker import FolderExpandWorker
 from src.gui.about_dialog import AboutDialog
 from src.gui.controls import ControlsBar
+from src.gui.debug_panel import DebugPanel
 from src.gui.experimental_dialog import ExperimentalFeaturesDialog
 from src.gui.error_render import ABANDON_ALIASES, render_error, resolve_payloads
 from src.gui.i18n import TR, t, tn
+from src.gui.history_dialog import HistoryDialog
 from src.gui.job_detail_dialog import JobDetailDialog
 from src.gui.jobs_panel import JobsPanel, status_label
 from src.gui.maintenance_dialog import MaintenanceDialog
@@ -82,7 +86,7 @@ from src.gui.tray import (
     resolve_minimize_action,
     tooltip_text,
 )
-from src.gui.style import CURRENT_PALETTE, apply_theme, disclosure_icon
+from src.gui.style import CURRENT_PALETTE, apply_theme, disclosure_icon, utility_icon
 from src.gui.update_banner import UpdateBanner
 from src.gui.update_check import STATUS_AVAILABLE, UpdateCheckWorker, repo_url, updates_enabled
 
@@ -105,6 +109,7 @@ class MainWindow(QMainWindow):
         self._expected_files = 0
         self._completed_files = 0
         self._open_dialogs: dict[int, JobDetailDialog] = {}
+        self._history_dialog: HistoryDialog | None = None
         self._links_by_id: dict[int, str] = {}
         self._pending_delete: set[int] = set()
         # Cartella radice dei download della sessione corrente (None = default).
@@ -150,7 +155,7 @@ class MainWindow(QMainWindow):
         central = QWidget()
         central.setObjectName("workspace")
         layout = QVBoxLayout(central)
-        layout.setSpacing(14)
+        layout.setSpacing(12)
         layout.setContentsMargins(22, 18, 22, 12)
 
         self.controls = ControlsBar()
@@ -181,16 +186,20 @@ class MainWindow(QMainWindow):
         self.stats_bar.hide()
         layout.addWidget(self.stats_bar)
         self.jobs_panel.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Ignored)
-        self.jobs_panel.setMinimumHeight(146)
+        self.jobs_panel.setMinimumHeight(132)
         layout.addWidget(self.jobs_panel, 1)
         layout.addWidget(self.link_panel, 1)
         self.link_panel.hide()
 
-        footer = QHBoxLayout()
-        footer.setContentsMargins(0, 0, 0, 0)
+        utility_bar = QFrame()
+        utility_bar.setObjectName("utilityBar")
+        footer = QHBoxLayout(utility_bar)
+        footer.setContentsMargins(8, 3, 8, 3)
+        footer.setSpacing(6)
         self._details_toggle = QToolButton()
         self._details_toggle.setObjectName("detailsToggle")
         self._details_toggle.setCheckable(True)
+        self._details_toggle.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._details_toggle.setText(t("workspace.details"))
         self._details_toggle.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         self._details_toggle.setIconSize(QSize(12, 12))
@@ -202,7 +211,6 @@ class MainWindow(QMainWindow):
         self._status_lbl.setTextFormat(Qt.TextFormat.PlainText)
         self._status_lbl.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         footer.addWidget(self._status_lbl, 1)
-        layout.addLayout(footer)
 
         details = QWidget()
         details.setObjectName("sessionDetails")
@@ -221,11 +229,25 @@ class MainWindow(QMainWindow):
         self._details_scroll.setWidget(details)
         self._details_scroll.hide()
         layout.addWidget(self._details_scroll, 3)
+        self._debug_panel = DebugPanel(LOGS_DIR / TERMINAL_LOG)
+        self._debug_panel.hide()
+        layout.addWidget(self._debug_panel, 1)
+        layout.addWidget(utility_bar)
         self._details_toggle.toggled.connect(self._show_details)
         self.setCentralWidget(central)
         details.installEventFilter(self)
         self.jobs_panel.setFocus(Qt.FocusReason.OtherFocusReason)
         self._setup_menu_actions()
+        self._debug_panel.hide_requested.connect(lambda: self._actions["debug.button"].setChecked(False))
+        for key in ("history.button", "debug.button"):
+            button = QToolButton()
+            button.setObjectName("utilityAction")
+            button.setDefaultAction(self._actions[key])
+            button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+            button.setIconSize(QSize(16, 16))
+            button.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+            footer.addWidget(button)
+        self._refresh_utility_actions()
 
         # Connessioni.
         self.controls.start_requested.connect(self._on_start)
@@ -289,6 +311,8 @@ class MainWindow(QMainWindow):
         role = QAction.MenuRole
         for key, shortcut, menu_role, slot in (
             ("controls.paste_links", "Ctrl+L", role.NoRole, self._on_add_links_requested),
+            ("history.button", "Ctrl+Y", role.NoRole, self._open_history),
+            ("debug.button", "Ctrl+Shift+D", role.NoRole, self._show_debug),
             ("controls.settings", "Ctrl+,", role.PreferencesRole, self.controls.show_settings),
             ("controls.info", "", role.AboutRole, self._open_about_dialog),
             ("tray.menu_quit", QKeySequence.StandardKey.Quit, role.QuitRole, self.close),
@@ -296,13 +320,45 @@ class MainWindow(QMainWindow):
             action = QAction(t(key), self)
             action.setMenuRole(menu_role)
             action.setShortcut(QKeySequence(shortcut))
-            action.triggered.connect(slot)
+            if key == "debug.button":
+                action.setCheckable(True)
+                action.toggled.connect(slot)
+            else:
+                action.triggered.connect(slot)
             self.addAction(action)
             if self._file_menu is not None:
                 self._file_menu.addAction(action)
             self._actions[key] = action
 
+    def _refresh_utility_actions(self) -> None:
+        for key in ("history", "debug"):
+            action = self._actions[f"{key}.button"]
+            action.setIcon(utility_icon(key, CURRENT_PALETTE["text_dim"]))
+            shortcut = action.shortcut().toString(QKeySequence.SequenceFormat.NativeText)
+            action.setToolTip(f"{t(f'{key}.tooltip')} ({shortcut})")
+
+    def _open_history(self) -> None:
+        if self._history_dialog is None:
+            self._history_dialog = HistoryDialog(self)
+        if self._history_dialog.isMinimized():
+            self._history_dialog.showNormal()
+        else:
+            self._history_dialog.show()
+        self._history_dialog.raise_()
+        self._history_dialog.activateWindow()
+
+    def _refresh_visible_history(self) -> None:
+        if self._history_dialog is not None and self._history_dialog.isVisible():
+            self._history_dialog.reload()
+
+    def _show_debug(self, expanded: bool) -> None:
+        if expanded:
+            self._details_toggle.setChecked(False)
+        self._debug_panel.setVisible(expanded)
+
     def _show_details(self, expanded: bool) -> None:
+        if expanded:
+            self._actions["debug.button"].setChecked(False)
         self._details_toggle.setIcon(disclosure_icon(expanded, CURRENT_PALETTE["text_dim"]))
         self._details_scroll.setVisible(expanded)
         if expanded:
@@ -526,6 +582,7 @@ class MainWindow(QMainWindow):
             output_root=Path(download_dir) if download_dir else None,
         )
         dlg.exec()
+        self._refresh_visible_history()
 
     def _on_update_download_requested(self) -> None:
         QDesktopServices.openUrl(QUrl(repo_url()))
@@ -556,7 +613,8 @@ class MainWindow(QMainWindow):
         self._speedtest_worker.start()
 
     def _on_speedtest_done(self, mbit: float, ok: bool) -> None:
-        self.proxy_bar.on_speedtest_result(mbit, ok)
+        worker = self._speedtest_worker
+        self.proxy_bar.on_speedtest_result(mbit, ok, worker.failure, worker.http_status)
         if ok and mbit > 0:
             save_link_speed_mbps(mbit)
 
@@ -1107,6 +1165,7 @@ class MainWindow(QMainWindow):
 
     def _on_file_done(self, file_id: int) -> None:
         self.jobs_panel.on_all_done(file_id)
+        self._refresh_visible_history()
         self._session_mark_finished(file_id)
         self._completed_files += 1
         self._set_status_t(
@@ -1337,6 +1396,7 @@ class MainWindow(QMainWindow):
         save_dark_theme(dark)
         # Aggiorna i widget che usano colori inline (badge, card, KPI).
         self._details_toggle.setIcon(disclosure_icon(self._details_toggle.isChecked(), CURRENT_PALETTE["text_dim"]))
+        self._refresh_utility_actions()
         self.jobs_panel.refresh_theme()
         self.proxy_bar.refresh_theme()
         self._stats_panel.refresh_theme()
@@ -1355,9 +1415,8 @@ class MainWindow(QMainWindow):
         barra comandi, banner, cruscotto (StatsBar/ProxyBar/StatsPanel),
         elenco job, pannello link e riga di stato. I dialoghi creati su
         richiesta non servono (leggono i testi alla costruzione), con
-        UN'eccezione: `JobDetailDialog` non e' modale e resta aperto mentre il
-        download prosegue, quindi e' una superficie persistente a tutti gli
-        effetti e va ritradotto come i pannelli."""
+        due eccezioni: lo Storico e i dettagli dei file restano aperti mentre
+        il download prosegue e si ritraducono insieme ai pannelli."""
         log.info("Ritraduzione interfaccia in corso: %s", lang)
         self._refresh_window_title()
         self._details_toggle.setText(t("workspace.details"))
@@ -1365,6 +1424,10 @@ class MainWindow(QMainWindow):
             self._file_menu.setTitle(t("workspace.file_menu"))
         for key, action in self._actions.items():
             action.setText(t(key))
+        self._refresh_utility_actions()
+        if self._history_dialog is not None:
+            self._history_dialog.retranslate()
+        self._debug_panel.retranslate()
         self.controls.retranslate()
         self.update_banner.retranslate()
         self.stats_bar.retranslate()
@@ -1467,7 +1530,15 @@ class MainWindow(QMainWindow):
         if self._startup_update_worker is not None and self._startup_update_worker.isRunning():
             self._startup_update_worker.wait(2000)
         if self._speedtest_worker is not None and self._speedtest_worker.isRunning():
-            self._speedtest_worker.wait(3000)
+            self._speedtest_worker.requestInterruption()
+            if not self._speedtest_worker.wait(100):
+                # Una lettura di rete può essere ancora in attesa del timeout.
+                # La GUI può sparire subito; il QThread deve uscire prima di Qt.
+                self._speedtest_worker.finished.connect(self.close, Qt.ConnectionType.QueuedConnection)
+                if self._speedtest_worker.isRunning():
+                    self.hide()
+                    event.ignore()
+                    return
         if self._proxy_speedtest_worker is not None and self._proxy_speedtest_worker.isRunning():
             self._proxy_speedtest_worker.wait(3000)
         if self._folder_expander is not None and self._folder_expander.isRunning():

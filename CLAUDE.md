@@ -35,7 +35,7 @@ src/
 │   │                     #   tronca e riapre; `terminal-log.txt` si tronca IN POSTO perché
 │   │                     #   `_TeeStream` ha catturato quell'oggetto file. Lo usa `maintenance.py`
 │   ├── failed_log.py      # logger JSONL dei link abbandonati
-│   ├── download_history.py # storico JSONL download completati + extract_handle
+│   ├── download_history.py # load_history indicizza il registro corrente per handle; history_entries legge anche gli archivi per la finestra Storico
 │   ├── sources_stats.py   # logger JSONL metriche per-fonte
 │   ├── version_compare.py # parse_semver/is_newer, puro stdlib (no I/O)
 │   ├── branding.py        # Branding (nome/acronimo/autore/nick/link/logo): default -> cache -> remoto
@@ -101,6 +101,7 @@ src/
 │                          #   cosi' un'aggiunta arrivata durante la raccolta dei proxy sopravvive a
 │                          #   `_spawn_workers`, che COSTRUISCE la coda; segnale proxy_stats(discarded, refill_count, seconds_since_last_refill) emesso insieme a pool_size_changed nel poll periodico; propaga output_root ai worker (start(output_root=...)); relay dei canali TIPATI del worker (failed_detail/fatal_detail/abandoned_detail) accanto ai segnali-stringa; `SETUP_TEXTS_IT` + `setup_text_it()` = testo ITALIANO delle 6 righe di stato del setup (serve a log e CLI), emesse su due canali: `setup_status`/`pool_failed` (stringa italiana) e `setup_status_t`/`pool_failed_t` (codice + parametri, per la GUI)
 └── gui/
+    ├── debug_panel.py      # lettore del log corrente sotto la coda, attivo mentre è visibile
     ├── main_window.py     # MainWindow (QMainWindow); `_on_add_links_requested` e' il gate del
     │                      #   pulsante «Aggiungi link»: fuori sessione riempie la lista da avviare, a
     │                      #   sessione viva accoda a caldo (`_add_links_to_session` ->
@@ -150,10 +151,8 @@ src/
     │                      #   `append_jobs()` aggiunge card senza toccare quelle esistenti (l'ordine resta
     │                      #   cronologico anche per i link messi in TESTA alla coda: chi sta scaricando lo
     │                      #   dice il proprio stato); filtri a pulsanti esclusivi (QButtonGroup), con Tutti selezionato all’avvio; ogni pulsante mostra il conteggio file per categoria ("In corso (N)"/"Completati (N)"/"Non completati (N)"), aggiornato da _update_filter_counts su aggregates_changed; i18n: retranslate() ricasca su _EmptyState e su ogni _JobCard; le card rendono l'ultimo errore dal PAYLOAD del modello con error_render.render_error(), e on_abandoned applica ABANDON_ALIASES al confine col segnale
-    ├── job_detail_dialog.py # dialog non-modale dettaglio job (doppio clic); UNICO dialogo PERSISTENTE del progetto:
-    │                      #   ha `retranslate()` ed e' nel fan-out di `_on_language_changed`. `_refresh(force=True)` e'
-    │                      #   obbligatorio al cambio lingua: il ridisegno normale salta log e tabella IP quando il NUMERO
-    │                      #   di voci non cambia, e cambiando lingua cambia il testo, non il conteggio
+    ├── job_detail_dialog.py # dettaglio non modale con URL singolo, griglia di misure, cronologia IP e log traducibile
+    ├── history_dialog.py    # storico non modale ricercabile per nome, aggiornato ai completamenti e dopo la manutenzione
     ├── error_render.py    # resa degli errori a video: `render_error(code, params)` da codice+parametri al testo nella
     │                      #   lingua corrente (chiave `err.<codice>`; un codice CON il punto e' gia' una chiave i18n
     │                      #   intera, forma usata dagli errori che nascono nella GUI). Rende in profondita' i payload
@@ -378,12 +377,10 @@ Comandi sempre dalla root `mega-proxy-downloader\`, mai da `src\`.
 - La versione dell'app è definita in `src/core/config.py` come `APP_VERSION` (semver `MAJOR.MINOR.PATCH`).
 - `APP_VERSION` viene mostrata nel titolo della finestra principale (`MainWindow`).
 - `package.ps1` legge `APP_VERSION` e produce `dist/MegaProxyRotator-X.Y.Z.zip` escludendo `venv`, `dist`, `downloads`, `__pycache__`, `.git`, `.claude`, log e cache.
-- L'utente che riceve lo zip esegue `install.ps1` (crea venv + dipendenze) e poi `avvia.bat`
-  (avvio silenzioso con `pythonw.exe`) oppure `avvia-debug.bat` (terminale visibile, per capire
-  perche' non parte). `install.ps1` genera ENTRAMBI: cambiando uno dei due file in root va
-  cambiato anche il testo che l'installer scrive, altrimenti la prossima installazione lo
-  riporta indietro. `package.ps1` prende i file da `git ls-files` e fallisce se trova
-  `.py`/`.bat` nuovi non tracciati (finirebbero fuori dallo zip).
+- Su Windows `install.ps1` prepara l’ambiente e crea il collegamento a `pythonw.exe`. Su macOS
+  il Finder avvia il bundle accanto a `src`. Debug mostra il log live nella finestra principale.
+  `package.ps1` prende i file da `git ls-files` e fallisce se trova
+  script Python, batch, PowerShell o file del bundle macOS nuovi e non tracciati.
 - **Regola obbligatoria**: al termine di ogni task, chiedere all'utente se vuole aggiornare `APP_VERSION`.
 
 ## File da NON modificare senza motivo

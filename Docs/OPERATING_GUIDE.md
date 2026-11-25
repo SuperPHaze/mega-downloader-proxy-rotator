@@ -18,15 +18,13 @@ The intended use is downloading files you have the right to access. Public proxi
 
 ## 1-bis. Starting on Windows and macOS
 
-On macOS, open `avvia.command` in Finder with Python 3.11–3.14 installed. In Terminal you can use `sh avvia.command` from the project folder. The first launch sets up the dependencies. The following launchers are for Windows.
+On macOS, with Python 3.11–3.14 installed, open **Mega Downloader Proxy Rotator.app** in Finder. Keep the app in the project folder alongside `src`. The first launch sets up the dependencies. The red close button on the main window quits the app.
 
-The installation (`install.bat`) prepares **two** launcher files in the program folder, doing the same thing in two different ways.
+On Windows, run `install.bat`, then open the **Mega Downloader Proxy Rotator** shortcut created in the project folder.
 
-**`avvia.bat` is the normal launcher**: it opens the application **with no terminal window**. That is the one to use. The moment it starts you see a black window flash into view and disappear: that is Windows opening a console for any `.bat` file, not the program. To avoid even that flash you can create a Windows shortcut by hand pointing straight at `venv\Scripts\pythonw.exe` with the argument `-m src.main`.
+Click **Debug** in the bottom bar to read recent messages and follow the live log, including DEBUG records. The panel opens below the queue. Click **Debug** again or choose **Hide** to close the panel while downloads continue. The shortcut is **⌘⇧D** on Mac or **Ctrl+Shift+D** on Windows.
 
-**`avvia-debug.bat` is the backup launcher**: it starts the application **with the terminal visible** and keeps it open if something goes wrong. Use it when the app does not start and you want to see why with your own eyes.
-
-With no terminal, everything that used to be readable on screen only goes into the files under `logs/`: the technical log (`logs/app.log`), the structured log (`logs/events.jsonl`) and the raw copy of the output (`logs/terminal-log.txt`, reset at every launch). A sudden error is captured too: unhandled exceptions end up both in the technical log and in `logs/crash.log`, alongside low-level crashes. **One case only stays invisible**: a failure happening *before* the logging system is up — an incomplete installation, say, or a corrupted program file. That is exactly what `avvia-debug.bat` is there for.
+The session output is saved in `logs/terminal-log.txt`. Technical logs and crash details are also recorded in `logs/app.log`, `logs/events.jsonl`, and `logs/crash.log`. If an error prevents the window from opening, run `.\venv\Scripts\python.exe -m src.main` in a terminal from the project folder to see the startup message.
 
 ---
 
@@ -153,11 +151,15 @@ The **Reset cache** button in the proxy zone (at the bottom of the interface) de
 
 Under **Session details → Connection**, **Line speed** is the bandwidth of the direct connection, measured at startup. Select **Test line speed** to measure it again. During a session, **Proxy speed** shows the aggregate bandwidth measured through the pool. **Test proxy speed** is available when the pool has active proxies. If a proxy slows down or drops out, only the bytes it delivers count towards the result. Comparing the two readings shows how close the pool gets to your line capacity.
 
+The button reads **Measuring…** during a direct test. The test downloads a sample from Cloudflare over HTTPS and displays the result in Mbit/s. If it fails, the panel shows the reason and a **Retry test** button. The last successful measurement remains available.
+
 ---
 
 ## 9. Session controls and resume
 
 In **Downloads**, paste or import links and review them before pressing **Start**. The destination is shown below the heading. On Mac, **⌘L** opens link entry and **⌘,** opens settings. Language and appearance remain available during a session.
+
+**Open link list** reopens the draft. Add, edit or remove addresses, one per line. **Save list** applies the changes. **Cancel** keeps the previous list.
 
 During a session, the available controls are pause/resume and cancel, both globally and per individual file from the table. Pausing does not lose the proxies: on resume, work continues from where it was suspended. Pausing takes effect **at the boundary of the current piece**: a chunk already in transfer is completed and only then does work suspend (suspending a piece mid-transfer would make the read timeouts expire). Canceling a single file can optionally also remove its already-downloaded data from disk.
 
@@ -174,8 +176,6 @@ A **folder** link added while downloading is listed first, as it is at start-up.
 If the program is closed (or crashes) with downloads not yet completed, on the next launch it offers to **reload the remaining links** with a prompt titled "Restore session" ("The previous session ended with N unfinished links. Do you want to load them back into the list?"). By accepting, the links return to the list and — thanks to the resume described below — restart from the pieces already downloaded: just press Start.
 
 The queue opens on **All**, so completed files stay visible. **In progress**, **Completed** and **Not completed** filter the list. Their counts update as files change state. The **…** menu beside a file name contains actions for that file. The arrow expands its transfer information. The latest error fits on one line. Open **Details** for the full message and the attempt history. Cancelling an individual file keeps partial data on disk unless you select the deletion checkbox.
-
-Preview the queue with sample data in the [light theme](images/download-queue-light.png) and the [dark theme](images/download-queue-dark.png).
 
 Resume also covers involuntary interruptions (program closed, blackout, error). Thanks to the `.part` + sidecar scheme, on resume only the missing chunks are re-downloaded; a cycle is considered complete only when the final renamed file exists, so an interrupted file is never mistaken for complete.
 
@@ -228,6 +228,8 @@ Before a download starts, **Connection** shows the last measured line speed. Dur
 ---
 
 ## 11. Output, history, and logs
+
+Click **History** in the bottom bar to see completed downloads, newest first. Search by file name to find the date and size. Select an entry and click **Open folder** to open its destination. History includes retained rotated logs and lists each completion when a file was downloaded several times.
 
 Downloaded files are saved in dedicated subfolders inside the **download folder**. By default this is the project's `downloads` folder, but it can be changed from the **Settings → "Download folder:"** menu: the choice is remembered across sessions and, if the chosen folder isn't writable, the program warns you and reverts to the default. Before starting, the program checks that the destination disk has enough space for the file (plus a safety margin): if not, the download is abandoned right away with a clear message instead of failing halfway on a full disk. Each download from a **single-file link** occupies a folder named after the downloaded file with a numeric suffix (`<file_name>_<id>/`); inside it, the `ciclo_1/`, `ciclo_2/`, … subfolders hold the files produced by each cycle. The folder name is assigned on the first successful link resolve; until then a temporary name based on a URL hash is used. Files coming from a **folder link** follow a **tree** layout instead: they all end up under a single folder named after the Mega folder, with the original subfolders preserved (`<Mega folder name>/<subfolder>/<file>`), with no numeric suffix and no `ciclo_N` level. All diagnostic/operational logs are collected in the project's `logs/` folder: the history of completed downloads (deduplicated by Mega handle, used to warn when a link already downloaded is re-entered), the log of abandoned links, per-source proxy metrics, a general technical activity log, a universal structured log (`logs/events.jsonl`), and a raw capture of the entire terminal output of the current session (`logs/terminal-log.txt`, reset on every startup). They are not needed for normal use, but are available for diagnostics.
 

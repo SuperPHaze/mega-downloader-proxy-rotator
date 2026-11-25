@@ -55,7 +55,7 @@ A **desktop app for Windows and macOS** (Python + PyQt6) that downloads files **
 - **Streaming decryption** to disk (constant RAM even for multi-GB files), `.part` pattern + atomic rename.
 - **Resume** of interrupted downloads and **restart** of failed/abandoned/cancelled ones (only the missing fragments are re-fetched).
 - **Configurable per-file time limit**; past the threshold the file is abandoned.
-- **Download history** with a warning for links already downloaded (deduplicated by Mega handle).
+- **History** lists completed downloads from this and previous sessions. Search by file name, check the completion date and size, or open the folder where a file was saved.
 - **Add links to a running session**: new links join the queue without stopping the downloads or redoing the proxy collection; you choose whether to put them at the end or right after the current file, and links already in the session are flagged before they are added.
 - **Mega folder links** (`/folder/`): the folder is expanded into its individual files, saved as a tree under a single folder carrying the original name (see the guide).
 - **Per-fragment watchdog**: drops proxies that are too slow or fail to finish in time.
@@ -72,7 +72,7 @@ A **desktop app for Windows and macOS** (Python + PyQt6) that downloads files **
 **To use it** — download the ready-made package:
 1. Go to the [latest Release](https://github.com/SuperPHaze/mega-downloader-proxy-rotator/releases/latest) and download the `.zip`.
 2. Extract it, then double-click **`install.bat`** (creates the environment and installs everything: the app, the tests and the tools in `tools/`).
-3. Launch with **`avvia.bat`**: it starts with no terminal window. If it does not start, **`avvia-debug.bat`** does the same thing keeping the terminal visible, so you can see why.
+3. Open the **Mega Downloader Proxy Rotator** shortcut created by the installer. Click **Debug** in the bottom bar to show or hide the log below the queue.
 
 **From source** — requires Python 3.11–3.14 on your PATH:
 ```bash
@@ -89,7 +89,7 @@ A single command sets everything up: runtime dependencies (`requirements.txt`), 
 
 ## Run on macOS
 
-With Python 3.11–3.14 installed, open `avvia.command` in Finder. On first launch it creates a Python environment in the project folder and installs the dependencies. Later launches reuse that environment. In Terminal you can run `sh avvia.command` from the project folder. If the zip lost the executable permission, run `chmod +x avvia.command` once to enable double-clicking.
+With Python 3.11–3.14 installed, open **Mega Downloader Proxy Rotator.app** in Finder. Keep the app in the extracted folder alongside `src`. The first launch sets up the Python environment, and later launches reuse it. **Debug** shows the log in the same window. The red close button quits the app.
 
 A manual test of version 2.3.0 on Apple Silicon with Python 3.14.10 confirmed that a download started.
 

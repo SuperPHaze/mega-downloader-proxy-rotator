@@ -18,15 +18,13 @@ L'uso previsto è il download di file di cui si ha il diritto di disporre. I pro
 
 ## 1-bis. Avvio su Windows e macOS
 
-Su macOS, apri `avvia.command` dal Finder con Python 3.11–3.14 installato. Nel Terminale puoi usare `sh avvia.command` dalla cartella del progetto. Il primo avvio prepara le dipendenze. I lanci descritti di seguito sono per Windows.
+Su macOS, con Python 3.11–3.14 installato, apri **Mega Downloader Proxy Rotator.app** dal Finder. Tieni l’app nella cartella del progetto, accanto a `src`. Il primo avvio prepara le dipendenze. Il pallino rosso della finestra principale chiude l’app.
 
-L'installazione (`install.bat`) prepara **due** file di avvio nella cartella del programma, che fanno la stessa cosa in due modi diversi.
+Su Windows, esegui `install.bat` e apri il collegamento **Mega Downloader Proxy Rotator** creato nella cartella del progetto.
 
-**`avvia.bat` è il lancio normale**: apre l'applicazione **senza finestra del terminale**. È quello da usare sempre. Nell'istante in cui parte si vede comparire e sparire una finestra nera: è Windows che apre una console per qualunque file `.bat`, non il programma. Per evitare anche quel lampo si può creare a mano un collegamento di Windows che punti direttamente a `venv\Scripts\pythonw.exe` con argomento `-m src.main`.
+Premi **Debug** nella barra in basso per leggere i messaggi recenti e seguire il log in tempo reale, compresi i messaggi di livello DEBUG. Il pannello compare sotto la coda. Premi di nuovo **Debug** o scegli **Nascondi** per richiuderlo mentre i download proseguono. La scorciatoia è **⌘⇧D** su Mac e **Ctrl+Maiusc+D** su Windows.
 
-**`avvia-debug.bat` è il lancio di riserva**: fa partire l'applicazione **con il terminale visibile** e lo tiene aperto se qualcosa va storto. Serve quando l'app non parte e si vuole vedere il perché con i propri occhi.
-
-Senza terminale, tutto ciò che prima si leggeva a video finisce solo nei file dentro `logs/`: il registro tecnico (`logs/app.log`), il registro strutturato (`logs/events.jsonl`) e la copia grezza dell'output (`logs/terminal-log.txt`, riazzerata a ogni avvio). Anche un errore improvviso viene raccolto: le eccezioni non gestite finiscono sia nel registro tecnico sia in `logs/crash.log`, insieme ai crash di basso livello. **Un solo caso resta invisibile**: un guasto che avvenga *prima* che il sistema di registrazione sia attivo — per esempio un'installazione incompleta o un file del programma corrotto. È esattamente il caso per cui esiste `avvia-debug.bat`.
+Il file `logs/terminal-log.txt` raccoglie l’output della sessione. I log tecnici e i crash sono registrati anche in `logs/app.log`, `logs/events.jsonl` e `logs/crash.log`. Se un errore impedisce perfino l’apertura della finestra, esegui `.\venv\Scripts\python.exe -m src.main` da un terminale nella cartella del programma per leggere il messaggio di avvio.
 
 ---
 
@@ -157,11 +155,15 @@ Il tasto **Reset cache** nella zona proxy (in basso nell'interfaccia) cancella i
 
 In **Dettagli sessione → Connessione**, **Velocità linea** indica la banda della linea, misurata all’avvio con un download diretto. Puoi ripetere la misura con **Misura linea**. Durante la sessione compare **Velocità proxy**, la banda aggregata misurata attraverso il pool. **Misura proxy** è disponibile quando il pool contiene proxy attivi. Se un proxy rallenta o cade, per quel proxy vengono conteggiati i byte effettivamente scaricati. Confrontare le due misure indica quanto il pool si avvicina alla capacità della linea.
 
+Durante la prova diretta il pulsante mostra **Misurazione…**. Il test scarica un campione da Cloudflare tramite HTTPS. Al termine appare la velocità in Mbit/s. Se la misura fallisce, il pannello mostra il motivo e **Riprova misura**. L’ultima misura riuscita resta disponibile.
+
 ---
 
 ## 9. Controlli di sessione e resume
 
 In **Download**, incolla o importa i link e controlla l’anteprima prima di premere **Avvia**. La destinazione è indicata sotto il titolo. **⌘L** apre l’inserimento sul Mac e **⌘,** apre le impostazioni. Durante una sessione puoi ancora cambiare lingua e aspetto.
+
+**Apri elenco link** riapre la bozza. Puoi aggiungere, correggere e rimuovere gli indirizzi, uno per riga. **Salva elenco** applica le modifiche. **Annulla** conserva la lista precedente.
 
 Durante una sessione i controlli disponibili sono pausa/ripresa e annullo, sia globali sia per singolo file dalla tabella. La pausa non comporta la perdita dei proxy: alla ripresa il lavoro riparte dal punto in cui era stato sospeso. La pausa agisce **al confine del pezzo in corso**: un chunk già in trasferimento viene portato a termine e solo dopo il lavoro si sospende (sospendere un pezzo a metà farebbe scadere i timeout di lettura). L'annullo di un singolo file può, a scelta, rimuoverne anche i dati già scaricati dal disco.
 
@@ -178,8 +180,6 @@ Un link a **cartella** aggiunto a caldo viene prima elencato, come all'avvio. La
 Se il programma viene chiuso (o va in crash) con dei download non ancora completati, alla riapertura propone di **ricaricare i link rimasti** con una richiesta intitolata «Ripristina sessione» («La sessione precedente si è chiusa con N link non completati. Vuoi ricaricarli nella lista?»). Accettando, i link tornano nella lista e — grazie al resume descritto sotto — ripartono dai pezzi già scaricati: basta premere Avvia.
 
 La coda si apre su **Tutti**, così anche i file completati restano visibili. **In corso**, **Completati** e **Non completati** filtrano la lista. I conteggi si aggiornano durante il download. Il menu **…** accanto al nome contiene le azioni per quel file. La freccia espande i dati del trasferimento. L’ultimo errore occupa una riga. Apri **Dettagli** per leggere il messaggio intero e la cronologia dei tentativi. Annullando un singolo file, i dati parziali restano su disco salvo selezione esplicita della casella di eliminazione.
-
-Anteprime della coda con dati di esempio nel [tema chiaro](images/download-queue-light.png) e nel [tema scuro](images/download-queue-dark.png).
 
 Il resume copre anche le interruzioni non volontarie (chiusura del programma, blackout, errore). Grazie allo schema `.part` + sidecar, alla ripresa vengono riscaricati solo i chunk mancanti; un ciclo è considerato completo unicamente quando esiste il file finale rinominato, quindi un file interrotto non viene mai scambiato per completo.
 
@@ -232,6 +232,8 @@ Prima del primo download, **Connessione** mostra l’ultima velocità della line
 ---
 
 ## 11. Output, storico e log
+
+Premi **Storico** nella barra in basso per consultare i completamenti, dai più recenti. La ricerca filtra per nome del file. Ogni voce riporta data e dimensione. **Apri cartella** apre la destinazione selezionata. Lo storico comprende anche i registri ruotati ancora presenti su disco e mostra ciascun completamento di un file scaricato più volte.
 
 I file scaricati vengono salvati in sottocartelle dedicate dentro la **cartella di download**. Per impostazione predefinita è la cartella `downloads` del progetto, ma può essere cambiata dal menu **Impostazioni → «Cartella download:»**: la scelta viene ricordata tra le sessioni e, se la cartella indicata non è scrivibile, il programma avvisa e torna alla predefinita. Prima di iniziare, il programma verifica che sul disco di destinazione ci sia spazio sufficiente per il file (più un margine di sicurezza): in mancanza, il download viene abbandonato subito con un messaggio chiaro invece di fallire a metà con il disco pieno. Ogni download da **link a file singolo** occupa una cartella con il nome del file scaricato e un suffisso numerico (`<nome_file>_<id>/`); al suo interno le sottocartelle `ciclo_1/`, `ciclo_2/`, … contengono i file prodotti da ciascun ciclo. Il nome della cartella viene assegnato al primo resolve riuscito del link: fino a quel momento viene usato un nome temporaneo basato sull'hash dell'URL. I file provenienti da un **link a cartella** seguono invece un layout **ad albero**: finiscono tutti sotto un'unica cartella che porta il nome della cartella Mega, con le sottocartelle originali preservate (`<Nome cartella Mega>/<sottocartella>/<file>`), senza suffisso numerico e senza livello `ciclo_N`. Tutti i log diagnostici/operativi sono raccolti nella cartella `logs/` del progetto: lo storico dei download completati (con deduplica per handle Mega, usato per avvisare quando si reinserisce un link già scaricato), il registro dei link abbandonati, le metriche per-fonte dei proxy, un log tecnico generale dell'attività, un log strutturato universale (`logs/events.jsonl`) e una cattura grezza dell'intero output del terminale della sessione corrente (`logs/terminal-log.txt`, riazzerato a ogni avvio). Non servono per l'uso ordinario, ma sono disponibili per la diagnostica.
 

@@ -1,5 +1,6 @@
 venv/
 .venv-macos/
+/Mega Downloader Proxy Rotator.lnk
 __pycache__/
 downloads/
 *.pyc

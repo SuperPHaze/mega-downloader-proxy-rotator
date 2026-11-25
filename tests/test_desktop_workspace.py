@@ -1,4 +1,5 @@
 """Percorsi della GUI con la rete e i dati della sessione isolati."""
+import json
 import sys
 
 import pytest
@@ -7,7 +8,10 @@ pytest.importorskip("PyQt6.QtWidgets")
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QAction
 from PyQt6.QtTest import QTest
-from PyQt6.QtWidgets import QApplication, QFileDialog, QMessageBox, QScrollBar, QTabWidget
+from PyQt6.QtWidgets import (
+    QApplication, QFileDialog, QLineEdit, QMessageBox, QScrollBar, QStyle, QStyleOptionComboBox,
+    QStyleOptionSpinBox, QTabWidget, QToolButton,
+)
 
 from src.gui import preferences
 from src.gui.format_helpers import link_caption
@@ -20,6 +24,7 @@ from src.gui.paste_links_dialog import PasteLinksDialog
 @pytest.fixture
 def window(qt_app, tmp_path, monkeypatch, italian_ui):
     monkeypatch.setattr(preferences, "_PREFS_PATH", tmp_path / "preferences.json")
+    monkeypatch.setattr("src.gui.main_window.LOGS_DIR", tmp_path)
     for method in ("_run_speedtest", "_maybe_check_updates_on_startup", "_session_persist"):
         monkeypatch.setattr(MainWindow, method, lambda self: None)
     monkeypatch.setattr("src.gui.main_window.session_store.load", lambda: [])
@@ -206,7 +211,7 @@ def test_single_page_long_file_and_os_error_fit_in_row(window, qt_app, lang, dar
     assert card._error_lbl.text() == summary
     assert path in card._error_lbl.toolTip()
     assert path in card._error_lbl.accessibleDescription()
-    assert card._progress.height() == 3
+    assert card._progress.height() == 5
     assert panel._scroll.horizontalScrollBar().maximum() == 0
     assert panel._scroll.verticalScrollBar().maximum() == 0
 
@@ -247,3 +252,166 @@ def test_foreign_destination_requires_local_choice(window, monkeypatch, tmp_path
     window.controls.start_btn.click()
     assert started == [url]
     assert preferences.load_download_dir() == str(tmp_path)
+
+
+def test_history_search_selection_and_live_completion(window, qt_app, monkeypatch, tmp_path):
+    from src.core import download_history
+    from src.gui.history_dialog import QDesktopServices
+
+    monkeypatch.setattr(download_history, "LOGS_DIR", tmp_path)
+    path = download_history.download_history_path()
+    def record(name):
+        return json.dumps({"handle": "same", "file_name": name, "file_size": 3 << 30,
+                           "completed_at": "2026-11-25T09:00:00", "path": str(tmp_path / name)}) + "\n"
+
+    path.with_suffix(".log.1").write_text(record("Prima copia.pdf"), encoding="utf-8")
+    path.write_text("[]\nparziale\n" + record("Atlante.pdf"), encoding="utf-8")
+    button = next(b for b in window.findChildren(QToolButton) if b.defaultAction() is window._actions["history.button"])
+    button.click()
+    history = window._history_dialog
+    assert history.isVisible() and not history.isModal()
+    assert [e.name for e in history.model.entries] == ["Atlante.pdf", "Prima copia.pdf"]
+    assert history.model.index(0, 2).data() == "3.0 GB"
+    history.search.setText("ATLANTE")
+    assert history.filtered.rowCount() == 1
+    history.table.selectRow(0)
+    folders = []
+    monkeypatch.setattr(QDesktopServices, "openUrl", lambda url: folders.append(url.toLocalFile()) or True)
+    history.open_folder.click()
+    assert folders == [str(tmp_path)]
+
+    with path.open("a", encoding="utf-8") as stream:
+        stream.write(record("Altro.epub"))
+    window._on_file_done(0)
+    assert history.model.entries[0].name == "Altro.epub"
+    assert history._selection().name == "Atlante.pdf"
+    history.search.setText("nessuna-corrispondenza")
+    assert history.empty.isVisible() and not history.open_folder.isEnabled()
+    TR.set_preference("en")
+    assert history.empty.text() == t("history.no_match")
+    history.close()
+    path.unlink()
+    path.with_suffix(".log.1").unlink()
+    button.click()
+    assert history.empty.text() == t("history.empty")
+    assert history.filtered.rowCount() == 0
+
+
+def test_reopen_and_save_link_list(window, monkeypatch):
+    links = ["https://mega.nz/file/EXAMPLE1#key", "https://mega.nz/file/EXAMPLE2#key"]
+    window.link_panel.set_links(links)
+    checked = []
+    def confirm(additions, parent):
+        checked.append(additions)
+        return additions
+    monkeypatch.setattr("src.gui.link_panel.confirm_already_downloaded", confirm)
+    assert window.link_panel.paste_btn.text() == "Apri elenco link"
+    replacement = "https://mega.nz/file/EXAMPLE3#" + "x" * 200
+    def edit():
+        dialog = QApplication.activeModalWidget()
+        assert dialog.edit.toPlainText().splitlines() == links
+        assert dialog.edit.textCursor().atEnd() and dialog.edit.textCursor().block().text() == ""
+        assert dialog.edit.font().pointSizeF() >= 13
+        assert dialog.windowTitle() == "Elenco link" and dialog.add_btn.text() == "Salva elenco"
+        dialog.edit.setPlainText("\n".join([links[1], replacement]))
+        dialog.add_btn.click()
+    QTimer.singleShot(0, edit)
+    window.link_panel.paste_btn.click()
+    assert window.link_panel.get_links() == [links[1], replacement]
+    assert checked == [[replacement]]
+    def clear():
+        dialog = QApplication.activeModalWidget()
+        dialog.edit.clear()
+        assert dialog.add_btn.isEnabled()
+        dialog.add_btn.click()
+    QTimer.singleShot(0, clear)
+    window.link_panel.paste_btn.click()
+    assert window.jobs_panel._empty.isVisible()
+
+
+def test_debug_toggles_in_main_window_while_queue_updates(window, tmp_path, monkeypatch, qt_app):
+    from src.core.config import TERMINAL_LOG
+
+    monkeypatch.setattr("subprocess.Popen", lambda *args, **kwargs: pytest.fail("External process"))
+    window.jobs_panel.reset(["https://mega.nz/file/EXAMPLE1#test"])
+    window._show_session()
+    panel = window._debug_panel
+    action = window._actions["debug.button"]
+    button = next(b for b in window.findChildren(QToolButton) if b.defaultAction() is action)
+    assert panel.isHidden() and not button.isChecked()
+    (tmp_path / TERMINAL_LOG).write_text("[DEBUG] prima del clic\n")
+    visible_windows = {w for w in QApplication.topLevelWidgets() if w.isVisible()}
+    window._details_toggle.click()
+    button.click()
+    qt_app.processEvents()
+    assert panel.isVisible() and panel.window() is window and button.isChecked()
+    assert not window._details_toggle.isChecked() and window.jobs_panel.isVisible()
+    assert visible_windows == {w for w in QApplication.topLevelWidgets() if w.isVisible()}
+    assert "prima del clic" in panel.output.toPlainText()
+    window.jobs_panel.model.set_progress(0, 21)
+    TR.set_preference("en")
+    assert panel.output.accessibleName() == "Debug log"
+    panel._hide_button.click()
+    window.jobs_panel.model.set_progress(0, 42)
+    qt_app.processEvents()
+    assert panel.isHidden() and not action.isChecked()
+    assert window.isVisible() and window.jobs_panel._cards[0]._percent_lbl.text() == "42%"
+    action.trigger()
+    assert panel.isVisible()
+    window._details_toggle.click()
+    assert not action.isChecked() and panel.isHidden()
+    button.click()
+    button.click()
+    assert panel.isHidden() and window.isVisible()
+
+
+def test_file_details_and_pending_progress(window, qt_app):
+    url = "https://mega.nz/file/EXAMPLE1#" + "long-key" * 15
+    panel = window.jobs_panel
+    panel.reset([url])
+    window._show_session()
+    card = panel._cards[0]
+    assert card._percent_lbl.isHidden() and card._progress.isHidden()
+    card._details_action.trigger()
+    detail = window._open_dialogs[0]
+    assert isinstance(detail.url_edit, QLineEdit)
+    assert detail.url_edit.isReadOnly() and detail.url_edit.text() == url
+    assert detail.url_edit.cursorPosition() == 0
+    assert len(detail.findChildren(QLineEdit)) == 1
+    detail.copy_btn.click()
+    assert QApplication.clipboard().text() == url
+    panel.model.set_progress(0, 12)
+    qt_app.processEvents()
+    assert card._percent_lbl.isVisible() and card._percent_lbl.text() == "12%"
+    assert detail.metric_values["progress"].text() == "12%"
+    for key, label in detail.metric_labels.items():
+        assert label.x() == detail.metric_values[key].x()
+    assert detail.metric_values["status"].text() == "In corso"
+
+
+@pytest.mark.parametrize("dark", [False, True])
+def test_settings_arrow_hit_targets_work_in_both_themes(window, qt_app, dark):
+    window._on_theme_toggle(dark)
+    controls = window.controls
+    controls._settings_dialog.show()
+    qt_app.processEvents()
+    spin = controls.time_limit_spin
+    option = QStyleOptionSpinBox()
+    spin.initStyleOption(option)
+    initial = spin.value()
+    for sub, expected in ((QStyle.SubControl.SC_SpinBoxUp, initial + 1),
+                          (QStyle.SubControl.SC_SpinBoxDown, initial)):
+        target = spin.style().subControlRect(QStyle.ComplexControl.CC_SpinBox, option, sub, spin)
+        assert target.isValid() and spin.rect().contains(target.center())
+        QTest.mouseClick(spin, Qt.MouseButton.LeftButton, pos=target.center())
+        assert spin.value() == expected
+    combo = controls.concurrency_combo
+    combo_option = QStyleOptionComboBox()
+    combo.initStyleOption(combo_option)
+    arrow = combo.style().subControlRect(QStyle.ComplexControl.CC_ComboBox, combo_option,
+                                         QStyle.SubControl.SC_ComboBoxArrow, combo)
+    assert arrow.isValid() and combo.rect().contains(arrow.center())
+    combo.setFocus()
+    previous = combo.currentIndex()
+    QTest.keyClick(combo, Qt.Key.Key_Down)
+    assert combo.currentIndex() == previous + 1

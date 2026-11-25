@@ -1,0 +1,63 @@
+#!/bin/sh
+# Finder avvia questo eseguibile come applicazione grafica tramite Launch Services.
+set -eu
+cd "$(dirname "$0")/../../.."
+project_dir=$(pwd -P)
+PATH="${PATH:-/usr/bin:/bin}:/opt/homebrew/bin:/usr/local/bin"
+export PATH
+
+fail() {
+    locale=${LC_ALL:-${LC_MESSAGES:-${LANG:-}}}
+    if [ -z "$locale" ]; then
+        locale=$(/usr/bin/defaults read -g AppleLocale 2>/dev/null || true)
+    fi
+    case "$locale" in
+        it*) message=$2 ;;
+        *)   message=$1 ;;
+    esac
+    printf '%s\n' "$message" >&2
+    /usr/bin/osascript - "$message" <<'APPLESCRIPT'
+on run argv
+    display alert "Mega Downloader Proxy Rotator" message (item 1 of argv) as critical
+end run
+APPLESCRIPT
+    exit 1
+}
+
+if [ ! -f src/main.py ] || [ ! -f requirements.txt ]; then
+    fail "Keep this app in the project folder, next to src and requirements.txt." \
+         "Tieni questa app nella cartella del progetto, accanto a src e requirements.txt."
+fi
+mkdir -p logs || fail "The project folder must be writable." "Serve accesso in scrittura alla cartella del progetto."
+setup_log="$project_dir/logs/launcher.log"
+setup_failed() {
+    fail "Python setup failed. See $setup_log for details." \
+         "Preparazione di Python non riuscita. Trovi i dettagli in $setup_log."
+}
+supported() {
+    "$1" -c 'import sys; sys.exit(not ((3, 11) <= sys.version_info[:2] <= (3, 14)))' 2>/dev/null
+}
+
+env_dir="$project_dir/venv"
+if [ -d "$env_dir/Scripts" ] && [ ! -x "$env_dir/bin/python" ]; then
+    env_dir="$project_dir/.venv-macos"
+fi
+python="$env_dir/bin/python"
+if [ ! -x "$python" ]; then
+    if [ -e "$env_dir" ]; then
+        fail "Incomplete Python environment at $env_dir. Move it aside and open the app again." \
+             "Ambiente Python incompleto in $env_dir. Spostalo e riapri l’app."
+    fi
+    for candidate in python3.14 python3.13 python3.12 python3.11 python3; do
+        if command -v "$candidate" >/dev/null 2>&1 && supported "$candidate"; then
+            "$candidate" -m venv "$env_dir" >"$setup_log" 2>&1 || setup_failed
+            break
+        fi
+    done
+fi
+if [ ! -x "$python" ] || ! supported "$python"; then
+    fail "Install Python 3.11–3.14, then open the app again." \
+         "Installa Python 3.11–3.14 e riapri l’app."
+fi
+"$python" -m pip --disable-pip-version-check install --quiet -r requirements.txt >"$setup_log" 2>&1 || setup_failed
+exec "$python" -m src.main

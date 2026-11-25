@@ -943,9 +943,9 @@ def test_job_detail_built_in_current_language(qapp, isolated_prefs, monkeypatch)
     _in_italian(monkeypatch)
     TR.set_preference("en")
     dlg = JobDetailDialog(_job_con_storia(monkeypatch), 0)
-    assert dlg.windowTitle() == "Job detail #1"
+    assert dlg.windowTitle() == "Download details 1"
     assert dlg.close_btn.text() == "Close"
-    assert dlg.log_label.text() == "Attempts log:"
+    assert dlg.log_label.text() == "Attempts log"
     assert "Link abandoned after 25 attempts" in dlg.log_view.toPlainText()
 
 
@@ -969,10 +969,10 @@ def test_job_detail_retranslates_with_a_populated_log(qapp, isolated_prefs, monk
     assert "Download started" in dopo             # ...ma testo ritradotto
     assert "Link abandoned after 25 attempts" in dopo
     assert "Download avviato" not in dopo
-    assert dlg.windowTitle() == "Job detail #1"
-    assert dlg.ip_history_label.text() == "IP history:"
+    assert dlg.windowTitle() == "Download details 1"
+    assert dlg.ip_history_label.text() == "IP history"
     assert dlg.abandoned_title.text() == "Link abandoned"
-    assert "Last error: IP check failed: timeout" in dlg.summary_label.text()
+    assert "Last error: IP check failed: timeout" in dlg.abandoned_info.text()
 
 
 def test_job_status_is_translated_everywhere(qapp, isolated_prefs, monkeypatch):
@@ -999,8 +999,8 @@ def test_job_status_is_translated_everywhere(qapp, isolated_prefs, monkeypatch):
             dlg.retranslate()
             assert status_label(stato) == atteso
             assert atteso in panel._cards[0]._badge.text()
-            assert atteso in dlg.summary_label.text()
-            assert stato not in dlg.summary_label.text()   # niente slug grezzo
+            assert dlg.metric_values["status"].text() == atteso
+            assert "<" not in dlg.metric_values["status"].text()
 
 
 def test_status_text_fits_each_state(qapp, isolated_prefs, monkeypatch):

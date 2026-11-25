@@ -1,7 +1,7 @@
 # Motore di traduzione della GUI (IT/EN).
 #
 # Perche' un modulo proprio e non `tr()` + .ts/.qm di Qt: il progetto si
-# distribuisce senza compilare (scompatta lo zip -> install.ps1 -> avvia.bat) e
+# distribuisce senza compilare (scompatta lo zip -> install.ps1 -> collegamento all'app) e
 # nel venv non c'e' `lrelease`. I dizionari sono Python normale, quindi l'EN si
 # scrive e si rilegge come si fa gia' con README.it.md -> README.md, e la parita'
 # IT<->EN si verifica con un test offline. Vedi MyDocs/i18n-gui-2.0.0-design.md §2.

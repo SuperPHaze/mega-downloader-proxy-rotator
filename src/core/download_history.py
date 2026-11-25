@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Iterator
+from dataclasses import dataclass
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
@@ -18,6 +20,7 @@ from src.core.config import (
     LOGS_DIR,
 )
 from src.core.mega_links import extract_handle as _extract_handle
+from src.core.maintenance import history_paths
 
 _LOGGER_NAME = "download_history"
 _initialized = False
@@ -85,26 +88,46 @@ def record_completed(
     logger.info(json.dumps(payload, ensure_ascii=False))
 
 
-def load_history() -> dict[str, dict]:
-    """Rilegge il log corrente (NON i backup ruotati) e ritorna un dict
-    handle -> record. A parita' di handle l'ultimo record vince."""
-    p = _path()
-    out: dict[str, dict] = {}
-    if not p.exists():
-        return out
+def _records(path: Path) -> Iterator[dict]:
     try:
-        with open(p, "r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
+        with path.open(encoding="utf-8", errors="replace") as stream:
+            for line in stream:
                 try:
                     rec = json.loads(line)
                 except ValueError:
                     continue
-                handle = rec.get("handle")
-                if isinstance(handle, str) and handle:
-                    out[handle] = rec
-    except OSError:
+                if isinstance(rec, dict) and isinstance(rec.get("handle"), str) and rec["handle"]:
+                    yield rec
+    except FileNotFoundError:
         pass
-    return out
+    except OSError as exc:
+        logging.getLogger(__name__).warning("Lettura storico %s: %s", path, exc)
+
+
+def load_history() -> dict[str, dict]:
+    """Indice del registro corrente per l'avviso sui duplicati. Vince l'ultima voce."""
+    return {rec["handle"]: rec for rec in _records(_path())}
+
+
+@dataclass(frozen=True)
+class HistoryEntry:
+    name: str
+    completed_at: str
+    size: int
+    path: str
+
+
+def history_entries() -> list[HistoryEntry]:
+    """Tutti i completamenti conservati, dal più recente, inclusi i download ripetuti."""
+    entries = []
+    for path in history_paths(LOGS_DIR):
+        for rec in reversed(list(_records(path))):
+            name, date = rec.get("file_name"), rec.get("completed_at")
+            size, destination = rec.get("file_size"), rec.get("path")
+            entries.append(HistoryEntry(
+                name if isinstance(name, str) and name else rec["handle"],
+                date if isinstance(date, str) else "",
+                size if isinstance(size, int) else -1,
+                destination if isinstance(destination, str) else "",
+            ))
+    return entries

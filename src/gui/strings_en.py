@@ -19,6 +19,23 @@ STRINGS: dict[str, str | dict[str, str]] = {
     "workspace.details": "Session details",
     "workspace.queue_title": "Download queue",
     "workspace.file_menu": "File",
+    "history.button": "History",
+    "history.tooltip": "Show completed downloads",
+    "history.title": "Download history",
+    "history.search": "Search by file name",
+    "history.name": "File name",
+    "history.date": "Completed",
+    "history.size": "Size",
+    "history.empty": "Completed downloads will appear here.",
+    "history.no_match": "No files match your search.",
+    "history.count": {"one": "{n} item", "other": "{n} items"},
+    "history.open_folder": "Open folder",
+    "history.unavailable": "The folder recorded for this download is unavailable on this computer.",
+    "debug.button": "Debug",
+    "debug.tooltip": "Show or hide the log in this window",
+    "debug.title": "Debug log",
+    "debug.empty": "Waiting for messages from this session…",
+    "debug.hide": "Hide",
     "workspace.speed": "Current speed",
     "workspace.volume": "Downloaded",
     "workspace.remaining": "Time remaining",
@@ -32,7 +49,7 @@ STRINGS: dict[str, str | dict[str, str]] = {
     "controls.minimize_tooltip_tray_mac": "The window hides in the menu bar. Click to choose again.",
     "tray.ask_dock": "Dock",
     "tray.ask_menu_bar": "Menu bar",
-    "link_panel.edit": "Edit links",
+    "link_panel.edit": "Open link list",
     "jobs_panel.filter_all": "All",
     "jobs_panel.filtered_empty": "No downloads in this view. Select All to see the queue.",
     "jobs_panel.details": "Details",
@@ -198,7 +215,10 @@ STRINGS: dict[str, str | dict[str, str]] = {
 
     # ---- "Paste Mega links" window ----------------------------------------------
     "paste.title": "Paste Mega links",
-    "paste.instructions": "Paste Mega links (one per line):",
+    "paste.instructions": "Paste one Mega link per line.",
+    "paste.list_title": "Link list",
+    "paste.list_hint": "Add, edit or remove links. Enter one link per line.",
+    "paste.save_list": "Save list",
     "paste.valid": "Valid: {n}",
     "paste.folders": "Folders: {n}",
     "paste.invalid": "Invalid: {n}",
@@ -249,6 +269,14 @@ STRINGS: dict[str, str | dict[str, str]] = {
     "proxy_bar.card_band": "Line speed",
     "proxy_bar.card_band_proxy": "Proxy speed",
     "proxy_bar.speedtest_button": "Test line speed",
+    "proxy_bar.speedtest_running": "Measuring…",
+    "proxy_bar.speedtest_retry": "Retry test",
+    "proxy_bar.unavailable": "Unavailable",
+    "proxy_bar.line_http": "The test server returned HTTP {status}. Try again shortly.",
+    "proxy_bar.line_timeout": "The test server took too long to respond.",
+    "proxy_bar.line_network": "The test failed. Check your connection and try again.",
+    "proxy_bar.line_incomplete": "The test transfer was interrupted.",
+    "proxy_bar.last_measurement": "Showing the last successful measurement.",
     "proxy_bar.speedtest_tooltip": (
         "Measures the line bandwidth (direct download, without proxies)."
     ),
@@ -762,24 +790,23 @@ STRINGS: dict[str, str | dict[str, str]] = {
     "job_log.restart": "----- Restart requested -----",
 
     # ---- job detail window --------------------------------------------------
-    "job_detail.title": "Job detail #{file}",
+    "job_detail.title": "Download details {file}",
+    "job_detail.named_title": "Details · {name}",
     "job_detail.abandoned_title": "Link abandoned",
     "job_detail.copy": "Copy",
-    "job_detail.abandoned_info": (
-        "Failed attempts: {attempts}  •  Last error: {error}"
-    ),
     "job_detail.not_available": "n/a",
-    "job_detail.url_label": "URL:",
-    "job_detail.summary": (
-        "Status: <b>{status}</b>  •  Progress: {progress}%  •  "
-        "Attempts: {attempts}  •  Errors: {errors}  •  "
-        "Duration: {duration}"
-    ),
-    "job_detail.summary_last_error": "  •  Last error: {error}",
-    "job_detail.ip_history": "IP history:",
-    "job_detail.col_timestamp": "Timestamp",
+    "job_detail.url_label": "Download URL",
+    "job_detail.status": "Status",
+    "job_detail.progress": "Progress",
+    "job_detail.attempts": "Attempts",
+    "job_detail.errors": "Errors",
+    "job_detail.duration": "Duration",
+    "job_detail.no_ips": "No IP addresses recorded.",
+    "job_detail.no_attempts": "No attempts recorded.",
+    "job_detail.ip_history": "IP history",
+    "job_detail.col_timestamp": "Time",
     "job_detail.col_ip": "IP",
-    "job_detail.attempts_log": "Attempts log:",
+    "job_detail.attempts_log": "Attempts log",
     "job_detail.close": "Close",
 
     # ---- errors: English of the engine catalog ------------------------------

@@ -220,6 +220,8 @@ class _FintaFinestra:
     _session_queue_drained = _MW._session_queue_drained
     _session_is_running = _MW._session_is_running
     _open_maintenance_dialog = _MW._open_maintenance_dialog
+    _refresh_visible_history = _MW._refresh_visible_history
+    _history_dialog = None
 
 
 class _FakeControls:

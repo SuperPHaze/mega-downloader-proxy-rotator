@@ -157,7 +157,7 @@ class ControlsBar(QWidget):
         self.settings_btn.clicked.connect(self.show_settings)
         layout.addWidget(self.settings_btn)
         self._settings_dialog = QDialog(self)
-        self._settings_dialog.setMinimumWidth(360)
+        self._settings_dialog.setMinimumWidth(420)
         settings = QVBoxLayout(self._settings_dialog)
         settings.setContentsMargins(18, 18, 18, 16)
         settings.setSpacing(12)
@@ -170,6 +170,9 @@ class ControlsBar(QWidget):
         application = QFormLayout(self._app_group)
         for form in (downloads, application):
             form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+            form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+            form.setHorizontalSpacing(16)
+            form.setVerticalSpacing(9)
         self.theme_btn = QPushButton()
         self.theme_btn.clicked.connect(self._on_theme_toggle)
         for form, key, widget in (
@@ -243,6 +246,9 @@ class ControlsBar(QWidget):
 
         for _key, _lbl in self._settings_labels.items():
             _lbl.setText(t(_key))
+        label_width = max(label.sizeHint().width() for label in self._settings_labels.values())
+        for label in self._settings_labels.values():
+            label.setFixedWidth(label_width)
 
         # Testi che dipendono dallo stato corrente.
         self._refresh_pause_button()

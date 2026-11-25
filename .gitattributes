@@ -1,1 +1,1 @@
-/avvia.command text eol=lf
+*.app/Contents/MacOS/* text eol=lf

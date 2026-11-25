@@ -1,6 +1,7 @@
 # Preparazione della coda: anteprima dei link, modifica della lista e import.
 from __future__ import annotations
 
+from collections import Counter
 from pathlib import Path
 
 from PyQt6.QtCore import Qt, pyqtSignal
@@ -27,7 +28,7 @@ MEGA_PREFIX = "https://mega.nz/"
 
 def _format_history_date(iso_ts: str | None) -> str:
     # "2026-06-10T14:30:00" -> "10/06/2026"; input malformato -> "?".
-    if not iso_ts or len(iso_ts) < 10:
+    if not isinstance(iso_ts, str) or len(iso_ts) < 10:
         return "?"
     date = iso_ts[:10]
     parts = date.split("-")
@@ -245,12 +246,26 @@ class LinkPanel(QWidget):
         if dlg.exec() != PasteLinksDialog.DialogCode.Accepted:
             return
         new_list = dlg.accepted_links()
+        if new_list == self._links:
+            return
         # Alert storico: avvisa se qualche link e' gia' stato scaricato in
         # una sessione precedente (dedup per handle, vedi download_history).
-        new_list = confirm_already_downloaded(new_list, self.window())
-        if new_list is None:
+        # La conferma riguarda solo le nuove occorrenze. Saltare un doppione
+        # non deve rimuovere dalla bozza un file già accettato in precedenza.
+        remaining = Counter(self._links)
+        new_indices = []
+        for index, url in enumerate(new_list):
+            if remaining[url]:
+                remaining[url] -= 1
+            else:
+                new_indices.append(index)
+        additions = [new_list[i] for i in new_indices]
+        accepted = confirm_already_downloaded(additions, self.window())
+        if accepted is None:
             return
-        self.set_links(new_list)
+        accepted_urls = set(accepted)
+        skipped = {i for i in new_indices if new_list[i] not in accepted_urls}
+        self.set_links([url for i, url in enumerate(new_list) if i not in skipped])
 
     def _on_import_file(self) -> None:
         path, _ = QFileDialog.getOpenFileName(

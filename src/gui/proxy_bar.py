@@ -1,7 +1,7 @@
 """Misure e comandi della connessione nei dettagli della sessione."""
 from __future__ import annotations
 
-from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtCore import QLocale, pyqtSignal
 from PyQt6.QtWidgets import (
     QFrame,
     QGridLayout,
@@ -14,7 +14,7 @@ from PyQt6.QtWidgets import (
 )
 
 from src.gui import style as _style
-from src.gui.i18n import t
+from src.gui.i18n import TR, t
 from src.proxy.proxy_cache import delete_proxy_cache
 
 
@@ -69,6 +69,10 @@ class ProxyBar(QWidget):
         self._discarded = 0
         self._refills = 0
         self._since_seconds: float | None = None
+        self._line_mbps: float | None = None
+        self._line_busy = False
+        self._line_failure = ""
+        self._line_http_status = 0
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -98,6 +102,10 @@ class ProxyBar(QWidget):
         for column in range(3):
             cards_grid.setColumnStretch(column, 1)
         layout.addLayout(cards_grid)
+        self._line_note = QLabel()
+        self._line_note.setObjectName("secondaryText")
+        self._line_note.setWordWrap(True)
+        layout.addWidget(self._line_note)
         # Pulsante per rifare la misura della banda della linea (diretto, fuori
         # dai proxy). La misura iniziale parte da MainWindow all'avvio.
         self._speedtest_btn = QPushButton()
@@ -118,6 +126,7 @@ class ProxyBar(QWidget):
         for button in (self._speedtest_btn, self._proxy_speedtest_btn, self._reset_btn):
             button.setObjectName("textAction")
             actions.addWidget(button)
+        self._speedtest_btn.setObjectName("measureAction")
         actions.addStretch()
         layout.addLayout(actions)
         self.set_session_visible(False)
@@ -139,7 +148,7 @@ class ProxyBar(QWidget):
         self._micro.setText(t("proxy_bar.micro"))
         for card in self._cards:
             card.retranslate()
-        self._speedtest_btn.setText(t("proxy_bar.speedtest_button"))
+        self._refresh_line_test()
         self._speedtest_btn.setToolTip(t("proxy_bar.speedtest_tooltip"))
         self._proxy_speedtest_btn.setText(
             t("proxy_bar.proxy_speedtest_button")
@@ -184,13 +193,40 @@ class ProxyBar(QWidget):
     # ---- slot speed test linea -----------------------------------------------
 
     def on_speedtest_running(self) -> None:
-        self._card_band.set_value("…")
+        self._line_busy = True
+        self._line_failure = ""
+        self._refresh_line_test()
 
-    def on_speedtest_result(self, mbit: float, ok: bool) -> None:
+    def on_speedtest_result(self, mbit: float, ok: bool, reason: str = "network", status: int = 0) -> None:
+        self._line_busy = False
+        self._line_failure = ""
         if ok and mbit > 0:
-            self._card_band.set_value(f"{mbit:.0f} Mbit")
+            self._line_mbps = mbit
         else:
-            self._card_band.set_value("—", "text_dim")
+            self._line_failure = reason
+            self._line_http_status = status
+        self._refresh_line_test()
+
+    def _refresh_line_test(self) -> None:
+        caption = "button"
+        if self._line_busy:
+            caption = "running"
+        elif self._line_failure:
+            caption = "retry"
+        self._speedtest_btn.setText(t(f"proxy_bar.speedtest_{caption}"))
+        self._speedtest_btn.setEnabled(not self._line_busy)
+        if self._line_mbps is not None:
+            number = QLocale(TR.language()).toString(self._line_mbps, "f", 1)
+            self._card_band.set_value(f"{number} Mbit/s")
+        else:
+            self._card_band.set_value(t("proxy_bar.unavailable") if self._line_failure else "—", "text_dim")
+        note = ""
+        if self._line_failure:
+            note = t(f"proxy_bar.line_{self._line_failure}", status=self._line_http_status)
+            if self._line_mbps is not None:
+                note += " " + t("proxy_bar.last_measurement")
+        self._line_note.setText(note)
+        self._line_note.setVisible(bool(note))
 
     def on_proxy_speedtest_running(self) -> None:
         self._card_band_proxy.set_value("…")

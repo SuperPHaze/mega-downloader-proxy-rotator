@@ -51,7 +51,7 @@ App **desktop per Windows e macOS** (Python + PyQt6) che scarica file **e intere
 - **Decifratura in streaming** su disco (RAM costante anche su file da molti GB), pattern `.part` + rinomina atomica.
 - **Resume** dei download interrotti e **riavvio** di falliti/abbandonati/annullati (riprende solo i chunk mancanti).
 - **Limite di tempo per file** configurabile; oltre la soglia il file viene abbandonato.
-- **Storico download** con avviso sui link già scaricati (dedup per handle Mega).
+- **Storico** mostra i download completati nelle sessioni precedenti e in quella corrente. Cerca un file per nome, controlla data e dimensione o apri la cartella in cui è stato salvato.
 - **Aggiunta di link a sessione in corso**: i nuovi link entrano in coda senza fermare i download né rifare la raccolta dei proxy; si sceglie se metterli in fondo o subito dopo il file in corso, e i link già presenti nella sessione vengono segnalati prima di aggiungerli.
 - **Link a cartella Mega** (`/folder/`): la cartella viene espansa nei singoli file, salvati ad albero sotto un'unica cartella col nome originale (vedi la guida).
 - **Watchdog per chunk**: scarta i proxy troppo lenti o che non finiscono in tempo.
@@ -68,7 +68,7 @@ App **desktop per Windows e macOS** (Python + PyQt6) che scarica file **e intere
 **Per usarla** — scarica il pacchetto pronto:
 1. Vai alla [Release più recente](https://github.com/SuperPHaze/mega-downloader-proxy-rotator/releases/latest) e scarica lo `.zip`.
 2. Estrai, doppio clic su **`install.bat`** (crea l'ambiente e installa tutto: app, test e strumenti in `tools/`).
-3. Avvia con **`avvia.bat`**: parte senza finestra del terminale. Se non parte, **`avvia-debug.bat`** fa la stessa cosa tenendo il terminale visibile, così si vede perché.
+3. Apri il collegamento **Mega Downloader Proxy Rotator** creato dall’installer. Premi **Debug** nella barra in basso per mostrare o nascondere il log sotto la coda.
 
 **Dai sorgenti** — richiede Python 3.11–3.14 nel PATH:
 ```bash
@@ -85,7 +85,7 @@ Un solo comando prepara tutto: dipendenze runtime (`requirements.txt`), dipenden
 
 ## Avvio su macOS
 
-Con Python 3.11–3.14 installato, apri `avvia.command` dal Finder. Al primo avvio crea l’ambiente Python nella cartella del progetto e installa le dipendenze. Agli avvii successivi riutilizza l’ambiente. Dal Terminale nella cartella del progetto puoi usare `sh avvia.command`. Se lo zip ha perso il permesso di esecuzione, `chmod +x avvia.command` abilita il doppio clic.
+Con Python 3.11–3.14 installato, apri **Mega Downloader Proxy Rotator.app** dal Finder. Tieni l’app nella cartella estratta, accanto a `src`. Il primo avvio prepara l’ambiente Python, quelli successivi lo riutilizzano. **Debug** mostra il log nella stessa finestra. Il pallino rosso chiude l’app.
 
 Su Apple Silicon con Python 3.14.10 è stato verificato l’avvio di un download dalla versione 2.3.0.
 

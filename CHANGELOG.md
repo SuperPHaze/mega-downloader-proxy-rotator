@@ -8,8 +8,11 @@ All notable changes to this project. Format based on [Keep a Changelog](https://
 
 ### Interface and macOS
 
-- Neutral light and dark themes with a coral red accent. Each download has a thin progress bar and a **…** menu for file actions.
-- Finder launcher `avvia.command`, minimize to Dock, and Mac shortcuts for adding links and opening Settings.
+- The queue uses a violet accent, per-file actions and a progress bar beside the percentage. Queued files show their status. Settings uses system controls for lists and numbers.
+- **History** lets you search completed downloads and open their folders. **Debug** shows the live session log below the queue. The Windows installer creates a shortcut directly to the graphical app.
+- **Open link list** reopens an editable draft with a **Save list** action. Download details show a single copyable URL and five metrics in a grid.
+- **Test line speed** uses an HTTPS endpoint and shows when the test is running, the result or an error with a retry action.
+- Finder launch with **Mega Downloader Proxy Rotator.app**, minimize to Dock, and Mac shortcuts for adding links and opening Settings.
 - The queue, per-file progress and destination share one window. Session statistics and connection details expand below the list. The compact startup view fits smaller screens. Cancelling a file keeps partial data unless deletion is explicitly selected.
 - Windows paths show the correct folder name on Mac. If the saved destination belongs to another system, the app asks for a local folder before downloading.
 
