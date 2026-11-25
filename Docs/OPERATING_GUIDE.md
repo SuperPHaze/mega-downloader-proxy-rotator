@@ -16,15 +16,15 @@ The intended use is downloading files you have the right to access. Public proxi
 
 ---
 
-## 1-bis. Starting the program: two launchers
+## 1-bis. Starting on Windows and macOS
 
-The installation (`install.bat`) prepares **two** launcher files in the program folder, doing the same thing in two different ways.
+On macOS, with Python 3.11–3.14 installed, open **Mega Downloader Proxy Rotator.app** in Finder. Keep the app in the project folder alongside `src`. The first launch sets up the dependencies. The red close button on the main window quits the app.
 
-**`avvia.bat` is the normal launcher**: it opens the application **with no terminal window**. That is the one to use. The moment it starts you see a black window flash into view and disappear: that is Windows opening a console for any `.bat` file, not the program. To avoid even that flash you can create a Windows shortcut by hand pointing straight at `venv\Scripts\pythonw.exe` with the argument `-m src.main`.
+On Windows, run `install.bat`, then open the **Mega Downloader Proxy Rotator** shortcut created in the project folder.
 
-**`avvia-debug.bat` is the backup launcher**: it starts the application **with the terminal visible** and keeps it open if something goes wrong. Use it when the app does not start and you want to see why with your own eyes.
+Click **Debug** in the bottom bar to read recent messages and follow the live log, including DEBUG records. The panel opens below the queue. Click **Debug** again or choose **Hide** to close the panel while downloads continue. The shortcut is **⌘⇧D** on Mac or **Ctrl+Shift+D** on Windows.
 
-With no terminal, everything that used to be readable on screen only goes into the files under `logs/`: the technical log (`logs/app.log`), the structured log (`logs/events.jsonl`) and the raw copy of the output (`logs/terminal-log.txt`, reset at every launch). A sudden error is captured too: unhandled exceptions end up both in the technical log and in `logs/crash.log`, alongside low-level crashes. **One case only stays invisible**: a failure happening *before* the logging system is up — an incomplete installation, say, or a corrupted program file. That is exactly what `avvia-debug.bat` is there for.
+The session output is saved in `logs/terminal-log.txt`. Technical logs and crash details are also recorded in `logs/app.log`, `logs/events.jsonl`, and `logs/crash.log`. If an error prevents the window from opening, run `.\venv\Scripts\python.exe -m src.main` in a terminal from the project folder to see the startup message.
 
 ---
 
@@ -149,11 +149,17 @@ Building the pool for the first time takes a while (roughly half a minute to a c
 
 The **Reset cache** button in the proxy zone (at the bottom of the interface) deletes `proxy_cache.json` without closing the application: the next startup or session will start from scratch, useful when testing a different configuration without leftovers from the previous session. The deletion does not interrupt any download in progress.
 
-The proxy zone also shows two side-by-side bandwidth measurements, distinguished by color. **Line speed** (green) is your own line bandwidth, measured with a direct download **without proxy**: it is computed automatically at startup and can be re-run with the **↻ Line speed** button. **Proxy speed** (blue) is instead the real aggregate bandwidth the **proxy pool** can deliver, obtained by downloading in parallel through the best proxies available at the moment; it is triggered with the **↻ Proxy speed** button, enabled only during a session (at rest there are no proxies to test). The measurement is robust: a slow or dead proxy contributes only the bytes actually downloaded, without failing the whole test. Comparing the two figures shows how close the proxy pool gets to your line capacity.
+Under **Session details → Connection**, **Line speed** is the bandwidth of the direct connection, measured at startup. Select **Test line speed** to measure it again. During a session, **Proxy speed** shows the aggregate bandwidth measured through the pool. **Test proxy speed** is available when the pool has active proxies. If a proxy slows down or drops out, only the bytes it delivers count towards the result. Comparing the two readings shows how close the pool gets to your line capacity.
+
+The button reads **Measuring…** during a direct test. The test downloads a sample from Cloudflare over HTTPS and displays the result in Mbit/s. If it fails, the panel shows the reason and a **Retry test** button. The last successful measurement remains available.
 
 ---
 
 ## 9. Session controls and resume
+
+In **Downloads**, paste or import links and review them before pressing **Start**. The destination is shown below the heading. On Mac, **⌘L** opens link entry and **⌘,** opens settings. Language and appearance remain available during a session.
+
+**Open link list** reopens the draft. Add, edit or remove addresses, one per line. **Save list** applies the changes. **Cancel** keeps the previous list.
 
 During a session, the available controls are pause/resume and cancel, both globally and per individual file from the table. Pausing does not lose the proxies: on resume, work continues from where it was suspended. Pausing takes effect **at the boundary of the current piece**: a chunk already in transfer is completed and only then does work suspend (suspending a piece mid-transfer would make the read timeouts expire). Canceling a single file can optionally also remove its already-downloaded data from disk.
 
@@ -169,7 +175,7 @@ A **folder** link added while downloading is listed first, as it is at start-up.
 
 If the program is closed (or crashes) with downloads not yet completed, on the next launch it offers to **reload the remaining links** with a prompt titled "Restore session" ("The previous session ended with N unfinished links. Do you want to load them back into the list?"). By accepting, the links return to the list and — thanks to the resume described below — restart from the pieces already downloaded: just press Start.
 
-The download list can be filtered with three mutually exclusive buttons — **In progress**, **Completed** and **Not completed** — which together cover every possible state (queued and running jobs fall under "In progress"; failed, cancelled and abandoned ones under "Not completed"). Each button reports in parentheses the number of files in its category, updated in real time, so the makeup of the session is readable at a glance without switching filters.
+The queue opens on **All**, so completed files stay visible. **In progress**, **Completed** and **Not completed** filter the list. Their counts update as files change state. The **…** menu beside a file name contains actions for that file. The arrow expands its transfer information. The latest error fits on one line. Open **Details** for the full message and the attempt history. Cancelling an individual file keeps partial data on disk unless you select the deletion checkbox.
 
 Resume also covers involuntary interruptions (program closed, blackout, error). Thanks to the `.part` + sidecar scheme, on resume only the missing chunks are re-downloaded; a cycle is considered complete only when the final renamed file exists, so an interrupted file is never mistaken for complete.
 
@@ -179,7 +185,7 @@ Resume also covers involuntary interruptions (program closed, blackout, error). 
 
 The interface is **bilingual: Italian and English**. On first launch the program follows the **system language** — Italian if the system is in Italian, English in every other case — and from then on the choice is the user's.
 
-You change it from the **Settings → "Language:"** menu, which offers three entries: **Automatic**, **Italiano**, **English**. "Automatic" is not a language but a rule: it keeps following the system, and shows in brackets which language it is picking at that moment ("Automatic (Italiano)"). Choosing Italiano or English explicitly steps out of the rule; to go back, just set "Automatic" again. The choice is **remembered** and restored on the next launch.
+You change it in **Settings → Language**, which offers three entries: **Automatic**, **Italiano**, **English**. "Automatic" is not a language but a rule: it keeps following the system, and shows in brackets which language it is picking at that moment ("Automatic (Italiano)"). Choosing Italiano or English explicitly steps out of the rule; to go back, just set "Automatic" again. The choice is **remembered** and restored on the next launch.
 
 The change is **immediate and needs no restart**: panels, menus, buttons, dialogs and the status line rewrite themselves in place, including windows that are already open — if a download's detail window is open, the attempts history already written is retranslated too.
 
@@ -191,7 +197,9 @@ The translation covers the **whole** interface, including the **error messages**
 
 ## 9-ter. Minimizing: notification area and notices
 
-When you minimize the window the program **asks where to put it**, with a question titled "Minimize": **Notification area** (the icon next to the clock) or **Taskbar** (the way it has always been). The question appears at the moment you minimize and has a **"Remember this choice"** checkbox: tick it and the choice is saved and no longer asked. To go back to being asked every time: **Settings → "On minimize:" → "Ask every time"** menu; the mouse tooltip on that button tells you which choice is in force right now.
+On Mac the initial destination is the Dock. To choose the menu bar as well, open **Settings**, then **On minimize** and **Ask every time**. A previously saved choice takes precedence.
+
+On Windows, when you minimize the window the program **asks where to put it**, with a question titled "Minimize": **Notification area** (the icon next to the clock) or **Taskbar** (the way it has always been). The question appears at the moment you minimize and has a **"Remember this choice"** checkbox: tick it and the choice is saved and no longer asked. To go back to being asked every time: **Settings → "On minimize:" → "Ask every time"** menu; the mouse tooltip on that button tells you which choice is in force right now.
 
 **The window close button (the X) does not change: it closes the application**, as it always has and without asking for confirmation. The notification area is a place to *minimize* the window to, not a way to quietly close the program.
 
@@ -205,30 +213,32 @@ If the notification area is not available — switched off in the Windows settin
 
 ---
 
-## 10. Statistics dashboard
+## 10. Session details
 
-The **Statistics** panel, visible below the main dashboard, aggregates session metrics in a single place designed for comparing configurations during tests. The panel is **collapsible**: clicking the header shrinks it to a single summary line (active time, volume, throughput and job counts) that remains always visible. The expanded/collapsed state is remembered between sessions.
+During a transfer the queue shows current speed, downloaded data and estimated time remaining. Open **Session details** below the list to see **Statistics** and **Connection**. The section starts closed each time you open the application.
 
-**What it shows:**
+- **Elapsed time** runs until the last file finishes. Starting a new session resets the clock.
+- **Effective speed** divides the total bytes downloaded by elapsed time. It includes partial data from failed or cancelled downloads.
+- **Average per file** is the mean of the average speeds of finished files. The other speed readings use samples taken while the session is active. The ring shows current speed relative to the session peak.
+- **Completion** shows the number and percentage of files that finished successfully. Use the filters above the queue to see files in each state.
+- **Copy summary** copies the session metrics and one line per file with its name, volume, duration, speed and state. You can also expand a file in the queue to see its details.
 
-- *Session*: active time since startup. The clock **auto-freezes** when all downloads finish (in any state), keeping the numbers stable for review. Starting a new session resets the clock.
-- *Downloaded volume*: cumulative total across all session jobs, including partial bytes from failed, cancelled, or abandoned jobs.
-- *Session speed*: two distinct formulas:
-  - **Effective throughput** = total volume / active time (measures how many bytes are actually delivered per unit of time);
-  - **Average per-download** = arithmetic average of the mean speeds of each finished job (indicates the typical quality of a single download).
-  - Session peak and minimum from 1 Hz sampling.
-- *Job counts*: totals by status and completion rate.
-- *Per-download detail*: one row per job with file name, volume, duration, and final average speed (or current speed for jobs still in progress).
-
-**"Copy summary" button**: produces a plain-text block in the clipboard with all the numbers listed above, ready to paste into a comparison note across tests with different configurations.
-
-Each job card in a terminal state also shows a summary line with the final average speed, downloaded volume, and duration of that individual download.
+Before a download starts, **Connection** shows the last measured line speed. During a session it also shows the proxy pool readings.
 
 ---
 
 ## 11. Output, history, and logs
 
-Downloaded files are saved in dedicated subfolders inside the **download folder**. By default this is the project's `downloads` folder, but it can be changed from the **Settings → "Download folder:"** menu: the choice is remembered across sessions and, if the chosen folder isn't writable, the program warns you and reverts to the default. Before starting, the program checks that the destination disk has enough space for the file (plus a safety margin): if not, the download is abandoned right away with a clear message instead of failing halfway on a full disk. Each download from a **single-file link** occupies a folder named after the downloaded file with a numeric suffix (`<file_name>_<id>/`); inside it, the `ciclo_1/`, `ciclo_2/`, … subfolders hold the files produced by each cycle. The folder name is assigned on the first successful link resolve; until then a temporary name based on a URL hash is used. Files coming from a **folder link** follow a **tree** layout instead: they all end up under a single folder named after the Mega folder, with the original subfolders preserved (`<Mega folder name>/<subfolder>/<file>`), with no numeric suffix and no `ciclo_N` level. All diagnostic/operational logs are collected in the project's `logs/` folder: the history of completed downloads (deduplicated by Mega handle, used to warn when a link already downloaded is re-entered), the log of abandoned links, per-source proxy metrics, a general technical activity log, a universal structured log (`logs/events.jsonl`), and a raw capture of the entire terminal output of the current session (`logs/terminal-log.txt`, reset on every startup). They are not needed for normal use, but are available for diagnostics.
+Click **History** in the bottom bar to see completed downloads, newest first. Search by file name to find the date and size. Select an entry and click **Open folder** to open its destination. History includes retained rotated logs and lists each completion when a file was downloaded several times.
+
+You can choose the **download folder** in **Settings**. The app remembers it across sessions. If the selected folder is unavailable for writing, the app alerts you and uses the project's default `downloads` folder. Before downloading, it checks that the disk has room for the file and a safety margin.
+
+- A **file link** saves the file directly in the selected destination, for example `downloads/Film.mkv`.
+- A **folder link** preserves the shared folder's name and its original subfolders, for example `downloads/Collection/Interviews/Scene.mkv`.
+- When a name is taken, the next copy uses the first available number, for example `Film (2).mkv`. This also applies when you request multiple copies.
+- **Recover downloads** also recognizes partial files from earlier versions. A single file resumed from `ciclo_1` is saved directly in the destination once complete.
+
+All diagnostic/operational logs are collected in the project's `logs/` folder: the history of completed downloads (deduplicated by Mega handle, used to warn when a link already downloaded is re-entered), the log of abandoned links, per-source proxy metrics, a general technical activity log, a universal structured log (`logs/events.jsonl`), and a raw capture of the entire terminal output of the current session (`logs/terminal-log.txt`, reset on every startup). They are not needed for normal use, but are available for diagnostics.
 
 A **passive diagnostics suite**, always on, complements these logs: native crash tracebacks, multi-thread exception capture, a periodic heartbeat with memory usage, and session start/clean-exit markers. In case of a crash, the command-line tool `tools/report.py` reads `logs/events.jsonl` and `logs/crash.log` and produces a readable HTML report in `logs/reports/`, useful for reconstructing what the program was doing shortly before the problem.
 
@@ -246,7 +256,7 @@ What each entry costs you:
 - **Saved session** (`session_state.json`): on the next start you will no longer be offered to resume the links left pending. Files already half-written on disk stay where they are and byte-level resume keeps working.
 - **Download folder**: empties the configured download folder (the one picked under **Settings → "Download folder:"**, or the default). This is the most destructive entry: whatever goes has to be downloaded again from scratch. The folder itself stays in place.
 - **Logs and source statistics**: `app.log` and its archives, `events.jsonl` and its archives, `terminal-log.txt`, the per-source proxy metrics and the abandoned-links log. They only serve diagnostics: clearing them loses no download. Deliberately left out are `logs/crash.log` and the telemetry under `logs/telemetry/`, which are needed precisely when something has gone wrong.
-- **Proxy cache** (`proxy_cache.json`): the next start collects the proxies from scratch and will therefore be slower. No data is lost. It is the same operation as the **"Reset cache"** button in the dashboard's proxy area.
+- **Proxy cache** (`proxy_cache.json`): the next start collects the proxies from scratch and will therefore be slower. No data is lost. It is the same operation as the **"Reset cache"** button in **Session details → Connection**.
 
 **Before deleting**, a second window lists line by line what will go, with file names and sizes; the default button is **Cancel**, not the one that deletes. **Afterwards**, the window shows a report of what was cleared and how much space was freed, and the same information goes into the application log. If one entry fails (a file locked by another program, say), the others go ahead anyway and the report says which one failed and why.
 
@@ -312,5 +322,5 @@ Some behaviors may look like anomalies but are part of normal operation:
 - Speed is determined by the proxies, not the program.
 - Mega can rate-limit the same file even from different IPs (403/509 from the CDN): this is the behavior the tool was originally built to measure. The affected proxy is not discarded but put to rest for 90 seconds, then returns to rotation.
 - Mega also enforces a **per-file concurrent-IP limit** (response `429 "Too Many Concurrent IP Addresses"`): too many different proxies downloading the same file at the same moment get rejected. The program handles it by **retrying the same proxy** (same IP) after a short wait, instead of switching to a new one — changing IP would make the limit worse. Practical consequence: beyond a certain point, adding connections or proxies to the same file does not increase bandwidth. The peak speed on a single file is therefore bounded by both proxy quality and this Mega ceiling.
-- Two **different Mega folders that share the same name** downloaded in **different sessions** end up in the same folder on disk (within the same session they are separated automatically into "Name" and "Name (2)"). Files are never swapped — before considering a file already downloaded the program also checks its size — but the contents of the two folders get mixed. If that happens, it is best to pick a different download folder for the second one.
+- Two shared folders with the same name added together receive distinct names, such as `Collection` and `Collection (2)`. When downloaded in separate sessions, they can share the same local folder. Files receive a number when their name is already taken.
 - Integrity verification via the downloaded file's MAC is not yet implemented: it is a planned feature.

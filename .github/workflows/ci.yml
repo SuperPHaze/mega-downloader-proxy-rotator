@@ -1,7 +1,6 @@
 name: CI
 
-# Esegue la suite pytest a ogni push/PR su main. Protegge i refactor futuri:
-# oggi i test girano solo a mano (vedi relazione tecnica §2.10 / §2.11).
+# Suite Qt su Windows e macOS. Su Mac verifica anche una finestra nativa.
 on:
   push:
     branches: [main]
@@ -11,13 +10,15 @@ on:
 
 jobs:
   test:
-    runs-on: windows-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        # Windows + Python: 3.11 (minimo supportato) e 3.13 (recente stabile su
-        # GitHub Actions). Il range dichiarato dal progetto è 3.11–3.14.
+        os: [windows-latest]
         python-version: ["3.11", "3.13"]
+        include:
+          - os: macos-15
+            python-version: "3.14"
     env:
       # Qt headless: nessun display sui runner CI.
       QT_QPA_PLATFORM: offscreen
@@ -39,3 +40,9 @@ jobs:
 
       - name: Run tests
         run: python -m pytest -q
+
+      - name: Check native macOS window and menus
+        if: runner.os == 'macOS'
+        env:
+          QT_QPA_PLATFORM: cocoa
+        run: python -m pytest -q tests/test_desktop_workspace.py -k "settings_action_and_language or single_page"

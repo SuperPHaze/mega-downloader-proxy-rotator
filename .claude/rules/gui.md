@@ -92,7 +92,7 @@ paths: ["src/gui/**/*.py"]
   transienti del report) e `main_window` (dialoghi + riga di stato).
   Fase «Errori & Cronologia»: **E1** ha messo i codici sotto agli errori nel motore, **E2** li
   rende nella GUI — `jobs_model` (cronologia come chiavi), `jobs_panel` (la card rende il
-  payload), `job_detail_dialog` (l'unico dialogo persistente), i due messaggi che `main_window`
+  payload), `job_detail_dialog`, i due messaggi che `main_window`
   passa a `mark_failed_fatal` e le 6 righe di stato del setup proxy.
 - Nomi di variabili, funzioni, classi, file e segnali in inglese.
 - I commenti del codice sono in italiano.
@@ -114,10 +114,9 @@ tenerlo allineato quando cambi slot pubblici o dialoghi.
 - Mai chiamare metodi di un worker direttamente dalla GUI (`worker.do_something()` è vietato): la cancellazione per-job passa SEMPRE dall'orchestrator.
 
 ## Layout
-- `MainWindow` assembla in colonna: `UpdateBanner`, `ControlsBar`, la riga cruscotto
-  (`StatsBar` | separatore verticale | `ProxyBar`), `StatsPanel`, `JobsPanel`. `LinkPanel` NON è nel
-  layout: è un gestore senza superficie propria (API `get_links`/`set_links`/`open_paste_dialog`),
-  pilotato dal pulsante Incolla della `ControlsBar`.
+- La finestra principale alterna la bozza (`LinkPanel`) e la coda (`JobsPanel`). La barra inferiore
+  apre i dettagli della sessione, lo Storico non modale e il log Debug sotto la coda. Storico e dettagli
+  dei file partecipano al cambio di lingua anche quando sono già aperti.
 - **Lo stato di un job si rende con `jobs_panel.status_label()`**, mai col valore grezzo del
   modello (`job.status` vale `"in_corso"`, non «In corso»). La mappa stato→chiave è una sola e
   vive in `jobs_panel`: la usano il badge della card e il riepilogo di `JobDetailDialog`. Una
@@ -128,9 +127,10 @@ tenerlo allineato quando cambi slot pubblici o dialoghi.
   colonne, niente `data()`, niente `dataChanged`) perché senza view a tabella quell'API non
   aveva più un chiamante. Gli aggiornamenti passano da `job_updated(file_id)` e
   `aggregates_changed()`.
-- Ogni card porta i propri comandi (annulla, apri cartella, riavvia, copia URL): non ci sono piu'
-  delegate di cella. Click sull'annullo → `JobsPanel.cancel_job_requested(file_id, True)` se il job
-  è attivo, `delete_folder_requested(file_id)` se è terminato.
+- Il menu **…** di ciascuna riga offre il dettaglio e l’azione per lo stato corrente.
+  L’annullamento chiede conferma. Il secondo argomento di `cancel_job_requested(file_id, delete_folder)`
+  rispecchia la casella di eliminazione dei dati parziali. La riga mostra una sintesi dell’ultimo
+  errore, mentre il suggerimento e la finestra Dettagli conservano la diagnostica completa.
 - Status bar (`QStatusBar`) per messaggi brevi (stato del pool, pausa, annullo, errori non bloccanti).
 - `QMessageBox` per errori bloccanti che richiedono attenzione (es. nessun link inserito) e per conferme distruttive (eliminazione cartella di job terminati).
 - **Eliminare un job nato da un link cartella cancella SOLO quel file** (+ `.part` + sidecar) e pota

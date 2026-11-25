@@ -15,6 +15,71 @@ STRINGS: dict[str, str | dict[str, str]] = {
     "main_window.title": "{name} v{version}",
 
     # ---- controls bar: buttons ---------------------------------------------
+    "workspace.transfers": "Downloads",
+    "workspace.details": "Session details",
+    "workspace.queue_title": "Download queue",
+    "workspace.file_menu": "File",
+    "partial.title": "Recover downloads",
+    "partial.button": "Partial files",
+    "partial.count": {"one": "{n} download to recover", "other": "{n} downloads to recover"},
+    "partial.start_hint": "Open the list to check progress and choose a file to resume.",
+    "partial.progress": "Saved progress",
+    "partial.saved": "{percent}% · {amount}",
+    "partial.zero": "Restart required",
+    "partial.resume": "Resume",
+    "partial.restart": "Restart from zero…",
+    "partial.restart_now": "Restart from zero",
+    "partial.refresh": "Refresh",
+    "partial.cancel": "Cancel",
+    "partial.remaining": "{amount} left to download.",
+    "partial.no_checkpoint": "This partial file has no recorded chunks. The whole file will be downloaded.",
+    "partial.in_history": "History already lists a completed copy.",
+    "partial.confirm_restart": "Download “{name}” again from the beginning?",
+    "partial.request_link": "Paste the original MEGA link for “{name}”.",
+    "partial.wrong_link": "Enter the complete link to the original file, including its key.",
+    "partial.empty": "No partial downloads to recover in this folder.",
+    "partial.scanning": "Looking for partial files…",
+    "partial.scan_error": "Cannot read the folder. Check the download location and click Refresh.",
+    "partial.busy": "This file is already in the queue.",
+    "partial.draft": "Recovery added to the list. Click Start to download.",
+    "history.button": "History",
+    "history.tooltip": "Show completed downloads",
+    "history.title": "Download history",
+    "history.search": "Search by file name",
+    "history.name": "File name",
+    "history.date": "Completed",
+    "history.size": "Size",
+    "history.empty": "Completed downloads will appear here.",
+    "history.no_match": "No files match your search.",
+    "history.count": {"one": "{n} item", "other": "{n} items"},
+    "history.open_folder": "Open folder",
+    "history.unavailable": "The folder recorded for this download is unavailable on this computer.",
+    "debug.button": "Debug",
+    "debug.tooltip": "Show or hide the log in this window",
+    "debug.title": "Debug log",
+    "debug.empty": "Waiting for messages from this session…",
+    "debug.hide": "Hide",
+    "workspace.speed": "Current speed",
+    "workspace.volume": "Downloaded",
+    "workspace.remaining": "Time remaining",
+    "workspace.destination": "Save to · {folder}",
+    "controls.application": "Application",
+    "controls.row_theme": "Appearance",
+    "controls.use_light": "Use light theme",
+    "controls.use_dark": "Use dark theme",
+    "controls.minimize_tooltip_ask_mac": "Choose between the Dock and the menu bar each time you minimize.",
+    "controls.minimize_tooltip_taskbar_mac": "The window minimizes to the Dock. Click to choose again.",
+    "controls.minimize_tooltip_tray_mac": "The window hides in the menu bar. Click to choose again.",
+    "tray.ask_dock": "Dock",
+    "tray.ask_menu_bar": "Menu bar",
+    "link_panel.edit": "Open link list",
+    "jobs_panel.filter_all": "All",
+    "jobs_panel.filtered_empty": "No downloads in this view. Select All to see the queue.",
+    "jobs_panel.details": "Details",
+    "jobs_panel.actions_for": "Actions for {name}",
+    "jobs_panel.details_for": "Details for {name}",
+    "jobs_panel.confirm_cancel": "Cancel the download of {name}?",
+    "jobs_panel.discard_partial": "Also delete partially downloaded data from disk",
     "controls.start": "Start",
     "controls.pause": "Pause",
     "controls.resume": "Resume",
@@ -41,10 +106,7 @@ STRINGS: dict[str, str | dict[str, str]] = {
         "more HTTP requests to the Mega CDN.\n"
         "Large sizes (128/256 MB): for very large files on good proxies."
     ),
-    "controls.settings_tooltip": (
-        "Configure parallel downloads, duration limit and chunk size.\n"
-        "Cannot be changed during a download session."
-    ),
+    "controls.settings_tooltip": "Download, language and appearance preferences.",
     "controls.experimental_tooltip": (
         "Features under test (connections per file, proxy selection by "
         "speed). Off by default.\n"
@@ -60,16 +122,17 @@ STRINGS: dict[str, str | dict[str, str]] = {
         "Default: the program's 'downloads' subfolder."
     ),
     "controls.download_dir_tooltip_chosen": "Download folder:\n{path}",
+    "controls.choose_local_download_dir": "The saved folder is from another system. Choose a local destination",
     "controls.choose_download_dir_title": "Choose the download folder",
 
     # ---- controls bar: Settings menu rows ------------------------------------
-    "controls.row_concurrency": "Parallel files:",
-    "controls.row_time_limit": "Time limit (min/file):",
-    "controls.row_chunk": "Chunk:",
-    "controls.row_download_dir": "Download folder:",
-    "controls.row_minimize": "On minimize:",
-    "controls.row_language": "Language:",
-    "controls.row_maintenance": "Maintenance:",
+    "controls.row_concurrency": "Simultaneous downloads",
+    "controls.row_time_limit": "Time per file (min)",
+    "controls.row_chunk": "Segment size",
+    "controls.row_download_dir": "Download folder",
+    "controls.row_minimize": "On minimize",
+    "controls.row_language": "Language",
+    "controls.row_maintenance": "Maintenance",
 
     # ---- controls bar: maintenance -------------------------------------------
     "controls.maintenance_button": "Clear data…",
@@ -175,7 +238,10 @@ STRINGS: dict[str, str | dict[str, str]] = {
 
     # ---- "Paste Mega links" window ----------------------------------------------
     "paste.title": "Paste Mega links",
-    "paste.instructions": "Paste Mega links (one per line):",
+    "paste.instructions": "Paste one Mega link per line.",
+    "paste.list_title": "Link list",
+    "paste.list_hint": "Add, edit or remove links. Enter one link per line.",
+    "paste.save_list": "Save list",
     "paste.valid": "Valid: {n}",
     "paste.folders": "Folders: {n}",
     "paste.invalid": "Invalid: {n}",
@@ -217,19 +283,27 @@ STRINGS: dict[str, str | dict[str, str]] = {
     # Le etichette delle card stanno in uno spazio di ~100px a 7pt: "Proxy
     # bandwidth" (143px) verrebbe TAGLIATA. "Line speed"/"Proxy speed" dicono
     # la stessa cosa e ci stanno; il tooltip dei pulsanti spiega per esteso.
-    "proxy_bar.micro": "PROXY",
-    "proxy_bar.card_alive": "Alive",
+    "proxy_bar.micro": "Connection",
+    "proxy_bar.card_alive": "Active proxies",
     "proxy_bar.card_validation": "Validation",
     "proxy_bar.card_discarded": "Discarded",
     "proxy_bar.card_refills": "Refills",
     "proxy_bar.card_last_refill": "Last refill",
     "proxy_bar.card_band": "Line speed",
     "proxy_bar.card_band_proxy": "Proxy speed",
-    "proxy_bar.speedtest_button": "Line speed",
+    "proxy_bar.speedtest_button": "Test line speed",
+    "proxy_bar.speedtest_running": "Measuring…",
+    "proxy_bar.speedtest_retry": "Retry test",
+    "proxy_bar.unavailable": "Unavailable",
+    "proxy_bar.line_http": "The test server returned HTTP {status}. Try again shortly.",
+    "proxy_bar.line_timeout": "The test server took too long to respond.",
+    "proxy_bar.line_network": "The test failed. Check your connection and try again.",
+    "proxy_bar.line_incomplete": "The test transfer was interrupted.",
+    "proxy_bar.last_measurement": "Showing the last successful measurement.",
     "proxy_bar.speedtest_tooltip": (
         "Measures the line bandwidth (direct download, without proxies)."
     ),
-    "proxy_bar.proxy_speedtest_button": "Proxy speed",
+    "proxy_bar.proxy_speedtest_button": "Test proxy speed",
     "proxy_bar.proxy_speedtest_tooltip": (
         "Measures the real bandwidth of the proxy pool (only during a session)."
     ),
@@ -338,6 +412,14 @@ STRINGS: dict[str, str | dict[str, str]] = {
     "maintenance.report_total": "Total space freed: {size}.",
 
     # ---- Statistics panel (StatsPanel) ---------------------------------------------
+    "stats_panel.idle": "Statistics will appear when a download starts.",
+    "stats_panel.metric_elapsed": "Elapsed time",
+    "stats_panel.metric_effective": "Effective speed",
+    "stats_panel.metric_file_average": "Per-file average",
+    "stats_panel.metric_sample_average": "Active average",
+    "stats_panel.metric_peak": "Peak",
+    "stats_panel.metric_minimum": "Minimum",
+    "stats_panel.finished_of": "Completed {done} of {total} ({pct}%)",
     "stats_panel.title": "Statistics",
     "stats_panel.copy_button": "Copy summary",
     "stats_panel.session": "Session: {time}  ({status})",
@@ -398,7 +480,8 @@ STRINGS: dict[str, str | dict[str, str]] = {
     "jobs_panel.current_ip": "Current IP: {ip}",
     "jobs_panel.attempts": "Attempts: {n}",
     "jobs_panel.errors_suffix": "  •  Errors: {n}",
-    "jobs_panel.last_error_suffix": "  •  Last error: {error}",
+    "jobs_panel.file_missing": "File or folder not found.",
+    "jobs_panel.last_error": "Last error: {error}",
     "jobs_panel.filter_in_progress": "In progress",
     "jobs_panel.filter_completed": "Completed",
     "jobs_panel.filter_not_completed": "Not completed",
@@ -408,11 +491,8 @@ STRINGS: dict[str, str | dict[str, str]] = {
         "Restarts every failed, abandoned or cancelled download.\n"
         "The download resumes from the segments already fetched (.part)."
     ),
-    "jobs_panel.empty_title": "Add your Mega links to get started",
-    "jobs_panel.empty_hint": (
-        'Use the "{button}" button in the command bar\n'
-        "or click below."
-    ),
+    "jobs_panel.empty_title": "Your queue is empty",
+    "jobs_panel.empty_hint": "Paste a Mega link or import a list from a text file.",
     # ---- pannello link (LinkPanel) -----------------------------------------
     "link_panel.import": "Import from file",
     "link_panel.add": "Add links",
@@ -420,7 +500,7 @@ STRINGS: dict[str, str | dict[str, str]] = {
     "link_panel.allow_duplicates": "Allow duplicates",
     "link_panel.allow_duplicates_tooltip": (
         "If enabled, the same link can be added more than once. "
-        "Each copy is downloaded into a separate folder."
+        "Further copies are numbered, for example Film (2).mkv."
     ),
     "link_panel.counter_empty": "no links",
     "link_panel.counter": {
@@ -626,19 +706,11 @@ STRINGS: dict[str, str | dict[str, str]] = {
 
     # ---- finestra principale: eliminazione dal disco ------------------------
     "main_window.delete_title": "Delete from disk?",
-    "main_window.delete_folder_job_body": (
-        "Delete file {file} from the downloaded folder?\n"
-        "The other files of the same Mega folder stay where they are.\n"
+    "main_window.delete_job_files_body": (
+        "Delete the files for download {file} from disk?\n"
         "This cannot be undone."
     ),
-    "main_window.delete_folder_body": (
-        "Delete the disk folder of file {file}?\n"
-        "This cannot be undone."
-    ),
-    "main_window.delete_missing": "File {file}: folder not found on disk.",
-    "main_window.delete_done": "File {file}: folder deleted ({name}).",
-    "main_window.delete_failed_title": "Folder deletion failed",
-    "main_window.delete_failed_body": "Cannot delete {path}:\n{error}",
+    "main_window.delete_failed_title": "Could not delete the file",
     "main_window.delete_nothing": "File {file}: nothing to delete on disk.",
     "main_window.delete_file_done": "File {file}: file deleted ({name}).",
 
@@ -733,24 +805,23 @@ STRINGS: dict[str, str | dict[str, str]] = {
     "job_log.restart": "----- Restart requested -----",
 
     # ---- job detail window --------------------------------------------------
-    "job_detail.title": "Job detail #{file}",
+    "job_detail.title": "Download details {file}",
+    "job_detail.named_title": "Details · {name}",
     "job_detail.abandoned_title": "Link abandoned",
     "job_detail.copy": "Copy",
-    "job_detail.abandoned_info": (
-        "Failed attempts: {attempts}  •  Last error: {error}"
-    ),
     "job_detail.not_available": "n/a",
-    "job_detail.url_label": "URL:",
-    "job_detail.summary": (
-        "Status: <b>{status}</b>  •  Progress: {progress}%  •  "
-        "Attempts: {attempts}  •  Errors: {errors}  •  "
-        "Duration: {duration}"
-    ),
-    "job_detail.summary_last_error": "  •  Last error: {error}",
-    "job_detail.ip_history": "IP history:",
-    "job_detail.col_timestamp": "Timestamp",
+    "job_detail.url_label": "Download URL",
+    "job_detail.status": "Status",
+    "job_detail.progress": "Progress",
+    "job_detail.attempts": "Attempts",
+    "job_detail.errors": "Errors",
+    "job_detail.duration": "Duration",
+    "job_detail.no_ips": "No IP addresses recorded.",
+    "job_detail.no_attempts": "No attempts recorded.",
+    "job_detail.ip_history": "IP history",
+    "job_detail.col_timestamp": "Time",
     "job_detail.col_ip": "IP",
-    "job_detail.attempts_log": "Attempts log:",
+    "job_detail.attempts_log": "Attempts log",
     "job_detail.close": "Close",
 
     # ---- errors: English of the engine catalog ------------------------------
@@ -845,6 +916,7 @@ STRINGS: dict[str, str | dict[str, str]] = {
     "err.ip_check_failed": "IP check failed: {error}",
     "err.download_failed_paren": "download failed ({error})",
     "err.download_failed": "download failed: {error}",
+    "err.partial_changed": "The partial file, link or destination has changed or is in use. Refresh the partial files list.",
     "err.config_error": "Configuration error: {error}",
     "err.disk_full_short": "not enough free space ({error})",
     "err.time_limit_exceeded": {

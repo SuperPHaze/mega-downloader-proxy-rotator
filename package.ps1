@@ -85,17 +85,15 @@ if (-not $trackedFiles) {
 # zip, mentre il codice che lo importa (gia' tracciato) viene incluso -> crash
 # al lancio del pacchetto. Meglio fallire QUI, rumorosamente, che spedire uno
 # zip rotto.
-# Valgono anche i .bat: i launcher (avvia.bat, avvia-debug.bat) sono file di
-# primo piano per l'utente finale e uno nuovo, non tracciato, sparirebbe dal
-# pacchetto senza che nessuno se ne accorga fino al doppio clic mancato.
+# Il controllo comprende anche l'installer Windows e il bundle macOS.
 Push-Location $sourceRoot
 try {
-    $untrackedNew = git ls-files --others --exclude-standard -- '*.py' '*.bat'
+    $untrackedNew = git ls-files --others --exclude-standard -- '*.py' '*.bat' '*.ps1' '*.app/*'
 } finally {
     Pop-Location
 }
 if ($untrackedNew) {
-    Write-Err (L "Untracked Python/.bat files would be EXCLUDED from the package. Run 'git add' on them first:" "File Python/.bat non tracciati verrebbero ESCLUSI dal pacchetto. Falli 'git add' prima:")
+    Write-Err (L "Untracked app or launcher files would be excluded from the package. Add them to git first." "Alcuni file dell'app o di avvio verrebbero esclusi dal pacchetto. Aggiungili prima a git.")
     $untrackedNew | ForEach-Object { Write-Host "        $_" -ForegroundColor Yellow }
     exit 1
 }
@@ -119,7 +117,16 @@ Write-OK (L "Files copied: $($trackedFiles.Count) (from git ls-files)." "File co
 
 Write-Step (L "Creating archive $folderName.zip..." "Creazione archivio $folderName.zip...")
 
-Compress-Archive -Path $stageDir -DestinationPath $zipPath -CompressionLevel Optimal
+$zipScript = Join-Path $PSScriptRoot "scripts\package_zip.py"
+$projectPython = Join-Path $PSScriptRoot "venv\Scripts\python.exe"
+if (Test-Path $projectPython) {
+    & $projectPython $zipScript $stageDir $zipPath
+} elseif (Get-Command py -ErrorAction SilentlyContinue) {
+    & py -3 $zipScript $stageDir $zipPath
+} else {
+    & python $zipScript $stageDir $zipPath
+}
+if ($LASTEXITCODE -ne 0) { throw (L "Could not create the ZIP." "Creazione dello ZIP non riuscita.") }
 Write-OK (L "Archive created: $zipPath" "Archivio creato: $zipPath")
 
 # ── 5. Pulizia staging ────────────────────────────────────────────────
@@ -143,5 +150,5 @@ Write-Host ""
 Write-Host "$(L "  The user who receives the zip must:" "  L'utente che riceve lo zip deve:")" -ForegroundColor White
 Write-Host "$(L "    1. Extract the folder" "    1. Estrarre la cartella")" -ForegroundColor White
 Write-Host "$(L "    2. Run: powershell -ExecutionPolicy Bypass -File install.ps1" "    2. Eseguire: powershell -ExecutionPolicy Bypass -File install.ps1")" -ForegroundColor White
-Write-Host "$(L "    3. Double-click avvia.bat" "    3. Doppio clic su avvia.bat")" -ForegroundColor White
+Write-Host "$(L "    3. Open the Mega Downloader Proxy Rotator shortcut" "    3. Aprire il collegamento Mega Downloader Proxy Rotator")" -ForegroundColor White
 Write-Host ""

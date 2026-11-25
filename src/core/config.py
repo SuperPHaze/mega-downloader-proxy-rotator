@@ -421,7 +421,8 @@ MEGA_FOLDER_MAX_FILES = 500
 # connessione TCP spesso non satura una linea larga (slow-start + limiti
 # per-connessione): K stream diretti danno una stima realistica di cio' che il
 # downloader multi-connessione puo' sfruttare.
-LINE_SPEEDTEST_URL = "http://speedtest.tele2.net/10MB.zip"
+LINE_SPEEDTEST_BYTES = 10_000_000
+LINE_SPEEDTEST_URL = f"https://speed.cloudflare.com/__down?bytes={LINE_SPEEDTEST_BYTES}"
 LINE_SPEEDTEST_STREAMS = 4          # connessioni dirette parallele
 LINE_SPEEDTEST_TIMEOUT = 20         # secondi per stream
 
@@ -431,6 +432,6 @@ LINE_SPEEDTEST_TIMEOUT = 20         # secondi per stream
 # sessione (i proxy vengono presi dal pool dell'orchestrator). Resiliente: uno
 # stream lento/fallito contribuisce solo i byte effettivamente scaricati, non
 # fa fallire l'intera misura.
-PROXY_SPEEDTEST_URL = LINE_SPEEDTEST_URL  # stesso file di riferimento della linea
+PROXY_SPEEDTEST_URL = "http://speedtest.tele2.net/10MB.zip"
 PROXY_SPEEDTEST_STREAMS = 4         # proxy campionati (i migliori per score)
 PROXY_SPEEDTEST_TIMEOUT = 20        # secondi per stream

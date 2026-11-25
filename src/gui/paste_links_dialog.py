@@ -6,8 +6,8 @@
 # nominati ({n}), non plurali: il testo non cambia forma.
 from __future__ import annotations
 
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QKeyEvent
+from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtGui import QFontDatabase, QKeyEvent, QKeySequence, QTextCursor, QTextOption
 from PyQt6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
@@ -21,7 +21,7 @@ from PyQt6.QtWidgets import (
 
 from src.core.mega_links import is_folder_link
 from src.gui.i18n import t
-from src.gui.style import PALETTE
+from src.gui.style import CURRENT_PALETTE
 
 
 MEGA_PREFIX = "https://mega.nz/"
@@ -33,14 +33,16 @@ POSITION_BOTTOM = "bottom"
 POSITION_TOP = "top"
 
 
-class _NoEnterTextEdit(QTextEdit):
-    # Subclasse per evitare che Enter chiuda il dialog: i link multi-riga
-    # richiedono di poter inserire newline normalmente.
-    def keyPressEvent(self, e: QKeyEvent) -> None:  # noqa: N802 (override Qt)
-        # Niente da fare di speciale: il default di QTextEdit gia' inserisce
-        # un newline su Enter. Mantenere la classe serve solo a impedire che
-        # QDialog.keyPressEvent catturi Enter come "accept".
-        super().keyPressEvent(e)
+class _LinkEditor(QTextEdit):
+    submit_requested = pyqtSignal()
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:  # noqa: N802
+        enter = event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter)
+        if enter and event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+            self.submit_requested.emit()
+            event.accept()
+            return
+        super().keyPressEvent(event)
 
 
 class PasteLinksDialog(QDialog):
@@ -53,26 +55,41 @@ class PasteLinksDialog(QDialog):
         show_position: bool = False,
     ) -> None:
         super().__init__(parent)
-        self.setWindowTitle(t("paste.title"))
+        self._editing_list = bool(prefill)
+        self.setWindowTitle(t("paste.list_title" if self._editing_list else "paste.title"))
         self.setModal(True)
-        self.resize(560, 360)
+        self.resize(620, 365)
 
         self._existing = list(existing_links)
         self._allow_duplicates = allow_duplicates
         self._accepted: list[str] = []
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(10, 10, 10, 10)
-        layout.setSpacing(6)
+        layout.setContentsMargins(20, 16, 20, 16)
+        layout.setSpacing(10)
 
-        layout.addWidget(QLabel(t("paste.instructions")))
+        instructions = QLabel(t("paste.list_hint" if self._editing_list else "paste.instructions"))
+        instructions.setWordWrap(True)
+        layout.addWidget(instructions)
 
-        self.edit = _NoEnterTextEdit()
+        self.edit = _LinkEditor()
+        self.edit.setObjectName("linkEditor")
+        font = QFontDatabase.systemFont(QFontDatabase.SystemFont.GeneralFont)
+        font.setPointSizeF(max(13.0, font.pointSizeF()))
+        self.edit.setFont(font)
+        self.edit.document().setDefaultFont(font)
+        self.edit.document().setDocumentMargin(10)
+        self.edit.setAcceptRichText(False)
+        self.edit.setAccessibleName(instructions.text())
+        instructions.setBuddy(self.edit)
+        self.edit.setFocus()
         self.edit.setPlaceholderText("https://mega.nz/...")
-        self.edit.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
-        self.edit.setMinimumHeight(200)
+        self.edit.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
+        self.edit.setWordWrapMode(QTextOption.WrapMode.WrapAnywhere)
+        self.edit.setMinimumHeight(130)
         if prefill:
-            self.edit.setPlainText("\n".join(prefill))
+            self.edit.setPlainText("\n".join(prefill) + "\n")
+            self.edit.moveCursor(QTextCursor.MoveOperation.End)
         layout.addWidget(self.edit, 1)
 
         # Riga statistiche live.
@@ -86,12 +103,12 @@ class PasteLinksDialog(QDialog):
         # dopo l'espansione (che fa rete e avviene all'Avvia).
         self.lbl_folders.setToolTip(t("paste.folders_tooltip"))
         for lbl, color in (
-            (self.lbl_valid, PALETTE["accent_ok"]),
-            (self.lbl_folders, PALETTE["accent_info"]),
-            (self.lbl_invalid, PALETTE["accent_fail"]),
-            (self.lbl_dups, PALETTE["accent_warn"]),
+            (self.lbl_valid, CURRENT_PALETTE["text_dim"]),
+            (self.lbl_folders, CURRENT_PALETTE["text_dim"]),
+            (self.lbl_invalid, CURRENT_PALETTE["accent_fail"]),
+            (self.lbl_dups, CURRENT_PALETTE["accent_warn"]),
         ):
-            lbl.setStyleSheet(f"color: {color}; font-size: 9pt;")
+            lbl.setStyleSheet(f"color: {color};")
             stats_row.addWidget(lbl)
         stats_row.addStretch(1)
         layout.addLayout(stats_row)
@@ -104,7 +121,6 @@ class PasteLinksDialog(QDialog):
         self.pos_top: QRadioButton | None = None
         if show_position:
             pos_lbl = QLabel(t("paste.position_label"))
-            pos_lbl.setStyleSheet("font-size: 9pt;")
             layout.addWidget(pos_lbl)
             pos_row = QHBoxLayout()
             pos_row.setSpacing(14)
@@ -136,6 +152,8 @@ class PasteLinksDialog(QDialog):
         self.buttons.rejected.connect(self.reject)
         layout.addWidget(self.buttons)
 
+        self.add_btn.setToolTip(QKeySequence("Ctrl+Return").toString(QKeySequence.SequenceFormat.NativeText))
+        self.edit.submit_requested.connect(self.add_btn.click)
         self.edit.textChanged.connect(self._recompute_stats)
         self._recompute_stats()
 
@@ -178,9 +196,15 @@ class PasteLinksDialog(QDialog):
         self.lbl_valid.setText(t("paste.valid", n=valid_total))
         self.lbl_invalid.setText(t("paste.invalid", n=invalid))
         self.lbl_dups.setText(t("paste.duplicates", n=dups))
+        for label, count in ((self.lbl_folders, n_folders), (self.lbl_invalid, invalid), (self.lbl_dups, dups)):
+            label.setVisible(count > 0)
         n_to_add = len(valid_new)
-        self.add_btn.setText(t("paste.add_button", n=n_to_add))
-        self.add_btn.setEnabled(n_to_add > 0)
+        if self._editing_list:
+            self.add_btn.setText(t("paste.save_list"))
+            self.add_btn.setEnabled(bool(valid_new) or not self.edit.toPlainText().strip())
+        else:
+            self.add_btn.setText(t("paste.add_button", n=n_to_add))
+            self.add_btn.setEnabled(n_to_add > 0)
 
     # ---- accept -----------------------------------------------------------
 

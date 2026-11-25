@@ -35,6 +35,7 @@ ERROR_TEXTS_IT: dict[str, str] = {
     ),
 
     # ---- downloader/mega_api.py -------------------------------------------
+    "partial_changed": "Il file parziale, il link o la destinazione sono cambiati o in uso. Aggiorna l’elenco dei parziali.",
     "resolve_cancelled": "resolve annullato durante il backoff",
     # `api_code` e non `code`: `code` e' il primo parametro posizionale di
     # UserFacingError, usarlo come nome darebbe "multiple values for 'code'".

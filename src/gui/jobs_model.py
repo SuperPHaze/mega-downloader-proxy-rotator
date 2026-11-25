@@ -259,6 +259,17 @@ class JobsModel(QObject):
         self.job_updated.emit(file_id)
         self.aggregates_changed.emit()
 
+    def set_recovery_info(self, file_id: int, target, saved: int, total: int | None) -> None:
+        job = self._job(file_id)
+        if job is not None:
+            job.file_name = target.name
+            job.output_path = str(target)
+            job.downloaded_bytes = saved
+            job.total_bytes = total or 0
+            job.progress = saved * 100 // total if total else 0
+            self.job_updated.emit(file_id)
+            self.aggregates_changed.emit()
+
     def set_file_info(self, file_id: int, file_name: str, output_path: str) -> None:
         job = self._job(file_id)
         if job is None:

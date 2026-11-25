@@ -3,19 +3,24 @@ from __future__ import annotations
 
 import logging
 import os
-import shutil
+import sys
 from pathlib import Path
+from threading import Event
 
-from PyQt6.QtCore import QEvent, Qt, QTimer, QUrl
-from PyQt6.QtGui import QDesktopServices
+from PyQt6.QtCore import QEvent, QSize, Qt, QThreadPool, QTimer, QUrl
+from PyQt6.QtGui import QAction, QDesktopServices, QKeySequence
 from PyQt6.QtWidgets import (
     QApplication,
+    QBoxLayout,
     QFrame,
     QHBoxLayout,
     QLabel,
     QMainWindow,
     QMessageBox,
     QProgressDialog,
+    QScrollArea,
+    QSizePolicy,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -25,23 +30,29 @@ from src.core.branding import resolve as resolve_branding
 from src.core.config import (
     APP_VERSION,
     HEARTBEAT_INTERVAL_S,
+    LOGS_DIR,
     OUTPUT_DIR,
     PROXY_SPEEDTEST_STREAMS,
+    TERMINAL_LOG,
 )
-from src.core.file_naming import folder_job_output_dir, sanitize_file_name
 from src.core.icon_loader import build_app_icon
+from src.core.partial_downloads import PartialDownload, RecoveryChanged, link_handle
 from src.core.state import SessionState
 from src.downloader.orchestrator import DownloadOrchestrator
-from src.core.mega_links import is_folder_link, parse_folder_job_url
-from src.downloader.worker import job_output_dir
+from src.core.mega_links import is_folder_link
+from src.downloader.target_file import JobFiles, target_lock
 from src.gui.folder_expand_worker import FolderExpandWorker
 from src.gui.about_dialog import AboutDialog
 from src.gui.controls import ControlsBar
+from src.gui.debug_panel import DebugPanel
 from src.gui.experimental_dialog import ExperimentalFeaturesDialog
 from src.gui.error_render import ABANDON_ALIASES, render_error, resolve_payloads
 from src.gui.i18n import TR, t, tn
+from src.gui.history_dialog import HistoryDialog
 from src.gui.job_detail_dialog import JobDetailDialog
+from src.gui.jobs_model import STATUS_QUEUED, STATUS_RUNNING
 from src.gui.jobs_panel import JobsPanel, status_label
+from src.gui.partial_dialog import PartialDialog, PartialScan, ScanSignals
 from src.gui.maintenance_dialog import MaintenanceDialog
 from src.gui.link_panel import (
     LinkPanel,
@@ -77,8 +88,7 @@ from src.gui.tray import (
     resolve_minimize_action,
     tooltip_text,
 )
-from src.gui import style as _style
-from src.gui.style import LIGHT_QSS, apply_theme
+from src.gui.style import CURRENT_PALETTE, apply_theme, disclosure_icon, utility_icon
 from src.gui.update_banner import UpdateBanner
 from src.gui.update_check import STATUS_AVAILABLE, UpdateCheckWorker, repo_url, updates_enabled
 
@@ -89,7 +99,8 @@ class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self._refresh_window_title()
-        self.resize(1100, 820)
+        available = self.screen().availableGeometry().size()
+        self.resize(QSize(920, 580).boundedTo(available - QSize(32, 56)))
         # Costruita UNA volta e riusata: finestra e icona nell'area di notifica
         # devono essere la stessa icona, non due letture indipendenti.
         self._app_icon = build_app_icon()
@@ -100,10 +111,20 @@ class MainWindow(QMainWindow):
         self._expected_files = 0
         self._completed_files = 0
         self._open_dialogs: dict[int, JobDetailDialog] = {}
+        self._history_dialog: HistoryDialog | None = None
+        self._partial_dialog: PartialDialog | None = None
+        self._partials: list[PartialDownload] = []
+        self._partial_root: Path | None = None
+        self._partial_generation = 0
+        self._partial_stop = Event()
+        self._partial_scan_pending = False
+        self._restored_urls: set[str] = set()
+        self._partial_signals = ScanSignals()
+        self._partial_signals.finished.connect(self._partials_found, Qt.ConnectionType.QueuedConnection)
+        self._draft_recoveries: dict[str, PartialDownload] = {}
         self._links_by_id: dict[int, str] = {}
         self._pending_delete: set[int] = set()
         # Cartella radice dei download della sessione corrente (None = default).
-        # Serve anche a ritrovare la cartella di lavoro per l'eliminazione.
         self._active_output_root: Path | None = None
         # Link non ancora completati della sessione corrente (file_id -> url):
         # persistiti su disco per il ripristino all'avvio (2.7).
@@ -135,25 +156,22 @@ class MainWindow(QMainWindow):
         # terminano dopo un riavvio non devono rifarlo scattare a ripetizione).
         self._queue_done_notified = False
 
-        # LinkPanel: nascosto dall'UI ma funzionale come gestore della lista link.
         self.link_panel = LinkPanel()
-        self.link_panel.setParent(self)
-        self.link_panel.hide()
 
         # Applica tema (da preferenze persistite).
         app = QApplication.instance()
         self._dark_theme = load_dark_theme()
-        if self._dark_theme:
-            apply_theme(app, True)
-        else:
-            app.setStyleSheet(LIGHT_QSS)
+        apply_theme(app, self._dark_theme)
 
         central = QWidget()
+        central.setObjectName("workspace")
         layout = QVBoxLayout(central)
-        layout.setSpacing(4)
-        layout.setContentsMargins(6, 6, 6, 4)
+        layout.setSpacing(12)
+        layout.setContentsMargins(22, 18, 22, 12)
 
         self.controls = ControlsBar()
+        self.controls.allow_duplicates.toggled.connect(self.link_panel.allow_dups.setChecked)
+        self.link_panel.allow_dups.toggled.connect(self.controls.allow_duplicates.setChecked)
         self.controls.set_dark(self._dark_theme)
         self.controls.set_download_dir(load_download_dir())
         self.controls.set_minimize_target(load_minimize_target())
@@ -174,46 +192,83 @@ class MainWindow(QMainWindow):
         self.proxy_bar.speedtest_requested.connect(self._run_speedtest)
         self.proxy_bar.proxy_speedtest_requested.connect(self._run_proxy_speedtest)
 
-        # Cruscotto su un'unica riga: zona download (StatsBar) | separatore
-        # verticale | zona proxy (ProxyBar). Il colore del separatore segue
-        # il tema (vedi _on_theme_toggle -> _restyle_dashboard_separator).
-        dashboard_row = QHBoxLayout()
-        dashboard_row.setContentsMargins(0, 0, 0, 0)
-        dashboard_row.setSpacing(0)
-        self._dashboard_separator = QFrame()
-        self._dashboard_separator.setFrameShape(QFrame.Shape.NoFrame)
-        self._dashboard_separator.setFixedWidth(1)
-        self._restyle_dashboard_separator()
-        # Stretch 2:1 fra StatsBar (2 zone interne: velocita'+download) e ProxyBar
-        # (1 zona): lo spazio extra si distribuisce in proporzione cosi' le
-        # tre zone del cruscotto ottengono larghezza comparabile, utile alle
-        # sparkline/barra segmentata che crescono in orizzontale.
-        dashboard_row.addWidget(self.stats_bar, 2)
-        dashboard_row.addWidget(self._dashboard_separator, 0)
-        dashboard_row.addWidget(self.proxy_bar, 1)
-
-        layout.addWidget(self.update_banner, 0)
-        layout.addWidget(self.controls, 0)
-        layout.addLayout(dashboard_row)
-        layout.addWidget(self._stats_panel, 0)
+        layout.addWidget(self.update_banner)
+        layout.addWidget(self.controls)
+        self.stats_bar.hide()
+        layout.addWidget(self.stats_bar)
+        self.jobs_panel.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Ignored)
+        self.jobs_panel.setMinimumHeight(132)
         layout.addWidget(self.jobs_panel, 1)
+        layout.addWidget(self.link_panel, 1)
+        self.link_panel.hide()
 
+        utility_bar = QFrame()
+        utility_bar.setObjectName("utilityBar")
+        footer = QHBoxLayout(utility_bar)
+        footer.setContentsMargins(8, 3, 8, 3)
+        footer.setSpacing(6)
+        self._details_toggle = QToolButton()
+        self._details_toggle.setObjectName("detailsToggle")
+        self._details_toggle.setCheckable(True)
+        self._details_toggle.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self._details_toggle.setText(t("workspace.details"))
+        self._details_toggle.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self._details_toggle.setIconSize(QSize(12, 12))
+        self._details_toggle.setIcon(disclosure_icon(False, CURRENT_PALETTE["text_dim"]))
+        footer.addWidget(self._details_toggle)
+        self._status_lbl = QLabel()
+        self._status_lbl.setObjectName("secondaryText")
+        self._status_lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self._status_lbl.setTextFormat(Qt.TextFormat.PlainText)
+        self._status_lbl.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        footer.addWidget(self._status_lbl, 1)
+
+        details = QWidget()
+        details.setObjectName("sessionDetails")
+        details.setAttribute(Qt.WidgetAttribute.WA_StyledBackground)
+        self._details_columns = QBoxLayout(QBoxLayout.Direction.LeftToRight, details)
+        self._details_columns.setContentsMargins(16, 12, 16, 12)
+        self._details_columns.setSpacing(24)
+        self._details_columns.addWidget(self._stats_panel, 1, Qt.AlignmentFlag.AlignTop)
+        self._details_columns.addWidget(self.proxy_bar, 1, Qt.AlignmentFlag.AlignTop)
+        self._details_scroll = QScrollArea()
+        self._details_scroll.setObjectName("detailsScroll")
+        self._details_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._details_scroll.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Ignored)
+        self._details_scroll.setWidgetResizable(True)
+        self._details_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._details_scroll.setWidget(details)
+        self._details_scroll.hide()
+        layout.addWidget(self._details_scroll, 3)
+        self._debug_panel = DebugPanel(LOGS_DIR / TERMINAL_LOG)
+        self._debug_panel.hide()
+        layout.addWidget(self._debug_panel, 1)
+        layout.addWidget(utility_bar)
+        self._details_toggle.toggled.connect(self._show_details)
         self.setCentralWidget(central)
-
-        # Barra di stato persistente: stato a sx, versione a dx.
-        sb = self.statusBar()
-        self._status_lbl = QLabel("")
-        sb.addWidget(self._status_lbl, 1)
-
-        version_lbl = QLabel(f"v{APP_VERSION}")
-        version_lbl.setStyleSheet("color: gray; font-size: 8pt; padding: 0 4px;")
-        sb.addPermanentWidget(version_lbl)
+        details.installEventFilter(self)
+        self.jobs_panel.setFocus(Qt.FocusReason.OtherFocusReason)
+        self._setup_menu_actions()
+        self._debug_panel.hide_requested.connect(lambda: self._actions["debug.button"].setChecked(False))
+        for key in ("partial.button", "history.button", "debug.button"):
+            button = QToolButton()
+            button.setObjectName("utilityAction")
+            button.setDefaultAction(self._actions[key])
+            button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+            button.setIconSize(QSize(16, 16))
+            button.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+            footer.addWidget(button)
+            if key == "partial.button":
+                self._partial_shortcut = button
+                button.hide()
+        self._refresh_utility_actions()
 
         # Connessioni.
         self.controls.start_requested.connect(self._on_start)
         self.controls.pause_toggled.connect(self._on_pause)
         self.controls.cancel_requested.connect(self._on_cancel)
         self.controls.paste_links_requested.connect(self._on_add_links_requested)
+        self.link_panel.links_count_changed.connect(self._show_link_draft)
         self.controls.theme_toggled.connect(self._on_theme_toggle)
         # Cambio lingua a caldo: il singleton TR e' l'unica sorgente (il
         # selettore nel menu Impostazioni chiama TR.set_preference), qui si fa
@@ -228,6 +283,8 @@ class MainWindow(QMainWindow):
         self.jobs_panel.cancel_job_requested.connect(self._on_cancel_job_requested)
         self.jobs_panel.delete_folder_requested.connect(self._on_delete_folder_requested)
         self.jobs_panel.paste_links_requested.connect(self._on_add_links_requested)
+        self.jobs_panel.import_requested.connect(self.link_panel.import_btn.click)
+        self.jobs_panel.recovery_requested.connect(self._open_partials)
         self.jobs_panel.restart_job_requested.connect(self._on_restart_job_requested)
         self.jobs_panel.restart_all_failed_requested.connect(self._on_restart_all_failed_requested)
 
@@ -250,6 +307,7 @@ class MainWindow(QMainWindow):
         self._run_speedtest()
         # Ripristino sessione: differito all'avvio del loop eventi (dopo che la
         # finestra è visibile), così il prompt ha un parent valido.
+        QTimer.singleShot(0, self._scan_partials)
         QTimer.singleShot(0, self._maybe_restore_session)
 
         # Heartbeat diagnostico: una riga INFO periodica su app.log con
@@ -260,6 +318,220 @@ class MainWindow(QMainWindow):
         self._heartbeat_timer.setInterval(HEARTBEAT_INTERVAL_S * 1000)
         self._heartbeat_timer.timeout.connect(self._on_heartbeat)
         self._heartbeat_timer.start()
+
+    def _setup_menu_actions(self) -> None:
+        # Qt mappa Ctrl nel Comando del Mac. QAction offre la stessa azione a
+        # tastiera e menu nativo; Esci passa da closeEvent anche con ⌘Q.
+        self._file_menu = self.menuBar().addMenu(t("workspace.file_menu")) if sys.platform == "darwin" else None
+        self._actions: dict[str, QAction] = {}
+        role = QAction.MenuRole
+        for key, shortcut, menu_role, slot in (
+            ("controls.paste_links", "Ctrl+L", role.NoRole, self._on_add_links_requested),
+            ("partial.button", "Ctrl+Shift+R", role.NoRole, self._open_partials),
+            ("history.button", "Ctrl+Y", role.NoRole, self._open_history),
+            ("debug.button", "Ctrl+Shift+D", role.NoRole, self._show_debug),
+            ("controls.settings", "Ctrl+,", role.PreferencesRole, self.controls.show_settings),
+            ("controls.info", "", role.AboutRole, self._open_about_dialog),
+            ("tray.menu_quit", QKeySequence.StandardKey.Quit, role.QuitRole, self.close),
+        ):
+            action = QAction(t(key), self)
+            action.setMenuRole(menu_role)
+            action.setShortcut(QKeySequence(shortcut))
+            if key == "debug.button":
+                action.setCheckable(True)
+                action.toggled.connect(slot)
+            else:
+                action.triggered.connect(slot)
+            self.addAction(action)
+            if self._file_menu is not None:
+                self._file_menu.addAction(action)
+            self._actions[key] = action
+
+    def _refresh_utility_actions(self) -> None:
+        partial = self._actions["partial.button"]
+        partial.setIcon(utility_icon("download", CURRENT_PALETTE["text_dim"]))
+        partial.setToolTip(t("partial.title"))
+        for key in ("history", "debug"):
+            action = self._actions[f"{key}.button"]
+            action.setIcon(utility_icon(key, CURRENT_PALETTE["text_dim"]))
+            shortcut = action.shortcut().toString(QKeySequence.SequenceFormat.NativeText)
+            action.setToolTip(f"{t(f'{key}.tooltip')} ({shortcut})")
+
+    def _scan_partials(self) -> None:
+        root = Path(self.controls.get_download_dir() or OUTPUT_DIR).absolute()
+        if root != self._partial_root:
+            self._partials = []
+            self.jobs_panel.set_partial_count(0)
+            self._partial_root = root
+        self._partial_generation += 1
+        self._partial_scan_pending = True
+        if self._restored_urls:
+            self.controls.start_btn.setEnabled(False)
+        if self._partial_dialog:
+            self._partial_dialog.set_root(root)
+            self._partial_dialog.set_entries(self._available_partials(), busy=True)
+        links = [*self._links_by_id.values(), *self.link_panel.get_links()]
+        self._partial_stop.set()
+        self._partial_stop = Event()
+        task = PartialScan(root, links, self._partial_generation, self._partial_signals, self._partial_stop)
+        QThreadPool.globalInstance().start(task)
+
+    def _active_handles(self) -> set[str]:
+        return {handle for j in self.jobs_panel.model.jobs_iter()
+                if j.status in (STATUS_QUEUED, STATUS_RUNNING) and (handle := link_handle(j.url))}
+
+    def _available_partials(self) -> list[PartialDownload]:
+        active = self._active_handles()
+        selected = {entry.target for entry in self._draft_recoveries.values()}
+        return [p for p in self._partials if p.target not in selected
+                and (p.handle or link_handle(p.url)) not in active]
+
+    def _partials_found(self, generation: int, entries: list[PartialDownload], error: str) -> None:
+        if generation != self._partial_generation:
+            return
+        self._partial_scan_pending = False
+        self._partials = entries
+        self._match_restored_partials()
+        available = self._available_partials()
+        self.jobs_panel.set_partial_count(len(available))
+        if self._partial_dialog:
+            self._partial_dialog.set_entries(available, error=error)
+
+    def _match_restored_partials(self) -> None:
+        if not self._restored_urls:
+            return
+        if self._partial_scan_pending:
+            self.controls.start_btn.setEnabled(False)
+            return
+        for url in self._restored_urls:
+            handle = link_handle(url)
+            candidates = [p for p in self._partials if p.saved and p.handle == handle]
+            if len(candidates) == 1:
+                self._draft_recoveries.setdefault(url, candidates[0])
+        self.controls.set_link_count(len(self.link_panel.get_links()))
+
+    def _open_partials(self) -> None:
+        if not self._partial_dialog:
+            self._partial_dialog = PartialDialog(self)
+            self._partial_dialog.refresh_requested.connect(self._scan_partials)
+            self._partial_dialog.recover_requested.connect(self._recover_partial)
+        self._partial_dialog.showNormal()
+        self._partial_dialog.raise_()
+        self._partial_dialog.activateWindow()
+        self._scan_partials()
+
+    def _recover_partial(self, item: PartialDownload, url: str) -> None:
+        dialog = self._partial_dialog
+        handle = link_handle(url)
+        if not handle or handle in self._active_handles() or item not in self._available_partials():
+            QMessageBox.information(dialog, t("partial.title"), t("partial.busy"))
+            self._scan_partials()
+            return
+        try:
+            with target_lock(item.target):
+                item.validate(handle, item.expected_size or item.size, item.target)
+        except RecoveryChanged:
+            QMessageBox.warning(dialog, t("partial.title"), t("err.partial_changed"))
+            self._scan_partials()
+            return
+        draft = self.link_panel.get_links()
+        if draft:
+            # I link già preparati restano una bozza finché l'utente preme Avvia.
+            duplicate = next((u for u in draft if link_handle(u) == handle), None)
+            if duplicate:
+                draft[draft.index(duplicate)] = url
+            else:
+                draft.append(url)
+            self._restored_urls.discard(url)
+            self._draft_recoveries[url] = item
+            self.link_panel.set_links(draft)
+            self._set_status_t("partial.draft")
+        elif self._session_is_open():
+            ids = self.orchestrator.add_jobs([url], recovery=item)
+            if not ids:
+                QMessageBox.information(dialog, t("partial.title"), t("main_window.add_refused"))
+                return
+            self._register_added_jobs(ids, [url])
+            self.jobs_panel.model.set_recovery_info(ids[0], item.target, item.saved, item.expected_size)
+            self._show_session()
+        elif not self._start_with_links([url], recoveries={url: item}):
+            return
+        dialog.accept()
+
+    def _open_history(self) -> None:
+        if self._history_dialog is None:
+            self._history_dialog = HistoryDialog(self)
+        if self._history_dialog.isMinimized():
+            self._history_dialog.showNormal()
+        else:
+            self._history_dialog.show()
+        self._history_dialog.raise_()
+        self._history_dialog.activateWindow()
+
+    def _refresh_visible_history(self) -> None:
+        if self._history_dialog is not None and self._history_dialog.isVisible():
+            self._history_dialog.reload()
+
+    def _show_debug(self, expanded: bool) -> None:
+        if expanded:
+            self._details_toggle.setChecked(False)
+        self._debug_panel.setVisible(expanded)
+
+    def _show_details(self, expanded: bool) -> None:
+        if expanded:
+            self._actions["debug.button"].setChecked(False)
+        self._details_toggle.setIcon(disclosure_icon(expanded, CURRENT_PALETTE["text_dim"]))
+        self._details_scroll.setVisible(expanded)
+        if expanded:
+            self._fit_details()
+
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        if hasattr(self, "_details_scroll") and not self._details_scroll.isHidden():
+            self._fit_details()
+
+    def eventFilter(self, watched, event) -> bool:  # noqa: N802
+        if event.type() == QEvent.Type.LayoutRequest and watched is self._details_scroll.widget():
+            if self._details_toggle.isChecked():
+                self._fit_details()
+        return super().eventFilter(watched, event)
+
+    def _fit_details(self) -> None:
+        columns = self._details_columns
+        page = self.centralWidget()
+        width = page.rect().marginsRemoved(page.layout().contentsMargins()).width()
+        margins = columns.contentsMargins()
+        min_width = (self._stats_panel.minimumSizeHint().width() + self.proxy_bar.minimumSizeHint().width()
+                     + margins.left() + margins.right() + columns.spacing())
+        direction = QBoxLayout.Direction.LeftToRight if width >= min_width else QBoxLayout.Direction.TopToBottom
+        if columns.direction() != direction:
+            columns.setDirection(direction)
+        desired = columns.totalHeightForWidth(width) if columns.hasHeightForWidth() else columns.sizeHint().height()
+        height = min(desired, page.height() // 2)
+        if self._details_scroll.maximumHeight() != height:
+            self._details_scroll.setMaximumHeight(height)
+
+    def _show_link_draft(self, count: int) -> None:
+        self.controls.set_link_count(count)
+        links = set(self.link_panel.get_links())
+        self._restored_urls.intersection_update(links)
+        self._draft_recoveries = {u: p for u, p in self._draft_recoveries.items() if u in links}
+        self._partial_shortcut.setVisible(bool(count) or self._session_is_open())
+        self.link_panel.setVisible(bool(count))
+        self.jobs_panel.setVisible(not count)
+        show_session = not count and self._session_is_open()
+        self.stats_bar.setVisible(show_session)
+        self.controls.paste_btn.setVisible(show_session)
+
+    def _show_session(self) -> None:
+        self._partial_shortcut.show()
+        self.proxy_bar.set_session_visible(True)
+        self.link_panel.hide()
+        self.jobs_panel.show()
+        self.stats_bar.show()
+        self.controls.paste_btn.show()
+        if self._details_toggle.isChecked():
+            self._fit_details()
 
     # ---- area di notifica --------------------------------------------------
 
@@ -436,6 +708,7 @@ class MainWindow(QMainWindow):
             output_root=Path(download_dir) if download_dir else None,
         )
         dlg.exec()
+        self._refresh_visible_history()
 
     def _on_update_download_requested(self) -> None:
         QDesktopServices.openUrl(QUrl(repo_url()))
@@ -466,7 +739,8 @@ class MainWindow(QMainWindow):
         self._speedtest_worker.start()
 
     def _on_speedtest_done(self, mbit: float, ok: bool) -> None:
-        self.proxy_bar.on_speedtest_result(mbit, ok)
+        worker = self._speedtest_worker
+        self.proxy_bar.on_speedtest_result(mbit, ok, worker.failure, worker.http_status)
         if ok and mbit > 0:
             save_link_speed_mbps(mbit)
 
@@ -517,12 +791,12 @@ class MainWindow(QMainWindow):
         memorizzasse gia' resa, la cornice si tradurrebbe e l'errore no.
         """
         self._status_source = (key, None, params)
-        self._status_lbl.setText(t(key, **resolve_payloads(params)))
+        self._refresh_status()
 
     def _set_status_tn(self, key: str, n: int, **params: object) -> None:
         """Variante plurale di `_set_status_t`."""
         self._status_source = (key, n, params)
-        self._status_lbl.setText(tn(key, n, **resolve_payloads(params)))
+        self._refresh_status()
 
     def _refresh_status(self) -> None:
         if self._status_source is None:
@@ -532,6 +806,7 @@ class MainWindow(QMainWindow):
         self._status_lbl.setText(
             t(key, **rendered) if n is None else tn(key, n, **rendered)
         )
+        self._status_lbl.setToolTip(self._status_lbl.text())
 
     # ---- avvio sessione --------------------------------------------------
 
@@ -545,9 +820,11 @@ class MainWindow(QMainWindow):
             )
             self.controls.set_download_dir("")
             save_download_dir("")
+            self._scan_partials()
             self._set_status_t("main_window.dir_reset")
             return
         save_download_dir(path)
+        self._scan_partials()
         if path:
             self._set_status_t("main_window.dir_set", path=path)
         else:
@@ -561,6 +838,8 @@ class MainWindow(QMainWindow):
                 t("main_window.no_links_title"),
                 t("main_window.no_links_body"),
             )
+            return
+        if not self.controls.ensure_local_download_dir():
             return
         # Un link a cartella non e' scaricabile com'e': va prima elencato ed
         # espanso in un job per file. E' una chiamata di rete, quindi gira in
@@ -614,7 +893,7 @@ class MainWindow(QMainWindow):
         statistiche, cronometro e soprattutto il pool gia' validato — oppure
         ripartire pulito come un avvio nuovo.
         """
-        if not self._session_is_open():
+        if not self.link_panel.isHidden() or not self._session_is_open():
             self.link_panel.open_paste_dialog()
             return
         if self._session_queue_drained():
@@ -702,6 +981,7 @@ class MainWindow(QMainWindow):
             self._set_status_t("main_window.add_refused")
             return
         self._register_added_jobs(ids, checked)
+        self._show_session()
         self._set_status_tn("main_window.add_done", len(ids))
 
     def _register_added_jobs(self, ids: list[int], links: list[str]) -> None:
@@ -849,27 +1129,39 @@ class MainWindow(QMainWindow):
         else:
             self._add_links_to_session(unique, at_top=position == POSITION_TOP)
 
-    def _start_with_links(self, links: list[str]) -> None:
-        links = confirm_already_downloaded(links, self)
-        if links is None:
-            return
+    def _start_with_links(self, links: list[str], *, recoveries: dict[str, PartialDownload] | None = None) -> bool:
+        recoveries = dict(self._draft_recoveries if recoveries is None else recoveries)
+        # La scelta esplicita del parziale tiene conto dell'avviso mostrato nello storico.
+        explicit = recoveries.keys() - self._restored_urls
+        normal = [url for url in links if url not in explicit]
+        checked = confirm_already_downloaded(normal, self) if normal else []
+        if checked is None:
+            return False
+        accepted = set(checked) | explicit
+        links = [url for url in links if url in accepted]
         if not links:
             self._set_status_t("main_window.nothing_to_download")
-            return
+            return False
 
         if self.orchestrator is not None:
             if not self.orchestrator.shutdown():
                 self._set_status_t("main_window.previous_session_closing")
-                return
+                return False
 
         self.jobs_panel.reset(links)
+        remaining = dict(recoveries)
+        for file_id, url in enumerate(links):
+            item = remaining.pop(url, None)
+            if item:
+                self.jobs_panel.model.set_recovery_info(file_id, item.target, item.saved, item.expected_size)
+        self.link_panel.set_links([])
+        self._show_session()
         self._links_by_id = {i: u for i, u in enumerate(links)}
         # Ripristino sessione (2.7): tutti i link partono "non completati";
         # ognuno viene rimosso quando termina (completato/abbandonato/annullato).
         self._session_incomplete = dict(enumerate(links))
         self._session_persist()
         self._pending_delete.clear()
-        self.stats_bar.start_clock()
         self._stats_panel.start_clock()
         self.proxy_bar.reset()
         self._set_status_t("main_window.collecting_proxies")
@@ -947,7 +1239,9 @@ class MainWindow(QMainWindow):
             speed_selection_min_bps=speed_min_bps,
             link_capacity_mbit=link_mbit if link_mbit > 0 else None,
             output_root=self._active_output_root,
+            **({"recoveries": recoveries} if recoveries else {}),
         )
+        return True
 
     # ---- pausa / annullo globale -----------------------------------------
 
@@ -998,7 +1292,9 @@ class MainWindow(QMainWindow):
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if reply == QMessageBox.StandardButton.Yes:
+            self._restored_urls = set(urls)
             self.link_panel.set_links(urls)
+            self._match_restored_partials()
             self._set_status_tn(
                 "main_window.restored_status", len(urls)
             )
@@ -1012,6 +1308,7 @@ class MainWindow(QMainWindow):
 
     def _on_file_done(self, file_id: int) -> None:
         self.jobs_panel.on_all_done(file_id)
+        self._refresh_visible_history()
         self._session_mark_finished(file_id)
         self._completed_files += 1
         self._set_status_t(
@@ -1119,132 +1416,45 @@ class MainWindow(QMainWindow):
         self._maybe_notify_queue_done()
 
     def _on_delete_folder_requested(self, file_id: int) -> None:
-        url = self._links_by_id.get(file_id)
-        is_folder_job = url is not None and parse_folder_job_url(url) is not None
-        # Le due varianti erano costruite a pezzi attorno al numero del
-        # file: un frammento come « dalla cartella scaricata?» non e'
-        # traducibile da solo, quindi ognuna e' ora una chiave intera.
-        body_key = (
-            "main_window.delete_folder_job_body" if is_folder_job
-            else "main_window.delete_folder_body"
-        )
         confirm = QMessageBox.question(
-            self,
-            t("main_window.delete_title"),
-            t(body_key, file=file_id + 1),
+            self, t("main_window.delete_title"), t("main_window.delete_job_files_body", file=file_id + 1),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No,
         )
-        if confirm != QMessageBox.StandardButton.Yes:
-            return
-        self._delete_folder_for(file_id)
+        if confirm == QMessageBox.StandardButton.Yes:
+            self._delete_folder_for(file_id, include_completed=True)
 
-    def _delete_folder_for(self, file_id: int) -> None:
-        # Job nato dall'espansione di una cartella: la cartella su disco e'
-        # CONDIVISA con gli altri file dello stesso albero (alcuni magari
-        # ancora in corso o gia' completati). Si elimina solo questo file.
-        folder_url = self._links_by_id.get(file_id)
-        if folder_url is not None and parse_folder_job_url(folder_url) is not None:
-            self._delete_folder_job_file(file_id, folder_url)
-            return
-        # Usa il path corrente dal modello se disponibile (la cartella potrebbe
-        # essere stata rinominata col nome file dopo il resolve).
-        path: Path | None = None
-        job = self.jobs_panel.model.get_job(file_id)
-        if job and job.output_path:
-            p = Path(job.output_path)
-            # output_path è il file finale: OUTPUT_DIR/<nome>_<id>/ciclo_N/<file>
-            # La cartella base è 2 livelli sopra.
-            candidate = p.parent.parent
-            if candidate.is_dir():
-                path = candidate
-        if path is None:
-            url = self._links_by_id.get(file_id)
-            if url is None:
-                log.warning("Delete folder: file_id=%d non trovato", file_id)
-                return
-            path = job_output_dir(url, file_id, self._active_output_root)
-        if not path.exists():
-            self._set_status_t(
-                "main_window.delete_missing", file=file_id + 1
-            )
-            return
+    def _delete_folder_for(self, file_id: int, *, include_completed: bool = False) -> None:
+        files = self.orchestrator.job_files.get(file_id) if self.orchestrator else None
+        if files is None and self.orchestrator:
+            recovery = self.orchestrator.recovery_targets.get(file_id)
+            if recovery:
+                files = JobFiles(recovery.root, recovery)
         try:
-            shutil.rmtree(path)
-            log.info("Cartella eliminata: %s", path)
-            self._set_status_t(
-                "main_window.delete_done", file=file_id + 1, name=path.name
-            )
-        except OSError as exc:
-            log.exception("Impossibile eliminare %s", path)
-            QMessageBox.warning(
-                self,
-                t("main_window.delete_failed_title"),
-                t("main_window.delete_failed_body", path=path, error=exc),
-            )
-
-    def _delete_folder_job_file(self, file_id: int, url: str) -> None:
-        """Elimina il singolo file di un job-cartella (mai l'albero condiviso).
-
-        Rimuove il file finale, il `.part` e i sidecar di resume, poi pota le
-        cartelle rimaste vuote risalendo fino alla radice dei download
-        (esclusa): se altri file dell'albero esistono ancora, la potatura si
-        ferma da sola alla prima cartella non vuota.
-        """
-        job = parse_folder_job_url(url)
-        if job is None:
+            removed = files.discard(include_completed=include_completed) if files else []
+        except (OSError, RecoveryChanged) as exc:
+            QMessageBox.warning(self, t("main_window.delete_failed_title"), str(exc))
             return
-        root = self._active_output_root or OUTPUT_DIR
-        directory = folder_job_output_dir(job.rel_path, self._active_output_root)
-        name = sanitize_file_name(job.file_name, fallback=f"mega_{job.node_handle}")
-        targets = [
-            directory / name,
-            directory / f"{name}.part",
-            directory / f"{name}.part.progress.json",
-            directory / f"{name}.progress.json",   # sidecar del vecchio schema
-        ]
-        removed = 0
-        for target in targets:
-            try:
-                if target.is_file():
-                    target.unlink()
-                    removed += 1
-            except OSError as exc:
-                log.warning("Impossibile eliminare %s: %s", target, exc)
-        if removed == 0:
-            self._set_status_t(
-                "main_window.delete_nothing", file=file_id + 1
-            )
-            return
-        # Potatura delle cartelle rimaste vuote (mai la radice dei download).
-        current = directory
-        try:
-            root_resolved = root.resolve()
-            while current.resolve() != root_resolved and current.is_dir():
-                if any(current.iterdir()):
-                    break
-                parent = current.parent
-                current.rmdir()
-                log.info("Cartella vuota rimossa: %s", current)
-                current = parent
-        except OSError as exc:
-            log.debug("Potatura cartelle interrotta su %s: %s", current, exc)
-        log.info("File del job-cartella eliminato: %s", directory / name)
-        self._set_status_t(
-            "main_window.delete_file_done", file=file_id + 1, name=name
-        )
+        if removed:
+            self.orchestrator.recovery_targets.pop(file_id, None)
+            self._set_status_t("main_window.delete_file_done", file=file_id + 1, name=removed[-1].name)
+            self._scan_partials()
+        else:
+            self._set_status_t("main_window.delete_nothing", file=file_id + 1)
 
     # ---- tema chiaro/scuro ----------------------------------------------
 
     def _on_theme_toggle(self, dark: bool) -> None:
         self._dark_theme = dark
+        self.controls.set_dark(dark)
         app = QApplication.instance()
         apply_theme(app, dark)
         save_dark_theme(dark)
         # Aggiorna i widget che usano colori inline (badge, card, KPI).
+        self._details_toggle.setIcon(disclosure_icon(self._details_toggle.isChecked(), CURRENT_PALETTE["text_dim"]))
+        self._refresh_utility_actions()
         self.jobs_panel.refresh_theme()
-        self.stats_bar.refresh_theme()
         self.proxy_bar.refresh_theme()
         self._stats_panel.refresh_theme()
-        self._restyle_dashboard_separator()
 
     # ---- lingua dell'interfaccia ----------------------------------------
 
@@ -1260,11 +1470,21 @@ class MainWindow(QMainWindow):
         barra comandi, banner, cruscotto (StatsBar/ProxyBar/StatsPanel),
         elenco job, pannello link e riga di stato. I dialoghi creati su
         richiesta non servono (leggono i testi alla costruzione), con
-        UN'eccezione: `JobDetailDialog` non e' modale e resta aperto mentre il
-        download prosegue, quindi e' una superficie persistente a tutti gli
-        effetti e va ritradotto come i pannelli."""
+        due eccezioni: lo Storico e i dettagli dei file restano aperti mentre
+        il download prosegue e si ritraducono insieme ai pannelli."""
         log.info("Ritraduzione interfaccia in corso: %s", lang)
         self._refresh_window_title()
+        self._details_toggle.setText(t("workspace.details"))
+        if self._file_menu is not None:
+            self._file_menu.setTitle(t("workspace.file_menu"))
+        for key, action in self._actions.items():
+            action.setText(t(key))
+        self._refresh_utility_actions()
+        if self._partial_dialog is not None:
+            self._partial_dialog.retranslate()
+        if self._history_dialog is not None:
+            self._history_dialog.retranslate()
+        self._debug_panel.retranslate()
         self.controls.retranslate()
         self.update_banner.retranslate()
         self.stats_bar.retranslate()
@@ -1287,12 +1507,6 @@ class MainWindow(QMainWindow):
             if dlg is None:
                 continue
             dlg.retranslate()
-
-    def _restyle_dashboard_separator(self) -> None:
-        p = _style.CURRENT_PALETTE
-        self._dashboard_separator.setStyleSheet(
-            f"QFrame {{ background-color: {p['border']}; border: none; }}"
-        )
 
     # ---- riavvio job ----------------------------------------------------
 
@@ -1328,6 +1542,7 @@ class MainWindow(QMainWindow):
         self.controls.set_running(True)
         self.link_panel.set_running(True)
         self._set_status_t("main_window.restart_queued", file=file_id + 1)
+        self._show_session()
 
     def _on_restart_all_failed_requested(self) -> None:
         if self.orchestrator is None:
@@ -1349,6 +1564,7 @@ class MainWindow(QMainWindow):
             self.controls.set_running(True)
             self.link_panel.set_running(True)
             self._set_status_tn("main_window.restart_all_done", n_started)
+            self._show_session()
 
     # ---- dettaglio job --------------------------------------------------
 
@@ -1371,7 +1587,15 @@ class MainWindow(QMainWindow):
         if self._startup_update_worker is not None and self._startup_update_worker.isRunning():
             self._startup_update_worker.wait(2000)
         if self._speedtest_worker is not None and self._speedtest_worker.isRunning():
-            self._speedtest_worker.wait(3000)
+            self._speedtest_worker.requestInterruption()
+            if not self._speedtest_worker.wait(100):
+                # Una lettura di rete può essere ancora in attesa del timeout.
+                # La GUI può sparire subito; il QThread deve uscire prima di Qt.
+                self._speedtest_worker.finished.connect(self.close, Qt.ConnectionType.QueuedConnection)
+                if self._speedtest_worker.isRunning():
+                    self.hide()
+                    event.ignore()
+                    return
         if self._proxy_speedtest_worker is not None and self._proxy_speedtest_worker.isRunning():
             self._proxy_speedtest_worker.wait(3000)
         if self._folder_expander is not None and self._folder_expander.isRunning():
@@ -1386,6 +1610,8 @@ class MainWindow(QMainWindow):
         # e lasciarlo li' vuol dire lasciare un'icona fantasma finche' non ci
         # si passa sopra col mouse. Stessa ragione dell'attesa dei thread qui
         # sopra: cio' che l'app ha montato, l'app lo smonta.
+        self._partial_stop.set()
+        self._partial_generation += 1
         self._tray.shutdown()
         # Marcatore di chiusura volontaria: se nel log compare un SESSION
         # START senza questo prima del successivo START, e' stato un crash o

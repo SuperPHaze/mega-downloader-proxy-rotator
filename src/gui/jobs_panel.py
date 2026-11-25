@@ -11,23 +11,27 @@
 # error_render, quindi il semplice _refresh() basta anche al cambio lingua.
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 from PyQt6.QtCore import (
-    QModelIndex,
+    QRect,
+    QSize,
     QUrl,
     Qt,
     pyqtSignal,
 )
-from PyQt6.QtGui import QAction, QColor, QDesktopServices, QFont
+from PyQt6.QtGui import QColor, QDesktopServices, QPainter
 from PyQt6.QtWidgets import (
     QApplication,
     QButtonGroup,
     QFrame,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
+    QCheckBox,
     QMenu,
+    QMessageBox,
+    QToolButton,
     QProgressBar,
     QPushButton,
     QScrollArea,
@@ -36,14 +40,11 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from src.core.failed_log import failed_log_path
 from src.gui import style as _style
-from src.gui.i18n import t
-from src.gui.error_render import ABANDON_ALIASES, render_error
-from src.core.mega_links import parse_folder_job_url
-from src.gui.format_helpers import fmt_bytes as _fmt_bytes, fmt_speed as _fmt_speed_stat
+from src.gui.i18n import TR, t, tn
+from src.gui.error_render import ABANDON_ALIASES, render_error, render_queue_cause
+from src.gui.format_helpers import fmt_bytes as _fmt_bytes, fmt_speed as _fmt_speed_stat, link_caption
 from src.gui.jobs_model import (
-    Job,
     JobsModel,
     STATUS_ABANDONED,
     STATUS_CANCELLED,
@@ -53,35 +54,11 @@ from src.gui.jobs_model import (
     STATUS_RUNNING,
 )
 
-# Categorie del filtro job — ciascuna raggruppa piu' stati. Le tre
-# categorie insieme coprono tutti gli stati possibili (nessuna voce "Tutti").
+FILTER_ALL = "all"
 FILTER_IN_PROGRESS = "in_progress"
 FILTER_COMPLETED = "completed"
 FILTER_NOT_COMPLETED = "not_completed"
 
-_FILTER_CATEGORIES: dict[str, set[str]] = {
-    FILTER_IN_PROGRESS: {STATUS_QUEUED, STATUS_RUNNING},
-    FILTER_COMPLETED: {STATUS_COMPLETED},
-    FILTER_NOT_COMPLETED: {STATUS_FAILED, STATUS_CANCELLED, STATUS_ABANDONED},
-}
-
-# Colori foreground (testo) per badge di stato — letti da CURRENT_PALETTE.
-_STATUS_FG_KEY = {
-    STATUS_QUEUED: "text_dim",
-    STATUS_RUNNING: "accent_active",
-    STATUS_COMPLETED: "accent_ok",
-    STATUS_FAILED: "accent_fail",
-    STATUS_CANCELLED: "accent_warn",
-    STATUS_ABANDONED: "accent_fail",
-}
-_STATUS_BG_KEY = {
-    STATUS_QUEUED: "status_bg_queued",
-    STATUS_RUNNING: "status_bg_running",
-    STATUS_COMPLETED: "status_bg_completed",
-    STATUS_FAILED: "status_bg_failed",
-    STATUS_CANCELLED: "status_bg_cancelled",
-    STATUS_ABANDONED: "status_bg_abandoned",
-}
 # Lo stato del modello -> chiave i18n. La MAPPA vive qui perche' e' qui che il
 # badge la usa, ma non e' privata del pannello: `status_label()` la espone a chi
 # deve rendere lo stesso stato altrove (il dialogo di dettaglio). Una seconda
@@ -96,6 +73,13 @@ _STATUS_LABEL_KEY = {
 }
 
 
+_FILTER_CATEGORIES: dict[str, set[str]] = {
+    FILTER_ALL: set(_STATUS_LABEL_KEY),
+    FILTER_IN_PROGRESS: {STATUS_QUEUED, STATUS_RUNNING},
+    FILTER_COMPLETED: {STATUS_COMPLETED},
+    FILTER_NOT_COMPLETED: {STATUS_FAILED, STATUS_CANCELLED, STATUS_ABANDONED},
+}
+
 def status_label(status: str) -> str:
     """Etichetta tradotta di uno stato del modello ("in_corso" -> "In corso").
 
@@ -109,23 +93,21 @@ def status_label(status: str) -> str:
 
 _PROGRESS_COLOR_KEY = {
     STATUS_RUNNING: "accent_active",
-    STATUS_COMPLETED: "accent_ok",
+    STATUS_COMPLETED: "completed_track",
     STATUS_FAILED: "accent_fail",
     STATUS_ABANDONED: "accent_fail",
     STATUS_CANCELLED: "accent_warn",
     STATUS_QUEUED: "text_dim",
 }
 
-# Status icon (unicode).
 _STATUS_ICON = {
-    STATUS_QUEUED: "⏳",
-    STATUS_RUNNING: "▶",
-    STATUS_COMPLETED: "✓",
-    STATUS_FAILED: "✗",
-    STATUS_CANCELLED: "⊘",
-    STATUS_ABANDONED: "✗",
+    STATUS_QUEUED: ("history", "text_dim", "status_bg_queued"),
+    STATUS_RUNNING: ("download", "accent_active", "status_bg_running"),
+    STATUS_COMPLETED: ("check", "accent_ok", "status_bg_completed"),
+    STATUS_FAILED: ("alert", "accent_fail", "status_bg_failed"),
+    STATUS_ABANDONED: ("alert", "accent_fail", "status_bg_abandoned"),
+    STATUS_CANCELLED: ("alert", "accent_warn", "status_bg_cancelled"),
 }
-
 
 class _ElidedLabel(QLabel):
     """QLabel che tronca il testo con elisione automatica al resize.
@@ -141,14 +123,18 @@ class _ElidedLabel(QLabel):
         parent: "QWidget | None" = None,
     ) -> None:
         super().__init__(parent)
+        self.setTextFormat(Qt.TextFormat.PlainText)
         self._full_text = ""
         self._elide_mode = elide_mode
         self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self.setMinimumWidth(0)
 
     def setText(self, text: str) -> None:  # noqa: N802
+        if self._full_text == text:
+            return
         self._full_text = text
         self.setToolTip(text)
+        self.setAccessibleName(text)
         self._apply_elide()
 
     def resizeEvent(self, event) -> None:  # noqa: N802
@@ -157,7 +143,8 @@ class _ElidedLabel(QLabel):
 
     def _apply_elide(self) -> None:
         fm = self.fontMetrics()
-        elided = fm.elidedText(self._full_text, self._elide_mode, max(1, self.width()))
+        one_line = " ".join(self._full_text.splitlines())
+        elided = fm.elidedText(one_line, self._elide_mode, max(1, self.contentsRect().width()))
         super().setText(elided)
 
 
@@ -169,26 +156,8 @@ def _fmt_speed(bps: float) -> str:
     return f"{bps / 1024:.0f} KB/s"
 
 
-def _short_url(url: str) -> str:
-    # Mostra la parte finale dell'URL Mega come titolo prima che il nome file
-    # sia noto.
-    try:
-        job = parse_folder_job_url(url)
-        if job is not None:
-            # Job nato da una cartella: il path relativo e' gia' l'etichetta
-            # piu' utile (cartella/sottocartella/file), la URL interna no.
-            return "/".join(job.rel_path)[-60:]
-        part = url.split("/")[-1]
-        if "#" in part:
-            handle = part.split("#")[0]
-            return f"mega://{handle}" if handle else url
-        return part[:40] or url
-    except Exception:
-        return url[:60]
-
-
 class _JobCard(QFrame):
-    cancel_requested = pyqtSignal(int)        # file_id
+    cancel_requested = pyqtSignal(int, bool)  # file_id, delete_folder
     delete_requested = pyqtSignal(int)        # file_id
     open_folder_requested = pyqtSignal(int)   # file_id
     restart_requested = pyqtSignal(int)       # file_id
@@ -199,118 +168,110 @@ class _JobCard(QFrame):
         self.model = model
         self.file_id = file_id
         self._expanded = False
+        self._error_key = None
 
         self._build_ui()
         self._refresh()
         model.job_updated.connect(self._on_model_updated)
 
     def _build_ui(self) -> None:
-        p = _style.CURRENT_PALETTE
-        self.setFrameShape(QFrame.Shape.StyledPanel)
-        self.setStyleSheet(
-            f"QFrame#card {{ background-color: {p['card_bg']}; "
-            f"border: 1px solid {p['card_border']}; border-radius: 8px; }}"
-        )
         self.setObjectName("card")
         self.setCursor(Qt.CursorShape.PointingHandCursor)
+        grid = QGridLayout(self)
+        grid.setContentsMargins(12, 8, 12, 11)
+        grid.setHorizontalSpacing(8)
+        grid.setVerticalSpacing(4)
+        grid.setColumnStretch(1, 1)
+        self._status_icon = QLabel()
+        self._status_icon.setFixedSize(32, 32)
+        self._status_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        grid.addWidget(self._status_icon, 0, 0, 2, 1, Qt.AlignmentFlag.AlignVCenter)
+        self._expand_btn = QToolButton()
+        self._expand_btn.setObjectName("rowAction")
+        self._expand_btn.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self._expand_btn.setCheckable(True)
+        self._expand_btn.setIconSize(QSize(12, 12))
+        self._expand_btn.toggled.connect(self._set_expanded)
+        grid.addWidget(self._expand_btn, 0, 2)
 
-        outer = QVBoxLayout(self)
-        outer.setContentsMargins(10, 8, 10, 8)
-        outer.setSpacing(4)
+        self._name_lbl = _ElidedLabel(Qt.TextElideMode.ElideMiddle)
+        self._name_lbl.setObjectName("fileName")
+        grid.addWidget(self._name_lbl, 0, 1)
+        self._action_btn = QToolButton()
+        self._action_btn.setObjectName("rowMenu")
+        self._action_btn.setIconSize(QSize(16, 16))
+        self._action_btn.setFixedSize(28, 26)
+        self._action_btn.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self._action_btn.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        menu = QMenu(self._action_btn)
+        self._details_action = menu.addAction("")
+        self._details_action.triggered.connect(lambda: self.double_clicked.emit(self.file_id))
+        self._file_action = menu.addAction("")
+        self._file_action.triggered.connect(self._on_action)
+        self._action_btn.setMenu(menu)
+        grid.addWidget(self._action_btn, 0, 3, 2, 1, Qt.AlignmentFlag.AlignTop)
 
-        # --- Riga principale ---
-        top = QHBoxLayout()
-        top.setSpacing(8)
-
-        self._icon_lbl = QLabel("⏳")
-        self._icon_lbl.setFixedWidth(20)
-        f = QFont()
-        f.setPointSize(11)
-        self._icon_lbl.setFont(f)
-        top.addWidget(self._icon_lbl)
-
-        # Nome file / URL (stretch): eliso a destra per non forzare larghezza.
-        self._name_lbl = _ElidedLabel(Qt.TextElideMode.ElideRight)
-        self._name_lbl.setFont(QFont("Segoe UI", 10))
-        self._name_lbl.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
-        top.addWidget(self._name_lbl, 1)
-
-        # Velocita'.
-        self._speed_lbl = QLabel()
-        sf = QFont("Consolas", 9)
-        self._speed_lbl.setFont(sf)
-        top.addWidget(self._speed_lbl)
-
-        # Badge stato.
+        meta = QHBoxLayout()
+        meta.setSpacing(10)
         self._badge = QLabel()
-        bf = QFont("Segoe UI", 8)
-        bf.setBold(True)
-        self._badge.setFont(bf)
-        self._badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        # 104px: l'etichetta piu' larga e' l'italiano "Abbandonato" (84px a
-        # video, misurato con QFontMetrics sul font reso) piu' padding e bordo.
-        # A 88px veniva tagliata — l'unico troncamento vero rimasto nella
-        # finestra, in italiano.
-        self._badge.setFixedWidth(104)
-        top.addWidget(self._badge)
-
-        # Pulsante azione contestuale — dimensioni aumentate per bersaglio più comodo.
-        top.addSpacing(6)
-        self._action_btn = QPushButton()
-        self._action_btn.setFixedWidth(34)
-        self._action_btn.setFixedHeight(30)
-        self._action_btn.setToolTip("")
-        self._action_btn.clicked.connect(self._on_action)
-        top.addWidget(self._action_btn)
-
-        outer.addLayout(top)
-
-        # --- Barra di avanzamento ---
+        self._badge.setObjectName("statusBadge")
+        meta.addWidget(self._badge)
+        self._speed_lbl = QLabel()
+        self._speed_lbl.setObjectName("transferRate")
+        meta.addWidget(self._speed_lbl)
+        meta.addStretch()
+        grid.addLayout(meta, 1, 1, 1, 2)
+        progress_row = QHBoxLayout()
+        progress_row.setContentsMargins(0, 0, 0, 0)
+        progress_row.setSpacing(9)
         self._progress = QProgressBar()
         self._progress.setRange(0, 100)
-        self._progress.setValue(0)
         self._progress.setTextVisible(False)
-        self._progress.setFixedHeight(6)
-        outer.addWidget(self._progress)
+        self._progress.setObjectName("transferProgress")
+        self._progress.setFixedHeight(5)
+        progress_row.addWidget(self._progress, 1)
+        self._percent_lbl = QLabel()
+        self._percent_lbl.setObjectName("transferPercent")
+        progress_row.addWidget(self._percent_lbl)
+        grid.addLayout(progress_row, 2, 1, 1, 3)
 
-        # --- Riga statistiche finali (visibile solo per job terminali con bytes) ---
         self._terminal_stats_lbl = QLabel()
-        self._terminal_stats_lbl.setFont(QFont("Consolas", 9))
-        self._terminal_stats_lbl.setVisible(False)
-        outer.addWidget(self._terminal_stats_lbl)
+        self._terminal_stats_lbl.hide()
+        grid.addWidget(self._terminal_stats_lbl, 3, 1, 1, 3)
 
-        # --- Pannello dettagli (collassato di default) ---
         self._detail = QFrame()
-        self._detail.setFrameShape(QFrame.Shape.NoFrame)
-        dl = QVBoxLayout(self._detail)
-        dl.setContentsMargins(24, 2, 4, 2)
-        dl.setSpacing(2)
-
-        self._ip_lbl = QLabel()
-        self._ip_lbl.setFont(QFont("Consolas", 9))
-        dl.addWidget(self._ip_lbl)
-
+        self._detail.setObjectName("jobDetails")
+        details = QVBoxLayout(self._detail)
+        details.setContentsMargins(0, 8, 0, 0)
+        details.setSpacing(5)
+        facts = QHBoxLayout()
         self._attempts_lbl = QLabel()
-        self._attempts_lbl.setFont(QFont("Segoe UI", 9))
-        dl.addWidget(self._attempts_lbl)
+        facts.addWidget(self._attempts_lbl)
+        facts.addStretch()
+        self._ip_lbl = QLabel()
+        facts.addWidget(self._ip_lbl)
+        self._details_btn = QPushButton()
+        self._details_btn.setObjectName("textAction")
+        self._details_btn.clicked.connect(lambda: self.double_clicked.emit(self.file_id))
+        facts.addWidget(self._details_btn)
+        details.addLayout(facts)
+        self._error_lbl = _ElidedLabel()
+        details.addWidget(self._error_lbl)
 
-        path_row = QHBoxLayout()
-        # Percorso: eliso al centro (mantiene inizio e nome file visibili).
-        # Tooltip = percorso completo; TextSelectableByMouse per copiare.
+        actions = QHBoxLayout()
         self._path_lbl = _ElidedLabel(Qt.TextElideMode.ElideMiddle)
-        self._path_lbl.setFont(QFont("Consolas", 8))
-        self._path_lbl.setTextInteractionFlags(
-            Qt.TextInteractionFlag.TextSelectableByMouse
-        )
-        path_row.addWidget(self._path_lbl, 1)
-        self._open_btn = QPushButton(t("jobs_panel.open_folder_button"))
-        self._open_btn.setFixedHeight(22)
+        self._path_lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        actions.addWidget(self._path_lbl, 1)
+        self._open_btn = QPushButton()
+        self._open_btn.setObjectName("textAction")
         self._open_btn.clicked.connect(self._open_folder)
-        path_row.addWidget(self._open_btn)
-        dl.addLayout(path_row)
-
-        self._detail.setVisible(False)
-        outer.addWidget(self._detail)
+        actions.addWidget(self._open_btn)
+        details.addLayout(actions)
+        for label in (self._terminal_stats_lbl, self._ip_lbl, self._attempts_lbl, self._error_lbl, self._path_lbl):
+            label.setTextFormat(Qt.TextFormat.PlainText)
+            label.setObjectName("secondaryText")
+        self._detail.hide()
+        grid.addWidget(self._detail, 4, 1, 1, 3)
 
     # ---- segnali/slot interni --------------------------------------------
 
@@ -323,7 +284,16 @@ class _JobCard(QFrame):
         if job is None:
             return
         if job.status in (STATUS_QUEUED, STATUS_RUNNING):
-            self.cancel_requested.emit(self.file_id)
+            message = QMessageBox(self)
+            message.setWindowTitle(t("jobs_panel.action_cancel"))
+            message.setText(t("jobs_panel.confirm_cancel", name=job.file_name or link_caption(job.url)))
+            message.setTextFormat(Qt.TextFormat.PlainText)
+            discard = QCheckBox(t("jobs_panel.discard_partial"))
+            message.setCheckBox(discard)
+            message.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+            message.setDefaultButton(QMessageBox.StandardButton.No)
+            if message.exec() == QMessageBox.StandardButton.Yes:
+                self.cancel_requested.emit(self.file_id, discard.isChecked())
         elif job.status == STATUS_COMPLETED:
             self.open_folder_requested.emit(self.file_id)
         elif job.status in (STATUS_FAILED, STATUS_ABANDONED, STATUS_CANCELLED):
@@ -339,14 +309,19 @@ class _JobCard(QFrame):
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder)))
 
     def mouseDoubleClickEvent(self, event) -> None:  # noqa: N802
-        self.double_clicked.emit(self.file_id)
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.double_clicked.emit(self.file_id)
         super().mouseDoubleClickEvent(event)
 
     def mousePressEvent(self, event) -> None:  # noqa: N802
-        # Clic semplice: toggle espansione dettagli.
-        self._expanded = not self._expanded
-        self._detail.setVisible(self._expanded)
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._expand_btn.toggle()
         super().mousePressEvent(event)
+
+    def _set_expanded(self, expanded: bool) -> None:
+        self._expanded = expanded
+        self._expand_btn.setIcon(_style.disclosure_icon(expanded, _style.CURRENT_PALETTE["text_dim"]))
+        self._detail.setVisible(expanded)
 
     # ---- refresh visuale --------------------------------------------------
 
@@ -356,87 +331,59 @@ class _JobCard(QFrame):
             return
         p = _style.CURRENT_PALETTE
 
-        # Card background (aggiornato per il tema).
-        self.setStyleSheet(
-            f"QFrame#card {{ background-color: {p['card_bg']}; "
-            f"border: 1px solid {p['card_border']}; border-radius: 8px; }}"
-        )
+        title = job.file_name or link_caption(job.url)
+        self._name_lbl.setText(title)
+        metrics = []
+        if job.status == STATUS_RUNNING:
+            if job.total_bytes > 0:
+                metrics.append(f"{_fmt_bytes(job.downloaded_bytes)} / {_fmt_bytes(job.total_bytes)}")
+            if job.speed >= 1:
+                metrics.append(_fmt_speed(job.speed))
+        self._speed_lbl.setText("  ·  ".join(metrics))
+        self._speed_lbl.setVisible(bool(metrics))
+        state = status_label(job.status)
+        self._badge.setText(state)
+        self._expand_btn.setAccessibleName(t("jobs_panel.details_for", name=title))
+        self._expand_btn.setToolTip(self._expand_btn.accessibleName())
+        self._details_btn.setText(t("jobs_panel.details"))
+        self._details_action.setText(t("jobs_panel.details"))
+        self._open_btn.setText(t("jobs_panel.open_folder_button"))
 
-        # Icona e nome.
-        icon = _STATUS_ICON.get(job.status, "•")
-        icon_color = p.get(_STATUS_FG_KEY.get(job.status, "text"), p["text"])
-        self._icon_lbl.setText(icon)
-        self._icon_lbl.setStyleSheet(f"color: {icon_color}; border: none;")
-
-        title = job.file_name or _short_url(job.url)
-        dur = job.duration_s()
-        dur_str = f"  {int(dur) // 60:02d}:{int(dur) % 60:02d}" if job.started_at else ""
-        self._name_lbl.setText(title + dur_str)
-        self._name_lbl.setStyleSheet(f"color: {p['text']}; border: none;")
-
-        # Velocita'.
-        speed_str = _fmt_speed(job.speed) if job.status == STATUS_RUNNING else ""
-        self._speed_lbl.setText(speed_str)
-        self._speed_lbl.setStyleSheet(
-            f"color: {p['accent_info']}; border: none;"
-        )
-
-        # Badge stato.
-        fg = p.get(_STATUS_FG_KEY.get(job.status, "text_dim"), p["text"])
-        bg = p.get(_STATUS_BG_KEY.get(job.status, "panel_alt"), p["panel_alt"])
-        self._badge.setText(status_label(job.status))
-        self._badge.setStyleSheet(
-            f"color: {fg}; background-color: {bg}; border-radius: 4px; "
-            f"padding: 2px 6px; border: 1px solid {fg}40;"
-        )
-
-        # Pulsante azione — selettori CSS multipli per hover visibile.
         if job.status in (STATUS_QUEUED, STATUS_RUNNING):
-            self._action_btn.setText("✕")
-            self._action_btn.setToolTip(t("jobs_panel.action_cancel"))
-            self._action_btn.setStyleSheet(
-                f"QPushButton {{ color: {p['danger']}; border: 1.5px solid {p['danger']}; "
-                f"border-radius: 4px; background: transparent; font-size: 12pt; font-weight: bold; }}"
-                f"QPushButton:hover {{ background-color: {p['danger_hover_bg']}; color: {p['danger']}; }}"
-                f"QPushButton:pressed {{ background-color: {p['danger']}; color: white; }}"
-            )
+            action = "jobs_panel.action_cancel"
         elif job.status == STATUS_COMPLETED:
-            self._action_btn.setText("📂")
-            self._action_btn.setToolTip(t("jobs_panel.action_open_folder"))
-            self._action_btn.setStyleSheet(
-                f"QPushButton {{ color: {p['accent_ok']}; border: 1px solid {p['border']}; "
-                f"border-radius: 4px; background: transparent; font-size: 12pt; }}"
-                f"QPushButton:hover {{ background-color: {p['panel_alt']}; }}"
-            )
+            action = "jobs_panel.action_open_folder"
         elif job.status in (STATUS_FAILED, STATUS_ABANDONED, STATUS_CANCELLED):
-            self._action_btn.setText("↻")
-            self._action_btn.setToolTip(t("jobs_panel.action_restart"))
-            self._action_btn.setStyleSheet(
-                f"QPushButton {{ color: {p['accent_info']}; border: 1px solid {p['accent_info']}; "
-                f"border-radius: 4px; background: transparent; font-size: 14pt; font-weight: bold; }}"
-                f"QPushButton:hover {{ background-color: {p['selection_bg']}; color: {p['accent_info']}; }}"
-                f"QPushButton:pressed {{ background-color: {p['accent_info']}; color: white; }}"
-            )
+            action = "jobs_panel.action_restart"
         else:
-            self._action_btn.setText("⎘")
-            self._action_btn.setToolTip(t("jobs_panel.action_copy_url"))
-            self._action_btn.setStyleSheet(
-                f"QPushButton {{ color: {p['text_dim']}; border: 1px solid {p['border']}; "
-                f"border-radius: 4px; background: transparent; font-size: 12pt; }}"
-                f"QPushButton:hover {{ background-color: {p['panel_alt']}; }}"
-            )
-
-        # Progress bar.
-        pct = job.progress
-        if job.status == STATUS_COMPLETED:
-            pct = 100
+            action = "jobs_panel.action_copy_url"
+        self._file_action.setText(t(action))
+        self._action_btn.setAccessibleName(t("jobs_panel.actions_for", name=title))
+        self._action_btn.setToolTip(self._action_btn.accessibleName())
+        pct = 100 if job.status == STATUS_COMPLETED else job.progress
         self._progress.setValue(pct)
-        chunk_color = p.get(_PROGRESS_COLOR_KEY.get(job.status, "text_dim"), p["text_dim"])
-        self._progress.setStyleSheet(
-            f"QProgressBar {{ background: {p['panel_alt']}; border: none; "
-            f"border-radius: 3px; }}"
-            f"QProgressBar::chunk {{ background: {chunk_color}; border-radius: 3px; }}"
-        )
+        self._progress.setAccessibleName(f"{title} · {state}")
+        self._percent_lbl.setText(f"{pct}%")
+        known = pct > 0 or (job.status == STATUS_RUNNING and job.total_bytes > 0)
+        self._progress.setVisible(known)
+        self._percent_lbl.setVisible(known)
+
+        # I campioni di velocità non richiedono di riapplicare lo stile di Qt.
+        appearance = (job.status, p["panel"])
+        if getattr(self, "_appearance", None) != appearance:
+            self._appearance = appearance
+            self._expand_btn.setIcon(_style.disclosure_icon(self._expanded, p["text_dim"]))
+            self._action_btn.setIcon(_style.utility_icon("more", p["text"]))
+            symbol, foreground, background = _STATUS_ICON[job.status]
+            self._status_icon.setPixmap(_style.utility_icon(symbol, p[foreground]).pixmap(
+                QSize(18, 18), self.devicePixelRatioF()))
+            self._status_icon.setStyleSheet(f"background: {p[background]}; border-radius: 8px;")
+            color = p[_PROGRESS_COLOR_KEY.get(job.status, "text_dim")]
+            self._progress.setStyleSheet(
+                f"QProgressBar#transferProgress {{ background: {p['panel_alt']}; border: none; border-radius: 2px;"
+                "height: 5px; min-height: 5px; max-height: 5px; padding: 0; }"
+                f"QProgressBar#transferProgress::chunk {{ background: {color}; border-radius: 2px; }}"
+            )
 
         # Riga statistiche finali (job terminato con byte scaricati).
         _TERMINAL = {STATUS_COMPLETED, STATUS_FAILED, STATUS_CANCELLED, STATUS_ABANDONED}
@@ -457,48 +404,37 @@ class _JobCard(QFrame):
                     speed=spd_str, volume=vol_str, duration=dur_str,
                 )
             )
-            self._terminal_stats_lbl.setStyleSheet(
-                f"color: {p['text_dim']}; border: none; padding-left: 24px;"
-            )
             self._terminal_stats_lbl.setVisible(True)
         else:
             self._terminal_stats_lbl.setVisible(False)
 
-        # Pannello dettagli.
-        self._ip_lbl.setText(
-            t("jobs_panel.current_ip", ip=job.current_ip or "—")
-        )
-        self._ip_lbl.setStyleSheet(f"color: {p['text_dim']}; border: none;")
-        # Le tre parti restano chiavi distinte perche' sono condizionali: ognuna
-        # e' una frase compiuta, non un mezzo periodo. L'errore arriva dal
-        # modello come PAYLOAD e si rende qui, nella lingua del momento: e' per
-        # questo che `retranslate()` non ha bisogno di altro che di `_refresh()`.
-        self._attempts_lbl.setText(
-            t("jobs_panel.attempts", n=job.attempts)
-            + (
-                t("jobs_panel.errors_suffix", n=job.errors_count)
-                if job.errors_count else ""
-            )
-            + (
-                t(
-                    "jobs_panel.last_error_suffix",
-                    error=render_error(*job.last_error),
-                )
-                if job.last_error else ""
-            )
-        )
-        self._attempts_lbl.setStyleSheet(f"color: {p['text_dim']}; border: none;")
-        path_text = job.output_path or "—"
-        self._path_lbl.setText(path_text)
-        self._path_lbl.setStyleSheet(f"color: {p['text_dim']}; border: none;")
+        self._ip_lbl.setText(t("jobs_panel.current_ip", ip=job.current_ip or ""))
+        self._ip_lbl.setVisible(bool(job.current_ip))
+        counts = t("jobs_panel.attempts", n=job.attempts)
+        if job.errors_count:
+            counts += t("jobs_panel.errors_suffix", n=job.errors_count)
+        self._attempts_lbl.setText(counts)
+        self._refresh_error(job.last_error)
+        self._path_lbl.setText(job.output_path or "")
+        self._path_lbl.setVisible(bool(job.output_path))
         self._open_btn.setVisible(bool(job.output_path))
+
+    def _refresh_error(self, error: tuple[str, dict] | None) -> None:
+        key = (TR.language(), error)
+        if key == self._error_key:
+            return
+        self._error_key = key
+        self._error_lbl.setVisible(bool(error))
+        if error:
+            self._error_lbl.setText(t("jobs_panel.last_error", error=render_queue_cause(*error)))
+            full = render_error(*error)
+            self._error_lbl.setToolTip(full)
+            self._error_lbl.setAccessibleDescription(full)
 
     def refresh_theme(self) -> None:
         self._refresh()
 
     def retranslate(self) -> None:
-        # _refresh() ridisegna badge, tooltip e dettagli dai testi correnti:
-        # e' lo stesso identico lavoro che serve al cambio lingua.
         self._refresh()
 
 
@@ -506,45 +442,95 @@ class _EmptyState(QWidget):
     """Riquadro guida mostrato quando non ci sono link in lista."""
 
     paste_clicked = pyqtSignal()
+    import_clicked = pyqtSignal()
+    recover_clicked = pyqtSignal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self._partial_count = 0
+        self.setObjectName("queueSurface")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground)
         layout = QVBoxLayout(self)
-        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.setSpacing(12)
-
-        icon_lbl = QLabel("⬇")
-        icon_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        icon_lbl.setFont(QFont("Segoe UI", 36))
-        layout.addWidget(icon_lbl)
-
+        layout.setContentsMargins(16, 10, 16, 10)
+        layout.setSpacing(8)
+        layout.addStretch()
         self._msg = QLabel()
+        self._msg.setObjectName("emptyTitle")
+        self._msg.setWordWrap(True)
         self._msg.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._msg.setFont(QFont("Segoe UI", 13))
         layout.addWidget(self._msg)
-
         self._sub = QLabel()
+        self._sub.setObjectName("secondaryText")
+        self._sub.setWordWrap(True)
         self._sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self._sub)
-
+        actions = QHBoxLayout()
+        actions.addStretch()
         self._btn = QPushButton()
         self._btn.setProperty("primary", "true")
-        self._btn.setFixedWidth(160)
+        self.setFocusProxy(self._btn)
         self._btn.clicked.connect(self.paste_clicked)
-        layout.addWidget(self._btn, 0, Qt.AlignmentFlag.AlignCenter)
-
+        self._recover = QPushButton()
+        self._recover.clicked.connect(self.recover_clicked)
+        actions.addWidget(self._btn)
+        self._import_btn = QPushButton()
+        self._import_btn.clicked.connect(self.import_clicked)
+        actions.addWidget(self._import_btn)
+        actions.addWidget(self._recover)
+        actions.addStretch()
+        self._actions = actions
+        layout.addSpacing(6)
+        layout.addLayout(actions)
+        layout.addStretch()
         self.retranslate()
+        self.refresh_theme()
+
+    def paintEvent(self, event) -> None:  # noqa: N802
+        super().paintEvent(event)
+        # Il simbolo usa solo lo spazio libero sopra il messaggio. Non cambia
+        # l'altezza minima quando si aprono i dettagli su una finestra piccola.
+        rect = QRect((self.width() - 48) // 2, self._msg.y() - 60, 48, 48)
+        if rect.top() < 8:
+            return
+        p = _style.CURRENT_PALETTE
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(p["status_bg_running"]))
+        painter.drawRoundedRect(rect, 14, 14)
+        _style.utility_icon("download", p["accent_active"]).paint(painter, rect.adjusted(11, 11, -11, -11))
 
     def retranslate(self) -> None:
-        # Il pulsante riusa la chiave della barra comandi e il suggerimento lo
-        # nomina come parametro: cosi' i due non possono sfasarsi.
-        button_label = t("controls.paste_links")
-        self._msg.setText(t("jobs_panel.empty_title"))
-        self._sub.setText(t("jobs_panel.empty_hint", button=button_label))
-        self._btn.setText("  " + button_label)
+        count = self._partial_count
+        self._msg.setText(tn("partial.count", count) if count else t("jobs_panel.empty_title"))
+        self._sub.setText(t("partial.start_hint") if count else t("jobs_panel.empty_hint"))
+        self._recover.setText(t("partial.title"))
+        self._btn.setText(t("controls.paste_links"))
+        self._import_btn.setText(t("link_panel.import"))
+
+    def set_partial_count(self, count: int) -> None:
+        if count == self._partial_count:
+            return
+        previous_default = self.focusProxy()
+        self._partial_count = count
+        primary_button = self._recover if count else self._btn
+        order = (self._recover, self._btn, self._import_btn) if count else (self._btn, self._import_btn, self._recover)
+        for index, button in enumerate(order, start=1):
+            self._actions.removeWidget(button)
+            self._actions.insertWidget(index, button)
+        for button, primary in ((self._btn, not count), (self._recover, bool(count))):
+            button.setProperty("primary", "true" if primary else "false")
+            button.style().unpolish(button)
+            button.style().polish(button)
+            button.updateGeometry()
+        self.setFocusProxy(primary_button)
+        if previous_default.hasFocus():
+            primary_button.setFocus(Qt.FocusReason.OtherFocusReason)
+        self.layout().activate()
+        self.retranslate()
 
     def refresh_theme(self) -> None:
-        pass  # colori ereditati da QSS globale
+        self.update()
 
 
 class JobsPanel(QWidget):
@@ -553,6 +539,8 @@ class JobsPanel(QWidget):
     job_double_clicked = pyqtSignal(int)      # file_id
     cancel_job_requested = pyqtSignal(int, bool)  # file_id, delete_folder
     delete_folder_requested = pyqtSignal(int)  # file_id
+    import_requested = pyqtSignal()
+    recovery_requested = pyqtSignal()
     paste_links_requested = pyqtSignal()      # empty-state paste button
     restart_job_requested = pyqtSignal(int)   # file_id
     restart_all_failed_requested = pyqtSignal()
@@ -561,7 +549,7 @@ class JobsPanel(QWidget):
         super().__init__()
         self.model = JobsModel()
         self._cards: dict[int, _JobCard] = {}
-        self._filter_category: str = FILTER_IN_PROGRESS
+        self._filter_category = FILTER_ALL
         self.model.aggregates_changed.connect(self._on_aggregates_changed)
         self.model.job_updated.connect(self._on_job_status_changed)
 
@@ -570,28 +558,35 @@ class JobsPanel(QWidget):
         layout.setSpacing(0)
 
         # Barra filtri: pulsanti a selezione esclusiva (segmented control).
-        filter_row = QHBoxLayout()
-        filter_row.setContentsMargins(6, 4, 6, 4)
+        self._filters = QWidget()
+        filter_row = QHBoxLayout(self._filters)
+        filter_row.setContentsMargins(0, 0, 0, 8)
+        segment = QFrame()
+        segment.setObjectName("filterGroup")
+        segments = QHBoxLayout(segment)
+        segments.setSpacing(1)
+        segments.setContentsMargins(3, 3, 3, 3)
+        filter_row.addWidget(segment)
         self._filter_group = QButtonGroup(self)
         self._filter_group.setExclusive(True)
         self._filter_buttons: dict[str, QPushButton] = {}
         # Etichette base (senza conteggio): il numero di file per categoria
         # viene appeso da _update_filter_counts a ogni cambio di aggregati.
         self._filter_label_keys: dict[str, str] = {
+            FILTER_ALL: "jobs_panel.filter_all",
             FILTER_IN_PROGRESS: "jobs_panel.filter_in_progress",
             FILTER_COMPLETED: "jobs_panel.filter_completed",
             FILTER_NOT_COMPLETED: "jobs_panel.filter_not_completed",
         }
         for category in self._filter_label_keys:
             btn = QPushButton()
+            btn.setObjectName("queueFilter")
             btn.setCheckable(True)
-            btn.setChecked(category == FILTER_IN_PROGRESS)
+            btn.setChecked(category == self._filter_category)
             btn.clicked.connect(lambda _checked, c=category: self._on_filter_button_clicked(c))
             self._filter_group.addButton(btn)
             self._filter_buttons[category] = btn
-            filter_row.addWidget(btn)
-        self._update_filter_counts()
-        self._style_filter_buttons()
+            segments.addWidget(btn)
         filter_row.addStretch(1)
         # Pulsante bulk per riavviare tutti i job falliti/abbandonati/annullati.
         self._restart_all_btn = QPushButton(t("jobs_panel.restart_all", n=0))
@@ -599,41 +594,58 @@ class JobsPanel(QWidget):
         self._restart_all_btn.setToolTip(t("jobs_panel.restart_all_tooltip"))
         self._restart_all_btn.clicked.connect(self.restart_all_failed_requested)
         filter_row.addWidget(self._restart_all_btn)
-        layout.addLayout(filter_row)
+        layout.addWidget(self._filters)
+        self._filter_empty = QLabel()
+        self._filter_empty.setObjectName("secondaryText")
+        self._filter_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._filter_empty.setWordWrap(True)
+        layout.addWidget(self._filter_empty, 1)
 
         # Stack: empty state O lista card.
         self._empty = _EmptyState()
+        self.setFocusProxy(self._empty)
         self._empty.paste_clicked.connect(self.paste_links_requested)
-        layout.addWidget(self._empty)
+        self._empty.import_clicked.connect(self.import_requested)
+        self._empty.recover_clicked.connect(self.recovery_requested)
+        layout.addWidget(self._empty, 1)
 
         # Scroll area per le card: solo scroll verticale, mai orizzontale.
         self._scroll = QScrollArea()
+        self._scroll.setObjectName("transferList")
         self._scroll.setWidgetResizable(True)
         self._scroll.setFrameShape(QFrame.Shape.NoFrame)
         self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._content = QWidget()
+        self._content.setObjectName("queueList")
+        self._content.setAttribute(Qt.WidgetAttribute.WA_StyledBackground)
         self._cards_layout = QVBoxLayout(self._content)
-        self._cards_layout.setContentsMargins(6, 4, 6, 4)
+        self._cards_layout.setContentsMargins(0, 0, 0, 0)
         self._cards_layout.setSpacing(6)
         self._cards_layout.addStretch(1)  # spazio in fondo
         self._scroll.setWidget(self._content)
         self._scroll.setVisible(False)
         layout.addWidget(self._scroll, 1)
 
-        self._update_visibility()
+        self._on_aggregates_changed()
 
     # ---- gestione card ---------------------------------------------------
 
-    def _update_visibility(self) -> None:
+    def set_partial_count(self, count: int) -> None:
+        self._empty.set_partial_count(count)
+
+    def _update_visibility(self, counts: dict[str, int] | None = None) -> None:
         has_cards = bool(self._cards)
         self._empty.setVisible(not has_cards)
-        self._scroll.setVisible(has_cards)
+        self._filters.setVisible(has_cards)
+        if counts is None:
+            counts = self._category_counts()
+        empty_filter = has_cards and counts[self._filter_category] == 0
+        self._filter_empty.setVisible(empty_filter)
+        self._scroll.setVisible(has_cards and not empty_filter)
 
     def _add_card(self, file_id: int) -> _JobCard:
         card = _JobCard(self.model, file_id)
-        card.cancel_requested.connect(
-            lambda fid: self.cancel_job_requested.emit(fid, True)
-        )
+        card.cancel_requested.connect(self.cancel_job_requested)
         card.delete_requested.connect(self.delete_folder_requested)
         card.open_folder_requested.connect(self._open_folder_for)
         card.restart_requested.connect(self.restart_job_requested)
@@ -660,36 +672,22 @@ class JobsPanel(QWidget):
 
     def _on_filter_button_clicked(self, category: str) -> None:
         self._filter_category = category
-        self._style_filter_buttons()
         self._apply_filter()
-
-    def _style_filter_buttons(self) -> None:
-        p = _style.CURRENT_PALETTE
-        for category, btn in self._filter_buttons.items():
-            if category == self._filter_category:
-                btn.setStyleSheet(
-                    f"QPushButton {{ background-color: {p['primary']}; color: white; "
-                    f"border: 1px solid {p['primary']}; border-radius: 4px; "
-                    f"padding: 4px 10px; font-weight: bold; }}"
-                )
-            else:
-                btn.setStyleSheet(
-                    f"QPushButton {{ background-color: transparent; color: {p['text']}; "
-                    f"border: 1px solid {p['border']}; border-radius: 4px; padding: 4px 10px; }}"
-                    f"QPushButton:hover {{ background-color: {p['panel_alt']}; }}"
-                )
+        self._update_visibility()
 
     def _category_counts(self) -> dict[str, int]:
         # Conteggio file per categoria di filtro, derivato dagli aggregati del
         # modello (le tre categorie coprono tutti gli stati possibili).
         agg = self.model.aggregates()
         return {
+            FILTER_ALL: agg["total"],
             FILTER_IN_PROGRESS: agg["queued"] + agg["running"],
             FILTER_COMPLETED: agg["completed"],
             FILTER_NOT_COMPLETED: agg["failed"] + agg["cancelled"] + agg["abandoned"],
         }
 
-    def _update_filter_counts(self) -> None:
+    def _update_filter_counts(self) -> dict[str, int]:
+        self._filter_empty.setText(t("jobs_panel.filtered_empty"))
         counts = self._category_counts()
         for category, btn in self._filter_buttons.items():
             btn.setText(
@@ -700,11 +698,15 @@ class JobsPanel(QWidget):
                 )
             )
 
+        return counts
+
     def _on_aggregates_changed(self) -> None:
-        self._update_filter_counts()
+        counts = self._update_filter_counts()
         n = self.model.restartable_count()
         self._restart_all_btn.setText(t("jobs_panel.restart_all", n=n))
         self._restart_all_btn.setEnabled(n > 0)
+        self._restart_all_btn.setVisible(n > 0)
+        self._update_visibility(counts)
 
     def _on_job_status_changed(self, file_id: int) -> None:
         card = self._cards.get(file_id)
@@ -804,7 +806,6 @@ class JobsPanel(QWidget):
             card.retranslate()
 
     def refresh_theme(self) -> None:
-        self._style_filter_buttons()
         self._empty.refresh_theme()
         for card in self._cards.values():
             card.refresh_theme()

@@ -11,6 +11,7 @@ import requests
 from PyQt6.QtCore import QThread, pyqtSignal
 
 from src.core.config import (
+    LINE_SPEEDTEST_BYTES,
     LINE_SPEEDTEST_STREAMS,
     LINE_SPEEDTEST_TIMEOUT,
     LINE_SPEEDTEST_URL,
@@ -27,16 +28,23 @@ class SpeedTestWorker(QThread):
     # (mbit_per_s, ok) — mbit=0.0 e ok=False se il test fallisce.
     finished_test = pyqtSignal(float, bool)
 
+    def __init__(self):
+        super().__init__()
+        self.failure = "network"
+        self.http_status = 0
+
     def _one_stream(self, _i: int) -> int:
         total = 0
         with requests.get(
             cache_bust_url(LINE_SPEEDTEST_URL), stream=True,
             timeout=LINE_SPEEDTEST_TIMEOUT,
             headers={"User-Agent": USER_AGENT},
-            proxies={"http": None, "https": None},   # diretto, niente proxy
+            proxies={"http": None, "https": None, "all": None},
         ) as r:
             r.raise_for_status()
             for chunk in r.iter_content(64 * 1024):
+                if self.isInterruptionRequested():
+                    return 0
                 total += len(chunk)
         return total
 
@@ -46,13 +54,20 @@ class SpeedTestWorker(QThread):
             with ThreadPoolExecutor(max_workers=LINE_SPEEDTEST_STREAMS) as ex:
                 got = list(ex.map(self._one_stream, range(LINE_SPEEDTEST_STREAMS)))
             elapsed = time.monotonic() - t0
-            total = sum(got)
-            bps = total / elapsed if elapsed > 0 else 0.0
-            mbit = bps * 8 / 1_000_000
-            self.finished_test.emit(round(mbit, 1), True)
+            if elapsed > 0 and all(size == LINE_SPEEDTEST_BYTES for size in got):
+                self.finished_test.emit(sum(got) * 8 / elapsed / 1_000_000, True)
+                return
+            self.failure = "incomplete"
+        except requests.HTTPError as exc:
+            self.failure = "http"
+            self.http_status = exc.response.status_code
+            log.debug("Speed test linea: HTTP %d", self.http_status)
+        except requests.Timeout:
+            self.failure = "timeout"
+            log.debug("Speed test linea scaduto", exc_info=True)
         except Exception:
             log.debug("Speed test linea fallito", exc_info=True)
-            self.finished_test.emit(0.0, False)
+        self.finished_test.emit(0.0, False)
 
 
 class ProxySpeedTestWorker(QThread):

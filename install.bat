@@ -1,7 +1,7 @@
 @echo off
 rem Entry point unico di installazione: funziona da cmd, doppio clic o PowerShell.
 rem Delega tutto a install.ps1 (trova Python, crea venv, AGGIORNA PIP,
-rem installa dipendenze, smoke test, crea avvia.bat).
+rem installa dipendenze, smoke test, crea il collegamento all'app).
 cd /d "%~dp0"
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0install.ps1"
 if errorlevel 1 (

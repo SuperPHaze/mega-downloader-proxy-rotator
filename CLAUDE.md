@@ -35,7 +35,7 @@ src/
 │   │                     #   tronca e riapre; `terminal-log.txt` si tronca IN POSTO perché
 │   │                     #   `_TeeStream` ha catturato quell'oggetto file. Lo usa `maintenance.py`
 │   ├── failed_log.py      # logger JSONL dei link abbandonati
-│   ├── download_history.py # storico JSONL download completati + extract_handle
+│   ├── download_history.py # load_history indicizza il registro corrente per handle; history_entries legge anche gli archivi per la finestra Storico
 │   ├── sources_stats.py   # logger JSONL metriche per-fonte
 │   ├── version_compare.py # parse_semver/is_newer, puro stdlib (no I/O)
 │   ├── branding.py        # Branding (nome/acronimo/autore/nick/link/logo): default -> cache -> remoto
@@ -44,7 +44,7 @@ src/
 │   │                     #   sola `addFile()` lascia al lettore ICO di Qt la scelta di quante dimensioni esporre
 │   │                     #   (con Qt 6.11 le espone tutte e 7 — misurato — ma non è un contratto). Il controllo
 │   │                     #   di riuscita è `availableSizes()`, non `isNull()`
-│   ├── file_naming.py     # sanitize_folder_name() + sanitize_file_name() (nome file sicuro per Windows: caratteri riservati + device name CON/NUL/…, estensione preservata; applicata alla SORGENTE in mega_api.resolve_public_url) + final_output_dir(file_name, file_id, output_root): path finale del download (output_root = cartella scelta dall'utente, None=default); rinomina la cartella hash-based al primo resolve riuscito; + folder_job_output_dir(rel_path, output_root): cartella di destinazione ad ALBERO per i job nati da un link cartella (ri-sanifica i segmenti: è il confine col filesystem)
+│   ├── file_naming.py     # Nomi compatibili con Windows, suffissi per gli omonimi e percorso originale dei link cartella
 │   ├── disk.py            # ensure_free_space()/free_space_bytes() + InsufficientDiskSpaceError (UserFacingError+OSError, codice `disk_full`): check spazio disco PRIMA del download (errore d'ambiente: il worker abbandona subito senza bruciare i tentativi). Solo stdlib
 │   ├── mega_links.py      # FONTE UNICA delle forme di URL Mega (stdlib puro, niente I/O né Crypto):
 │   │                     #   file singolo, legacy, cartella `/folder/#key`, cartella con nodo selezionato
@@ -83,10 +83,11 @@ src/
 │   │                     #   (loggato, mai silenzioso). `build_folder_expansion` è puro rispetto alla
 │   │                     #   rete (testabile con nodi fabbricati)
 │   ├── mega_client.py     # MegaClient seriale (single-stream via proxy); check spazio disco (ensure_free_space) prima del transfer
-│   ├── parallel_client.py # ParallelMegaDownloader (coda chunk a dimensione fissa, HTTP Range N parallele); check disco pre-allocazione; file da 0 byte gestito a parte; Retry-After onorato su 403/509/429; should_abort passato al re-resolve
-│   ├── worker.py          # DownloadWorker(QThread) — 1 link, N cicli; ramo job-cartella (_folder_job):
-│   │                     #   destinazione ad albero senza `ciclo_N` (_cycle_dir), niente rinomina,
-│   │                     #   resume sul NOME ESATTO del file (la cartella è condivisa con gli altri job); cartella base rinominata da hash a nome file al primo resolve (_current_base_dir aggiornato da _resolved_cb); riceve output_root (cartella download scelta dall'utente); InsufficientDiskSpaceError = abbandono immediato (non retry)
+│   ├── parallel_client.py # ParallelMegaDownloader (coda chunk a dimensione fissa, HTTP Range N parallele); check disco pre-allocazione; Retry-After onorato su 403/509/429; should_abort passato al re-resolve
+│   ├── target_file.py     # JobFiles riserva i nomi liberi e registra i file scritti da ciascun job
+│   ├── worker.py          # DownloadWorker(QThread) salva i file singoli nella destinazione scelta
+│   │                     #   I job di un link cartella conservano il loro percorso originale.
+│   │                     #   Lo storico registra il percorso del file effettivamente completato.
 │   └── orchestrator.py    # DownloadOrchestrator(QObject) — coordina tutto; `add_jobs(links, at_top)`
 │                          #   `has_active_workers()` dice se un thread di download è ancora VIVO (non è
 │                          #   lo stato dei job: dopo l'annullo globale sono già tutti annullati mentre i
@@ -95,12 +96,12 @@ src/
 │                          #   `restart_job` riavvia un job terminato: condividono `_reactivate_session()`,
 │                          #   che rimette in moto sessione/ricaricatore/timer (due copie divergerebbero).
 │                          #   Gli identificativi li assegna SOLO `_allocate_file_id()`, monotono per tutta
-│                          #   la sessione (azzerato da `start()`): entrano nel nome della cartella di
-│                          #   destinazione, riusarne uno farebbe scrivere due download nello stesso posto.
+│                          #   la sessione (azzerato da `start()`). La GUI usa gli ID per righe e comandi.
 │                          #   `_pending_jobs` porta il file_id definitivo gia' prima che i worker partano,
 │                          #   cosi' un'aggiunta arrivata durante la raccolta dei proxy sopravvive a
 │                          #   `_spawn_workers`, che COSTRUISCE la coda; segnale proxy_stats(discarded, refill_count, seconds_since_last_refill) emesso insieme a pool_size_changed nel poll periodico; propaga output_root ai worker (start(output_root=...)); relay dei canali TIPATI del worker (failed_detail/fatal_detail/abandoned_detail) accanto ai segnali-stringa; `SETUP_TEXTS_IT` + `setup_text_it()` = testo ITALIANO delle 6 righe di stato del setup (serve a log e CLI), emesse su due canali: `setup_status`/`pool_failed` (stringa italiana) e `setup_status_t`/`pool_failed_t` (codice + parametri, per la GUI)
 └── gui/
+    ├── debug_panel.py      # lettore del log corrente sotto la coda, attivo mentre è visibile
     ├── main_window.py     # MainWindow (QMainWindow); `_on_add_links_requested` e' il gate del
     │                      #   pulsante «Aggiungi link»: fuori sessione riempie la lista da avviare, a
     │                      #   sessione viva accoda a caldo (`_add_links_to_session` ->
@@ -149,11 +150,9 @@ src/
     ├── jobs_panel.py      # lista job a righe-card (QScrollArea + _JobCard widget per riga);
     │                      #   `append_jobs()` aggiunge card senza toccare quelle esistenti (l'ordine resta
     │                      #   cronologico anche per i link messi in TESTA alla coda: chi sta scaricando lo
-    │                      #   dice il proprio stato); filtri a pulsanti esclusivi (QButtonGroup), senza etichetta; ogni pulsante mostra il conteggio file per categoria ("In corso (N)"/"Completati (N)"/"Non completati (N)"), aggiornato da _update_filter_counts su aggregates_changed; i18n: retranslate() ricasca su _EmptyState e su ogni _JobCard; le card rendono l'ultimo errore dal PAYLOAD del modello con error_render.render_error(), e on_abandoned applica ABANDON_ALIASES al confine col segnale
-    ├── job_detail_dialog.py # dialog non-modale dettaglio job (doppio clic); UNICO dialogo PERSISTENTE del progetto:
-    │                      #   ha `retranslate()` ed e' nel fan-out di `_on_language_changed`. `_refresh(force=True)` e'
-    │                      #   obbligatorio al cambio lingua: il ridisegno normale salta log e tabella IP quando il NUMERO
-    │                      #   di voci non cambia, e cambiando lingua cambia il testo, non il conteggio
+    │                      #   dice il proprio stato); filtri a pulsanti esclusivi (QButtonGroup), con Tutti selezionato all’avvio; ogni pulsante mostra il conteggio file per categoria ("In corso (N)"/"Completati (N)"/"Non completati (N)"), aggiornato da _update_filter_counts su aggregates_changed; i18n: retranslate() ricasca su _EmptyState e su ogni _JobCard; le card rendono l'ultimo errore dal PAYLOAD del modello con error_render.render_error(), e on_abandoned applica ABANDON_ALIASES al confine col segnale
+    ├── job_detail_dialog.py # dettaglio non modale con URL singolo, griglia di misure, cronologia IP e log traducibile
+    ├── history_dialog.py    # storico non modale ricercabile per nome, aggiornato ai completamenti e dopo la manutenzione
     ├── error_render.py    # resa degli errori a video: `render_error(code, params)` da codice+parametri al testo nella
     │                      #   lingua corrente (chiave `err.<codice>`; un codice CON il punto e' gia' una chiave i18n
     │                      #   intera, forma usata dagli errori che nascono nella GUI). Rende in profondita' i payload
@@ -166,16 +165,14 @@ src/
     ├── format_helpers.py  # helper di formattazione condivisi: fmt_speed/fmt_bytes/fmt_mmss/fmt_hhmmss (puro, no Qt); build_header_summary passa da t() → dipende dalla lingua (le unità di misura no)
     ├── session_clock.py   # SessionClock: tempo sessione con auto-freeze a fine sessione (puro, no Qt/I/O)
     ├── session_speed.py   # SessionSpeedStats: media/picco/minima di sessione (puro, no Qt/I/O), campionato 1x/s da StatsBar
-    ├── stats_bar.py       # cruscotto "spinta" compatto: zona velocita' (RadialGauge con % del picco + picco/media/minima/ETA/tempo) e zona Download (totale + SegmentBar + conteggi), separate da una linea verticale interna
-    ├── stats_panel.py     # StatsPanel: cruscotto Statistiche collassabile (header riassuntivo sempre visibile + corpo espandibile); metriche: volume, throughput effettivo, media per-download, picco/min, durata con auto-freeze, dettaglio per-job, pulsante copia riepilogo
-    ├── proxy_bar.py       # (i18n: retranslate() ricasca su ogni _MetricCard, che tiene la CHIAVE dell'etichetta) ProxyBar: zona proxy in stile "conservativo" — griglia 2x4 di card compatte su due righe (vivi/validazione/scartati/ricariche/ultimo refill/banda/banda proxy; min width 112px = etichetta più lunga non tagliata al resize) + colonna verticale di pulsanti "↻ Banda" (speed test linea diretta), "↻ Banda proxy" (speed test attraverso il pool live, abilitato solo con proxy vivi) e "Reset cache"; popolata da pool_size_changed/setup_progress/proxy_stats dell'orchestrator. Card "Banda" verde (accent_ok) vs "Banda proxy" blu (accent_info) per differenziare le due misure
+    ├── stats_bar.py       # velocità attuale, volume scaricato e tempo rimanente sopra la coda
+    ├── stats_panel.py     # statistiche nei dettagli sotto la coda, durata con arresto automatico, velocità relative al picco, completamento e copia del riepilogo per file
+    ├── proxy_bar.py       # misure e comandi di connessione nei dettagli sessione. Le misure del pool compaiono durante i trasferimenti
     ├── speedtest_worker.py # SpeedTestWorker (banda linea diretta, senza proxy) + ProxySpeedTestWorker (banda aggregata del pool live, uno stream per proxy campionato, resiliente ai proxy lenti/caduti); entrambi QThread, emettono finished_test(mbit, ok)
-    ├── controls.py        # barra comandi: Avvia/Pausa/Annulla/Paralleli/Incolla/Tema/Info; menu Impostazioni con Paralleli/Limite/Pezzo/"Cartella download:" (QFileDialog, getter get_download_dir, segnale download_dir_changed) + "Lingua:" (QComboBox Automatica/Italiano/English → TR.set_preference); PRIMO pannello migrato a i18n: testi via t("controls.*") e retranslate() per il cambio a caldo
-    │                      #   + "Manutenzione:" (pulsante «Azzera dati…» → segnale maintenance_requested,
-    │                      #   apre MaintenanceDialog). NB: `set_running(True)` disabilita il pulsante
-    │                      #   Impostazioni, quindi a sessione VIVA il menu — e con esso la manutenzione —
-    │                      #   non è raggiungibile: il rifiuto per voce serve dopo un Annulla globale,
-    │                      #   quando i comandi tornano attivi ma i worker stanno ancora scrivendo
+    ├── controls.py        # Comandi di sessione e QDialog Impostazioni. Lingua e tema sono disponibili
+    │                      #   anche durante i download. Parametri della sessione e manutenzione sono
+    │                      #   disattivati fino al termine. Dopo un annullo i controlli di manutenzione
+    │                      #   verificano anche i worker ancora attivi prima di intervenire sui file.
     ├── experimental_dialog.py # ExperimentalFeaturesDialog: 3 controlli con descrizione breve inline e icona "i" (QToolButton) → QMessageBox estesa: "Connessioni per file" (spinbox), "Budget per pezzo (s)" (spinbox), "Selezione per velocità" (checkbox + spinbox soglia KB/s); tutti persistono in preferences.json; i18n: t("experimental.*"), le descrizioni brevi/estese stanno nei dizionari
     ├── folder_expand_worker.py # FolderExpandWorker(QThread): espande i link cartella prima dell'avvio; le righe di report passano da t()/tn() (clausole opzionali autonome: separatore incluso nella chiave)
     │                      #   (rete fuori dal thread GUI); i link non-cartella passano invariati e
@@ -268,7 +265,7 @@ uccida il processo: da lì in poi l'uscita è ESPLICITA e passa tutta da `MainWi
    raccogliendo i proxy) senza toccare i worker vivi. La GUI registra le righe con
    `_register_added_jobs`. Il numero di file in parallelo NON cambia: gli aggiunti aspettano
    il loro turno.
-8. Cancellazione per-job: utente clicca la X rossa in colonna 0 → `JobsPanel.cancel_job_requested` → `MainWindow` → `DownloadOrchestrator.cancel_job(file_id)`. Se in coda viene rimosso, se in corso `worker.request_cancel()` setta il flag locale e il worker esce al prossimo checkpoint emettendo `cancelled`. La cartella di lavoro (`downloads/<nome_file>_<file_id>/` dopo il rename, oppure `downloads/<sha1>_<file_id>/` se il rename non è ancora avvenuto) viene rimossa lato GUI dopo la terminazione del worker, leggendo `output_path` dal model.
+8. La cancellazione per-job passa da `JobsPanel.cancel_job_requested` a `DownloadOrchestrator.cancel_job(file_id)`. Se richiesto, la GUI elimina i parziali del job dopo l’arresto del worker. `JobFiles` verifica l’identità su disco prima di eliminarli e rimuove le eventuali sottocartelle vuote.
 
 ## Convenzioni
 - GUI bilingue IT/EN; codice (variabili/funzioni/classi) e commenti in inglese/italiano come già in uso.
@@ -380,12 +377,10 @@ Comandi sempre dalla root `mega-proxy-downloader\`, mai da `src\`.
 - La versione dell'app è definita in `src/core/config.py` come `APP_VERSION` (semver `MAJOR.MINOR.PATCH`).
 - `APP_VERSION` viene mostrata nel titolo della finestra principale (`MainWindow`).
 - `package.ps1` legge `APP_VERSION` e produce `dist/MegaProxyRotator-X.Y.Z.zip` escludendo `venv`, `dist`, `downloads`, `__pycache__`, `.git`, `.claude`, log e cache.
-- L'utente che riceve lo zip esegue `install.ps1` (crea venv + dipendenze) e poi `avvia.bat`
-  (avvio silenzioso con `pythonw.exe`) oppure `avvia-debug.bat` (terminale visibile, per capire
-  perche' non parte). `install.ps1` genera ENTRAMBI: cambiando uno dei due file in root va
-  cambiato anche il testo che l'installer scrive, altrimenti la prossima installazione lo
-  riporta indietro. `package.ps1` prende i file da `git ls-files` e fallisce se trova
-  `.py`/`.bat` nuovi non tracciati (finirebbero fuori dallo zip).
+- Su Windows `install.ps1` prepara l’ambiente e crea il collegamento a `pythonw.exe`. Su macOS
+  il Finder avvia il bundle accanto a `src`. Debug mostra il log live nella finestra principale.
+  `package.ps1` prende i file da `git ls-files` e fallisce se trova
+  script Python, batch, PowerShell o file del bundle macOS nuovi e non tracciati.
 - **Regola obbligatoria**: al termine di ogni task, chiedere all'utente se vuole aggiornare `APP_VERSION`.
 
 ## File da NON modificare senza motivo

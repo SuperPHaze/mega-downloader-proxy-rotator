@@ -24,7 +24,7 @@ https://github.com/user-attachments/assets/275c6fbe-3792-4178-8a75-dc8f4610df3e
 
 ![version](https://img.shields.io/badge/version-2.3.0-blue)
 ![python](https://img.shields.io/badge/python-3.11%E2%80%933.14-blue)
-![platform](https://img.shields.io/badge/platform-Windows%2010%2F11-lightgrey)
+![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-lightgrey)
 ![gui](https://img.shields.io/badge/GUI-PyQt6-green)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
@@ -36,7 +36,7 @@ https://github.com/user-attachments/assets/275c6fbe-3792-4178-8a75-dc8f4610df3e
 
 ## 🚀 Panoramica
 
-App **desktop per Windows** (Python + PyQt6) che scarica file **e intere cartelle** da Mega.nz instradando il traffico su proxy HTTP pubblici e gratuiti. Il file viene diviso in una **coda di chunk a dimensione fissa**, scaricati in parallelo ognuno su un proxy diverso, decifrati al volo e riassemblati. Nata come test tecnico di rotazione IP, oggi è un downloader a uso reale, single-user e single-process. L'interfaccia è **bilingue, italiano e inglese**.
+App **desktop per Windows e macOS** (Python + PyQt6) che scarica file **e intere cartelle** da Mega.nz instradando il traffico su proxy HTTP pubblici e gratuiti. Il file viene diviso in una **coda di chunk a dimensione fissa**, scaricati in parallelo ognuno su un proxy diverso, decifrati al volo e riassemblati. Nata come test tecnico di rotazione IP, oggi è un downloader a uso reale, single-user e single-process. L'interfaccia è **bilingue, italiano e inglese**.
 
 ## ✨ Perché è diversa
 
@@ -51,15 +51,16 @@ App **desktop per Windows** (Python + PyQt6) che scarica file **e intere cartell
 - **Decifratura in streaming** su disco (RAM costante anche su file da molti GB), pattern `.part` + rinomina atomica.
 - **Resume** dei download interrotti e **riavvio** di falliti/abbandonati/annullati (riprende solo i chunk mancanti).
 - **Limite di tempo per file** configurabile; oltre la soglia il file viene abbandonato.
-- **Storico download** con avviso sui link già scaricati (dedup per handle Mega).
+- **Recupera download** è disponibile anche con la coda vuota. Seleziona un file interrotto nella cartella di destinazione per vedere i byte salvati e riprendere i blocchi mancanti. Se manca il registro dei blocchi, puoi confermare **Ricomincia da zero**. A coda aperta, trovi lo stesso elenco in **Parziali**.
+- **Storico** mostra i download completati nelle sessioni precedenti e in quella corrente. Cerca un file per nome, controlla data e dimensione o apri la cartella in cui è stato salvato.
 - **Aggiunta di link a sessione in corso**: i nuovi link entrano in coda senza fermare i download né rifare la raccolta dei proxy; si sceglie se metterli in fondo o subito dopo il file in corso, e i link già presenti nella sessione vengono segnalati prima di aggiungerli.
-- **Link a cartella Mega** (`/folder/`): la cartella viene espansa nei singoli file, salvati ad albero sotto un'unica cartella col nome originale (vedi la guida).
+- Un **link a file** salva il file nella destinazione scelta. Un **link a cartella** conserva il nome e le sottocartelle originali. Se il nome di un file è occupato, la nuova copia diventa `Film (2).mkv`, poi `Film (3).mkv`.
 - **Watchdog per chunk**: scarta i proxy troppo lenti o che non finiscono in tempo.
 - **Pannello "Funzioni sperimentali"** con connessioni per file, budget per pezzo e selezione per velocità con soglia configurabile (test di velocità reale + selezione proxy per throughput).
 - **Diagnostica crash passiva** sempre attiva (heartbeat di memoria, traceback multi-thread), log strutturato universale (`logs/events.jsonl`) e un generatore di report HTML (`tools/report.py`).
-- **Interfaccia** a schede con cruscotto compatto a 3 zone (velocità, download, proxy) — gauge radiale di velocità (% del picco di sessione), barra segmentata per lo stato dei download, card compatte per lo stato del pool proxy — filtri job a pulsanti con conteggio dei file per stato (in corso/completati/non completati), tema chiaro/scuro, pausa/ripresa/annullo globali e per singolo job.
-- **Interfaccia bilingue italiano/inglese**: al primo avvio segue la lingua del sistema, poi si sceglie dal menu Impostazioni (Automatica / Italiano / English) e il cambio è immediato, senza riavviare. È tradotta tutta l'interfaccia, messaggi d'errore compresi; i messaggi nei file di log restano in italiano perché servono alla diagnosi.
-- **Icona nell'area di notifica**: riducendo la finestra si sceglie (una volta o per sempre) se mandarla accanto all'orologio o lasciarla nella barra delle applicazioni; avvisi a comparsa a ogni file completato, a ogni errore e a coda completata. La X chiude il programma, come sempre.
+- **Coda di download** con anteprima dei link, filtri per stato, velocità e tempo rimanente. Puoi aprire **Dettagli sessione** sotto la coda per consultare statistiche e connessione.
+- **Interfaccia bilingue italiano/inglese**: al primo avvio segue la lingua del sistema, poi si sceglie da Impostazioni (Automatica / Italiano / English) e il cambio è immediato, senza riavviare. È tradotta tutta l'interfaccia, messaggi d'errore compresi; i messaggi nei file di log restano in italiano perché servono alla diagnosi.
+- **Riduzione della finestra** nel Dock su macOS. Su Windows puoi scegliere tra barra delle applicazioni e area di notifica. Il menu dell’icona permette di riaprire la finestra.
 - **Manutenzione dei dati su disco**: da Impostazioni si azzerano storico dei download, sessione salvata, cartella dei download, log e cache dei proxy. Ogni voce mostra quanto occupa davvero, niente è pre-selezionato, l'elenco di ciò che sparisce viene mostrato prima di cancellare e con un download in corso le voci pericolose sono disattivate.
 - **Modalità CLI** per macchine headless.
 
@@ -68,7 +69,7 @@ App **desktop per Windows** (Python + PyQt6) che scarica file **e intere cartell
 **Per usarla** — scarica il pacchetto pronto:
 1. Vai alla [Release più recente](https://github.com/SuperPHaze/mega-downloader-proxy-rotator/releases/latest) e scarica lo `.zip`.
 2. Estrai, doppio clic su **`install.bat`** (crea l'ambiente e installa tutto: app, test e strumenti in `tools/`).
-3. Avvia con **`avvia.bat`**: parte senza finestra del terminale. Se non parte, **`avvia-debug.bat`** fa la stessa cosa tenendo il terminale visibile, così si vede perché.
+3. Apri il collegamento **Mega Downloader Proxy Rotator** creato dall’installer. Premi **Debug** nella barra in basso per mostrare o nascondere il log sotto la coda.
 
 **Dai sorgenti** — richiede Python 3.11–3.14 nel PATH:
 ```bash
@@ -83,11 +84,17 @@ Un solo comando prepara tutto: dipendenze runtime (`requirements.txt`), dipenden
 
 > **Lingua degli script** — `install.ps1` e `package.ps1` mostrano i messaggi in **inglese per impostazione predefinita**. Per l'italiano, eseguili con `-Lang IT`, es. `powershell -ExecutionPolicy Bypass -File install.ps1 -Lang IT`.
 
+## Avvio su macOS
+
+Con Python 3.11–3.14 installato, apri **Mega Downloader Proxy Rotator.app** dal Finder. Tieni l’app nella cartella estratta, accanto a `src`. Il primo avvio prepara l’ambiente Python, quelli successivi lo riutilizzano. **Debug** mostra il log nella stessa finestra. Il pallino rosso chiude l’app.
+
+Su Apple Silicon con Python 3.14.10 è stato verificato l’avvio di un download dalla versione 2.3.0.
+
 ## 🔧 Uso in breve
 
-1. Incolla uno o più link `https://mega.nz/...` — a **file singolo** o a **cartella** — (o importali da un file `.txt`).
-2. Regola le opzioni dal menù **Impostazioni** e premi **Avvia**.
-3. Segui avanzamento, velocità e tentativi per ogni file; metti in pausa, riavvia o annulla quando vuoi.
+1. Scegli **Aggiungi link** per incollare un indirizzo per riga, oppure **Importa da file** per aprire un elenco `.txt`. Su Mac puoi usare **⌘L** e confermare con **⌘Invio**.
+2. Controlla l’anteprima e la destinazione. **Impostazioni** (**⌘,** sul Mac) permette di cambiare cartella. Premi **Avvia** quando la coda è pronta.
+3. La coda mostra avanzamento, velocità e tempo rimanente. Espandi un file per aprire i dettagli. Per le statistiche, apri **Dettagli sessione** sotto l’elenco.
 
 CLI senza interfaccia:
 ```powershell

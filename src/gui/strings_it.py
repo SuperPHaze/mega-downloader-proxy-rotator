@@ -20,6 +20,71 @@ STRINGS: dict[str, str | dict[str, str]] = {
     "main_window.title": "{name} v{version}",
 
     # ---- barra comandi: pulsanti ------------------------------------------
+    "workspace.transfers": "Download",
+    "workspace.details": "Dettagli sessione",
+    "workspace.queue_title": "Coda di download",
+    "workspace.file_menu": "File",
+    "partial.title": "Recupera download",
+    "partial.button": "Parziali",
+    "partial.count": {"one": "{n} download interrotto", "other": "{n} download interrotti"},
+    "partial.start_hint": "Apri l’elenco per controllare il progresso e scegliere il file da riprendere.",
+    "partial.progress": "Progresso salvato",
+    "partial.saved": "{percent}% · {amount}",
+    "partial.zero": "Da ricominciare",
+    "partial.resume": "Riprendi",
+    "partial.restart": "Ricomincia da zero…",
+    "partial.restart_now": "Ricomincia da zero",
+    "partial.refresh": "Aggiorna",
+    "partial.cancel": "Annulla",
+    "partial.remaining": "Restano da scaricare {amount}.",
+    "partial.no_checkpoint": "Il file parziale non ha blocchi registrati. Verrà scaricato per intero.",
+    "partial.in_history": "Lo storico riporta già una copia completata.",
+    "partial.confirm_restart": "Scaricare di nuovo «{name}» dal principio?",
+    "partial.request_link": "Incolla il link MEGA originale di «{name}».",
+    "partial.wrong_link": "Inserisci il link completo del file originale, inclusa la chiave.",
+    "partial.empty": "Nessun download parziale da recuperare in questa cartella.",
+    "partial.scanning": "Ricerca dei file parziali…",
+    "partial.scan_error": "Impossibile leggere la cartella. Controlla la destinazione e premi Aggiorna.",
+    "partial.busy": "Questo file è già in coda.",
+    "partial.draft": "Recupero aggiunto alla lista. Premi Avvia per scaricare.",
+    "history.button": "Storico",
+    "history.tooltip": "Mostra i download completati",
+    "history.title": "Storico dei download",
+    "history.search": "Cerca per nome del file",
+    "history.name": "Nome file",
+    "history.date": "Completato il",
+    "history.size": "Dimensione",
+    "history.empty": "I download completati appariranno qui.",
+    "history.no_match": "Nessun file corrisponde alla ricerca.",
+    "history.count": {"one": "{n} elemento", "other": "{n} elementi"},
+    "history.open_folder": "Apri cartella",
+    "history.unavailable": "La cartella registrata per questo download non è disponibile su questo computer.",
+    "debug.button": "Debug",
+    "debug.tooltip": "Mostra o nascondi il log nella finestra",
+    "debug.title": "Log di debug",
+    "debug.empty": "In attesa dei messaggi di questa sessione…",
+    "debug.hide": "Nascondi",
+    "workspace.speed": "Velocità attuale",
+    "workspace.volume": "Dati scaricati",
+    "workspace.remaining": "Tempo rimanente",
+    "workspace.destination": "Destinazione · {folder}",
+    "controls.application": "Applicazione",
+    "controls.row_theme": "Aspetto",
+    "controls.use_light": "Usa il tema chiaro",
+    "controls.use_dark": "Usa il tema scuro",
+    "controls.minimize_tooltip_ask_mac": "A ogni riduzione puoi scegliere tra Dock e barra dei menu.",
+    "controls.minimize_tooltip_taskbar_mac": "La finestra si riduce nel Dock. Premi per scegliere di nuovo.",
+    "controls.minimize_tooltip_tray_mac": "La finestra si nasconde nella barra dei menu. Premi per scegliere di nuovo.",
+    "tray.ask_dock": "Nel Dock",
+    "tray.ask_menu_bar": "Nella barra dei menu",
+    "link_panel.edit": "Apri elenco link",
+    "jobs_panel.filter_all": "Tutti",
+    "jobs_panel.filtered_empty": "Nessun download in questa vista. Seleziona Tutti per vedere la coda.",
+    "jobs_panel.details": "Dettagli",
+    "jobs_panel.actions_for": "Azioni per {name}",
+    "jobs_panel.details_for": "Dettagli di {name}",
+    "jobs_panel.confirm_cancel": "Vuoi annullare il download di {name}?",
+    "jobs_panel.discard_partial": "Elimina anche i dati parziali dal disco",
     "controls.start": "Avvia",
     "controls.pause": "Pausa",
     "controls.resume": "Riprendi",
@@ -46,10 +111,7 @@ STRINGS: dict[str, str | dict[str, str]] = {
         "più richieste HTTP al CDN Mega.\n"
         "Tagli grandi (128/256 MB): adatti a file molto grandi su proxy buoni."
     ),
-    "controls.settings_tooltip": (
-        "Configura download paralleli, limite di durata e dimensione pezzo.\n"
-        "Non modificabile durante una sessione di download."
-    ),
+    "controls.settings_tooltip": "Preferenze di download, lingua e aspetto.",
     "controls.experimental_tooltip": (
         "Funzioni in prova (connessioni per file, selezione proxy per "
         "velocità). Disattivate di default.\n"
@@ -65,16 +127,17 @@ STRINGS: dict[str, str | dict[str, str]] = {
         "Predefinita: sottocartella 'downloads' del programma."
     ),
     "controls.download_dir_tooltip_chosen": "Cartella di download:\n{path}",
+    "controls.choose_local_download_dir": "La cartella proviene da un altro sistema. Scegli una destinazione locale",
     "controls.choose_download_dir_title": "Scegli la cartella di download",
 
     # ---- barra comandi: righe del menu Impostazioni ------------------------
-    "controls.row_concurrency": "Paralleli:",
-    "controls.row_time_limit": "Limite min/file:",
-    "controls.row_chunk": "Pezzo:",
-    "controls.row_download_dir": "Cartella download:",
-    "controls.row_minimize": "Riduzione a icona:",
-    "controls.row_language": "Lingua:",
-    "controls.row_maintenance": "Manutenzione:",
+    "controls.row_concurrency": "Download simultanei",
+    "controls.row_time_limit": "Tempo per file (min)",
+    "controls.row_chunk": "Dimensione segmento",
+    "controls.row_download_dir": "Cartella di download",
+    "controls.row_minimize": "Riduzione a icona",
+    "controls.row_language": "Lingua",
+    "controls.row_maintenance": "Manutenzione",
 
     # ---- barra comandi: manutenzione ---------------------------------------
     "controls.maintenance_button": "Azzera dati…",
@@ -185,7 +248,10 @@ STRINGS: dict[str, str | dict[str, str]] = {
 
     # ---- finestra "Incolla link Mega" --------------------------------------
     "paste.title": "Incolla link Mega",
-    "paste.instructions": "Incolla link Mega (uno per riga):",
+    "paste.instructions": "Incolla un link Mega per riga.",
+    "paste.list_title": "Elenco link",
+    "paste.list_hint": "Puoi aggiungere, correggere o rimuovere i link. Inserisci un link per riga.",
+    "paste.save_list": "Salva elenco",
     "paste.valid": "Validi: {n}",
     "paste.folders": "Cartelle: {n}",
     "paste.invalid": "Non validi: {n}",
@@ -227,20 +293,28 @@ STRINGS: dict[str, str | dict[str, str]] = {
     "stats_bar.count_failed": "{n} fall.",
 
     # ---- zona proxy (ProxyBar) ---------------------------------------------
-    "proxy_bar.micro": "PROXY",
+    "proxy_bar.micro": "Connessione",
     # Etichette delle card: il codice le mette in MAIUSCOLO da sé.
-    "proxy_bar.card_alive": "Vivi",
+    "proxy_bar.card_alive": "Proxy attivi",
     "proxy_bar.card_validation": "Validazione",
     "proxy_bar.card_discarded": "Scartati",
     "proxy_bar.card_refills": "Ricariche",
-    "proxy_bar.card_last_refill": "Ultimo refill",
-    "proxy_bar.card_band": "Banda",
-    "proxy_bar.card_band_proxy": "Banda proxy",
-    "proxy_bar.speedtest_button": "Banda",
+    "proxy_bar.card_last_refill": "Ultimo rinnovo",
+    "proxy_bar.card_band": "Velocità linea",
+    "proxy_bar.card_band_proxy": "Velocità proxy",
+    "proxy_bar.speedtest_button": "Misura linea",
+    "proxy_bar.speedtest_running": "Misurazione…",
+    "proxy_bar.speedtest_retry": "Riprova misura",
+    "proxy_bar.unavailable": "Non disponibile",
+    "proxy_bar.line_http": "Il server di misura ha risposto con HTTP {status}. Riprova tra poco.",
+    "proxy_bar.line_timeout": "Il server di misura non ha risposto in tempo.",
+    "proxy_bar.line_network": "Il test non è riuscito. Controlla la connessione e riprova.",
+    "proxy_bar.line_incomplete": "Il trasferimento di prova si è interrotto.",
+    "proxy_bar.last_measurement": "È visibile l’ultima misura riuscita.",
     "proxy_bar.speedtest_tooltip": (
         "Misura la banda della linea (download diretto, senza proxy)."
     ),
-    "proxy_bar.proxy_speedtest_button": "Banda proxy",
+    "proxy_bar.proxy_speedtest_button": "Misura proxy",
     "proxy_bar.proxy_speedtest_tooltip": (
         "Misura la banda reale del pool di proxy (solo durante una sessione)."
     ),
@@ -360,6 +434,14 @@ STRINGS: dict[str, str | dict[str, str]] = {
     "maintenance.report_total": "Spazio liberato in tutto: {size}.",
 
     # ---- pannello Statistiche (StatsPanel) ---------------------------------
+    "stats_panel.idle": "Le statistiche saranno disponibili al primo download.",
+    "stats_panel.metric_elapsed": "Tempo trascorso",
+    "stats_panel.metric_effective": "Velocità effettiva",
+    "stats_panel.metric_file_average": "Media per file",
+    "stats_panel.metric_sample_average": "Media in attività",
+    "stats_panel.metric_peak": "Picco",
+    "stats_panel.metric_minimum": "Minima",
+    "stats_panel.finished_of": "Completati {done} su {total} ({pct}%)",
     "stats_panel.title": "Statistiche",
     "stats_panel.copy_button": "Copia riepilogo",
     "stats_panel.session": "Sessione: {time}  ({status})",
@@ -426,7 +508,8 @@ STRINGS: dict[str, str | dict[str, str]] = {
     "jobs_panel.current_ip": "IP corrente: {ip}",
     "jobs_panel.attempts": "Tentativi: {n}",
     "jobs_panel.errors_suffix": "  •  Errori: {n}",
-    "jobs_panel.last_error_suffix": "  •  Ultimo errore: {error}",
+    "jobs_panel.file_missing": "File o cartella non trovati.",
+    "jobs_panel.last_error": "Ultimo errore: {error}",
     "jobs_panel.filter_in_progress": "In corso",
     "jobs_panel.filter_completed": "Completati",
     "jobs_panel.filter_not_completed": "Non completati",
@@ -436,13 +519,10 @@ STRINGS: dict[str, str | dict[str, str]] = {
         "Riavvia tutti i download falliti, abbandonati o annullati.\n"
         "Il download riprende dai segmenti già scaricati (.part)."
     ),
-    "jobs_panel.empty_title": "Aggiungi i tuoi link Mega per iniziare",
+    "jobs_panel.empty_title": "Nessun download in coda",
     # {button} e' il nome del pulsante preso da controls.paste_links: cosi' il
     # suggerimento non puo' sfasarsi dal pulsante che nomina.
-    "jobs_panel.empty_hint": (
-        "Usa il pulsante «{button}» nella barra comandi\n"
-        "oppure clicca qui sotto."
-    ),
+    "jobs_panel.empty_hint": "Incolla un link Mega o importa un elenco da un file di testo.",
     # ---- pannello link (LinkPanel) -----------------------------------------
     "link_panel.import": "Importa da file",
     "link_panel.add": "Aggiungi link",
@@ -450,7 +530,7 @@ STRINGS: dict[str, str | dict[str, str]] = {
     "link_panel.allow_duplicates": "Consenti duplicati",
     "link_panel.allow_duplicates_tooltip": (
         "Se attivo, lo stesso link puo' essere aggiunto piu' volte. "
-        "Ogni copia viene scaricata in una cartella separata."
+        "Le copie successive hanno un numero nel nome, come Film (2).mkv."
     ),
     # Contatore: gia' oggi il codice sceglieva la forma con un `if`, qui la
     # scelta passa a `tn()`.
@@ -671,22 +751,12 @@ STRINGS: dict[str, str | dict[str, str]] = {
     "main_window.job_cancelled": "File {file} annullato ({done}/{total}).",
 
     # ---- finestra principale: eliminazione dal disco ------------------------
-    # Le due frasi erano concatenate a pezzi attorno al numero del file: ora
-    # sono due chiavi intere, scelte in base al tipo di job.
     "main_window.delete_title": "Eliminare dal disco?",
-    "main_window.delete_folder_job_body": (
-        "Eliminare il file {file} dalla cartella scaricata?\n"
-        "Gli altri file della stessa cartella Mega restano al loro posto.\n"
-        "L'operazione è irreversibile."
+    "main_window.delete_job_files_body": (
+        "Eliminare dal disco i file di questo download (n. {file})?\n"
+        "L’operazione è irreversibile."
     ),
-    "main_window.delete_folder_body": (
-        "Eliminare la cartella su disco del file {file}?\n"
-        "L'operazione è irreversibile."
-    ),
-    "main_window.delete_missing": "File {file}: cartella non presente su disco.",
-    "main_window.delete_done": "File {file}: cartella eliminata ({name}).",
-    "main_window.delete_failed_title": "Eliminazione cartella fallita",
-    "main_window.delete_failed_body": "Impossibile eliminare {path}:\n{error}",
+    "main_window.delete_failed_title": "Impossibile eliminare il file",
     "main_window.delete_nothing": "File {file}: nessun file da eliminare su disco.",
     "main_window.delete_file_done": "File {file}: file eliminato ({name}).",
 
@@ -795,24 +865,23 @@ STRINGS: dict[str, str | dict[str, str]] = {
     "job_log.restart": "----- Riavvio richiesto -----",
 
     # ---- finestra di dettaglio di un job ------------------------------------
-    "job_detail.title": "Dettaglio job #{file}",
+    "job_detail.title": "Dettagli download {file}",
+    "job_detail.named_title": "Dettagli · {name}",
     "job_detail.abandoned_title": "Link abbandonato",
     "job_detail.copy": "Copia",
-    "job_detail.abandoned_info": (
-        "Tentativi falliti: {attempts}  •  Ultimo errore: {error}"
-    ),
     "job_detail.not_available": "n/d",
-    "job_detail.url_label": "URL:",
-    "job_detail.summary": (
-        "Stato: <b>{status}</b>  •  Avanzamento: {progress}%  •  "
-        "Tentativi: {attempts}  •  Errori: {errors}  •  "
-        "Durata: {duration}"
-    ),
-    "job_detail.summary_last_error": "  •  Ultimo errore: {error}",
-    "job_detail.ip_history": "Cronologia IP usati:",
-    "job_detail.col_timestamp": "Timestamp",
+    "job_detail.url_label": "URL del download",
+    "job_detail.status": "Stato",
+    "job_detail.progress": "Avanzamento",
+    "job_detail.attempts": "Tentativi",
+    "job_detail.errors": "Errori",
+    "job_detail.duration": "Durata",
+    "job_detail.no_ips": "Nessun indirizzo IP registrato.",
+    "job_detail.no_attempts": "Nessun tentativo registrato.",
+    "job_detail.ip_history": "Cronologia IP",
+    "job_detail.col_timestamp": "Ora",
     "job_detail.col_ip": "IP",
-    "job_detail.attempts_log": "Log dei tentativi:",
+    "job_detail.attempts_log": "Log dei tentativi",
     "job_detail.close": "Chiudi",
 
     # ---- errori: il catalogo del motore, innestato ---------------------------
