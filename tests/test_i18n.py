@@ -775,7 +775,7 @@ def test_link_panel_retranslates_hot(qapp, isolated_prefs, monkeypatch):
     assert panel.import_btn.text() == "Import from file"
     assert panel.clear_btn.text() == "Clear"
     assert panel.allow_dups.text() == "Allow duplicates"
-    assert "separate folder" in panel.allow_dups.toolTip()
+    assert "copies are numbered" in panel.allow_dups.toolTip()
 
 
 def test_link_panel_counter_singular_and_plural(qapp, isolated_prefs, monkeypatch):

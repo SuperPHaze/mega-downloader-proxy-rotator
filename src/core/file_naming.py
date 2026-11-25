@@ -76,13 +76,13 @@ def sanitize_file_name(
     return base or fallback
 
 
-def final_output_dir(
-    file_name: str, file_id: int, output_root: Path | None = None
-) -> Path:
-    """Cartella base definitiva per un job, calcolata dal nome file risolto.
-    `output_root` = cartella di download scelta dall'utente (None = default)."""
-    safe = sanitize_folder_name(file_name)
-    return (output_root or OUTPUT_DIR) / f"{safe}_{file_id}"
+def numbered_file_name(name: str, number: int) -> str:
+    """Conserva estensione e suffisso anche per nomi già al limite di lunghezza."""
+    stem, ext = os.path.splitext(name)
+    suffix = f" ({number})"
+    ext = ext[:MAX_FILE_NAME_LEN - len(suffix) - 1]
+    stem = stem[:MAX_FILE_NAME_LEN - len(suffix) - len(ext)].rstrip()
+    return f"{stem}{suffix}{ext}"
 
 
 def folder_job_output_dir(

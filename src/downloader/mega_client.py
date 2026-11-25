@@ -2,17 +2,12 @@
 #
 # Niente piu' mega.py: usa MegaPublicClient (resolve URL + decifratura
 # attributi) + requests con `proxies=` nativo per il transfer dal CDN.
-# Decifratura AES-CTR a blocchi durante lo streaming, scrittura diretta
-# sul file finale (niente temp file, niente WinError 32).
+# Decifratura AES-CTR in streaming nel .part, promosso a download completato.
 from __future__ import annotations
 
 import logging
-import os
 import time
 from pathlib import Path
-
-from src.core.partial_downloads import forget_source, remember_source
-from src.downloader.target_file import target_lock
 from typing import Callable
 
 import requests
@@ -25,9 +20,11 @@ from src.core.config import (
 )
 from src.core.disk import ensure_free_space
 from src.core.errors import UserFacingRuntimeError
+from src.core.partial_downloads import forget_source
 from src.core.proxy_url import build_proxies_dict, build_proxy_url
 from src.downloader.mega_api import MegaApiError, MegaPublicClient
 from src.downloader.mega_crypto import a32_to_str
+from src.downloader.target_file import JobFiles
 
 log = logging.getLogger(__name__)
 
@@ -70,7 +67,8 @@ class MegaClient:
         output_dir: Path,
         progress_callback: Callable[[int], None] | None = None,
         speed_callback: Callable[[float, int, int], None] | None = None,
-        resolved_callback: Callable[[str, object, Path], Path | None] | None = None,
+        resolved_callback: Callable[[str, object, Path], None] | None = None,
+        files: JobFiles | None = None,
     ) -> Path:
         try:
             from Crypto.Cipher import AES
@@ -80,7 +78,6 @@ class MegaClient:
                 "crypto_not_importable", error=str(exc)
             ) from exc
 
-        output_dir.mkdir(parents=True, exist_ok=True)
         api = MegaPublicClient(self.proxy, timeout=max(PROXY_TIMEOUT * 4, 30))
         info = api.resolve_public_url(mega_url)
         file_name = info["file_name"]
@@ -92,30 +89,21 @@ class MegaClient:
         # a metà stream verrebbe scambiato per fallimento del proxy e brucerebbe
         # i tentativi. InsufficientDiskSpaceError è gestita a monte dal worker.
         ensure_free_space(output_dir, file_size, MIN_FREE_DISK_MARGIN_BYTES)
-        final_path = output_dir / file_name
-        # Pattern .part + rename atomico: il client seriale non ha resume,
-        # ma un download interrotto non deve mai lasciare un file con il nome
-        # finale che il check del worker scambierebbe per completo.
-        log.info(
-            "[serial] resolve ok: name=%s size=%d cdn_host=%s",
-            file_name, file_size,
-            cdn_url.split("/")[2] if "://" in cdn_url else "?",
-        )
-        # Notifica immediata al worker: nome file noto appena risolto.
-        if resolved_callback is not None:
-            try:
-                relocated = resolved_callback(file_name, file_size, final_path)
-                if isinstance(relocated, Path):
-                    final_path = relocated
-            except Exception:
-                pass
-
-        with target_lock(final_path):
-            return self._transfer(mega_url, final_path, cdn_url, file_size, k, iv,
-                                  progress_callback, speed_callback, AES, Counter)
+        if files is None:
+            output_dir = output_dir.resolve()
+            files = JobFiles(output_dir)
+        recovery = files.partial
+        with files.destination(output_dir, file_name, recovery) as final_path:
+            if recovery:
+                recovery.validate(info["handle"], file_size, final_path)
+            if resolved_callback:
+                resolved_callback(final_path.name, file_size, final_path)
+            log.info("[serial] file risolto: %s (%d B)", final_path.name, file_size)
+            return self._transfer(mega_url, final_path, cdn_url, file_size, k, iv, progress_callback,
+                                  speed_callback, files, file_name, AES, Counter)
 
     def _transfer(self, mega_url, final_path, cdn_url, file_size, k, iv, progress_callback,
-                  speed_callback, AES, Counter) -> Path:
+                  speed_callback, files, source_name, AES, Counter) -> Path:
         part_path = final_path.with_name(final_path.name + ".part")
         k_str = a32_to_str(k)
         initial_counter = ((iv[0] << 32) + iv[1]) << 64
@@ -135,10 +123,10 @@ class MegaClient:
         _speed_t = time.monotonic()
         _speed_bytes = 0
         # Anche al cambio di modalità i blocchi registrati devono appartenere ai dati su disco.
-        with part_path.open("r+b" if part_path.exists() else "xb") as fp:
+        with part_path.open("r+b" if files.partial else "xb") as fp:
             part_path.with_name(part_path.name + ".progress.json").unlink(missing_ok=True)
             fp.truncate(0)
-            remember_source(part_path, mega_url, file_size)
+            files.started(final_path, mega_url, file_size, source_name)
             for chunk in resp.iter_content(chunk_size=_CHUNK):
                 if not chunk:
                     continue
@@ -165,12 +153,12 @@ class MegaClient:
                             except Exception:
                                 pass
 
-        if file_size and downloaded != file_size:
+        if downloaded != file_size:
             raise MegaApiError(
                 "download_incomplete", downloaded=downloaded, expected=file_size
             )
         # Download verificato: promuovi il .part al nome finale.
-        os.replace(part_path, final_path)
+        files.publish(final_path)
         forget_source(part_path)
         if progress_callback:
             try:

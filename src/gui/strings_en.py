@@ -500,7 +500,7 @@ STRINGS: dict[str, str | dict[str, str]] = {
     "link_panel.allow_duplicates": "Allow duplicates",
     "link_panel.allow_duplicates_tooltip": (
         "If enabled, the same link can be added more than once. "
-        "Each copy is downloaded into a separate folder."
+        "Further copies are numbered, for example Film (2).mkv."
     ),
     "link_panel.counter_empty": "no links",
     "link_panel.counter": {
@@ -706,19 +706,11 @@ STRINGS: dict[str, str | dict[str, str]] = {
 
     # ---- finestra principale: eliminazione dal disco ------------------------
     "main_window.delete_title": "Delete from disk?",
-    "main_window.delete_folder_job_body": (
-        "Delete file {file} from the downloaded folder?\n"
-        "The other files of the same Mega folder stay where they are.\n"
+    "main_window.delete_job_files_body": (
+        "Delete the files for download {file} from disk?\n"
         "This cannot be undone."
     ),
-    "main_window.delete_folder_body": (
-        "Delete the disk folder of file {file}?\n"
-        "This cannot be undone."
-    ),
-    "main_window.delete_missing": "File {file}: folder not found on disk.",
-    "main_window.delete_done": "File {file}: folder deleted ({name}).",
-    "main_window.delete_failed_title": "Folder deletion failed",
-    "main_window.delete_failed_body": "Cannot delete {path}:\n{error}",
+    "main_window.delete_failed_title": "Could not delete the file",
     "main_window.delete_nothing": "File {file}: nothing to delete on disk.",
     "main_window.delete_file_done": "File {file}: file deleted ({name}).",
 

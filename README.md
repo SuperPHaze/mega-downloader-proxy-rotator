@@ -58,7 +58,7 @@ A **desktop app for Windows and macOS** (Python + PyQt6) that downloads files **
 - **Recover downloads** is available even when the queue is empty. Select an interrupted file in the download folder to see the saved bytes and resume the missing chunks. If there is no chunk record, you can confirm **Restart from zero**. With the queue open, the same list is available under **Partial files**.
 - **History** lists completed downloads from this and previous sessions. Search by file name, check the completion date and size, or open the folder where a file was saved.
 - **Add links to a running session**: new links join the queue without stopping the downloads or redoing the proxy collection; you choose whether to put them at the end or right after the current file, and links already in the session are flagged before they are added.
-- **Mega folder links** (`/folder/`): the folder is expanded into its individual files, saved as a tree under a single folder carrying the original name (see the guide).
+- A **file link** saves the file directly in the selected destination. A **folder link** keeps the original folder name and subfolders. When a file name is taken, subsequent copies use names like `Film (2).mkv` and `Film (3).mkv`.
 - **Per-fragment watchdog**: drops proxies that are too slow or fail to finish in time.
 - **"Experimental Features" panel** with connections per file, fragment budget, and speed-based selection with configurable threshold (real speed test + throughput-based proxy selection).
 - **Passive crash diagnostics**, always on (memory heartbeat, multi-thread tracebacks), universal structured logging (`logs/events.jsonl`), and an HTML report generator (`tools/report.py`).

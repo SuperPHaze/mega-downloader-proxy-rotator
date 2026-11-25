@@ -68,21 +68,15 @@ def test_file_normal_name_unchanged():
     assert sanitize_file_name("archivio.tar.gz") == "archivio.tar.gz"
 
 
-# --- output_root configurabile (2.5) --------------------------------------
-
-def test_final_output_dir_uses_custom_root(tmp_path):
-    from src.core.file_naming import final_output_dir
-    assert final_output_dir("Film.mp4", 3, tmp_path) == tmp_path / "Film.mp4_3"
-
-
-def test_final_output_dir_defaults_when_root_none():
-    from src.core.config import OUTPUT_DIR
-    from src.core.file_naming import final_output_dir
-    assert final_output_dir("Film.mp4", 3) == OUTPUT_DIR / "Film.mp4_3"
+def test_numbered_file_name_preserves_extension():
+    from src.core.file_naming import numbered_file_name
+    assert numbered_file_name("Film.mkv", 2) == "Film (2).mkv"
+    assert numbered_file_name("README", 3) == "README (3)"
 
 
-def test_job_output_dir_uses_custom_root(tmp_path):
-    from src.downloader.worker import job_output_dir
-    result = job_output_dir("https://mega.nz/file/abc#key", 5, tmp_path)
-    assert result.parent == tmp_path
-    assert result.name.endswith("_5")
+def test_numbered_file_name_keeps_suffix_with_long_names():
+    from src.core.file_naming import MAX_FILE_NAME_LEN, numbered_file_name
+    for name in ("a" * 200 + ".mkv", "a." + "b" * 200):
+        result = numbered_file_name(name, 12)
+        assert len(result) == MAX_FILE_NAME_LEN
+        assert " (12)." in result

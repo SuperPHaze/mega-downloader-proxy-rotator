@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import logging
 import os
-import shutil
 import sys
 from pathlib import Path
 from threading import Event
@@ -36,14 +35,12 @@ from src.core.config import (
     PROXY_SPEEDTEST_STREAMS,
     TERMINAL_LOG,
 )
-from src.core.file_naming import folder_job_output_dir, sanitize_file_name
 from src.core.icon_loader import build_app_icon
-from src.core.partial_downloads import PartialDownload, RecoveryChanged, forget_source, link_handle
+from src.core.partial_downloads import PartialDownload, RecoveryChanged, link_handle
 from src.core.state import SessionState
 from src.downloader.orchestrator import DownloadOrchestrator
-from src.core.mega_links import is_folder_link, parse_folder_job_url
-from src.downloader.target_file import target_lock
-from src.downloader.worker import job_output_dir
+from src.core.mega_links import is_folder_link
+from src.downloader.target_file import JobFiles, target_lock
 from src.gui.folder_expand_worker import FolderExpandWorker
 from src.gui.about_dialog import AboutDialog
 from src.gui.controls import ControlsBar
@@ -128,7 +125,6 @@ class MainWindow(QMainWindow):
         self._links_by_id: dict[int, str] = {}
         self._pending_delete: set[int] = set()
         # Cartella radice dei download della sessione corrente (None = default).
-        # Serve anche a ritrovare la cartella di lavoro per l'eliminazione.
         self._active_output_root: Path | None = None
         # Link non ancora completati della sessione corrente (file_id -> url):
         # persistiti su disco per il ripristino all'avvio (2.7).
@@ -1420,136 +1416,30 @@ class MainWindow(QMainWindow):
         self._maybe_notify_queue_done()
 
     def _on_delete_folder_requested(self, file_id: int) -> None:
-        url = self._links_by_id.get(file_id)
-        single_file = ((url is not None and parse_folder_job_url(url) is not None)
-                       or (self.orchestrator and file_id in self.orchestrator.recovery_targets))
-        # Le due varianti erano costruite a pezzi attorno al numero del
-        # file: un frammento come « dalla cartella scaricata?» non e'
-        # traducibile da solo, quindi ognuna e' ora una chiave intera.
-        body_key = (
-            "main_window.delete_folder_job_body" if single_file
-            else "main_window.delete_folder_body"
-        )
         confirm = QMessageBox.question(
-            self,
-            t("main_window.delete_title"),
-            t(body_key, file=file_id + 1),
+            self, t("main_window.delete_title"), t("main_window.delete_job_files_body", file=file_id + 1),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No,
         )
-        if confirm != QMessageBox.StandardButton.Yes:
-            return
-        self._delete_folder_for(file_id)
+        if confirm == QMessageBox.StandardButton.Yes:
+            self._delete_folder_for(file_id, include_completed=True)
 
-    def _delete_folder_for(self, file_id: int) -> None:
-        # Job nato dall'espansione di una cartella: la cartella su disco e'
-        # CONDIVISA con gli altri file dello stesso albero (alcuni magari
-        # ancora in corso o gia' completati). Si elimina solo questo file.
-        recovery = self.orchestrator.recovery_targets.get(file_id) if self.orchestrator else None
-        if recovery is not None:
-            # Il vecchio ciclo può contenere altri file. Rimuovi solo l'inode selezionato.
-            try:
-                with target_lock(recovery.target):
-                    recovery.remove()
-            except (OSError, RecoveryChanged):
-                QMessageBox.warning(self, t("partial.title"), t("err.partial_changed"))
-                return
-            self._set_status_t("main_window.delete_file_done", file=file_id + 1, name=recovery.target.name)
+    def _delete_folder_for(self, file_id: int, *, include_completed: bool = False) -> None:
+        files = self.orchestrator.job_files.get(file_id) if self.orchestrator else None
+        if files is None and self.orchestrator:
+            recovery = self.orchestrator.recovery_targets.get(file_id)
+            if recovery:
+                files = JobFiles(recovery.root, recovery)
+        try:
+            removed = files.discard(include_completed=include_completed) if files else []
+        except (OSError, RecoveryChanged) as exc:
+            QMessageBox.warning(self, t("main_window.delete_failed_title"), str(exc))
+            return
+        if removed:
+            self.orchestrator.recovery_targets.pop(file_id, None)
+            self._set_status_t("main_window.delete_file_done", file=file_id + 1, name=removed[-1].name)
             self._scan_partials()
-            return
-        folder_url = self._links_by_id.get(file_id)
-        if folder_url is not None and parse_folder_job_url(folder_url) is not None:
-            self._delete_folder_job_file(file_id, folder_url)
-            return
-        # Usa il path corrente dal modello se disponibile (la cartella potrebbe
-        # essere stata rinominata col nome file dopo il resolve).
-        path: Path | None = None
-        job = self.jobs_panel.model.get_job(file_id)
-        if job and job.output_path:
-            p = Path(job.output_path)
-            # output_path è il file finale: OUTPUT_DIR/<nome>_<id>/ciclo_N/<file>
-            # La cartella base è 2 livelli sopra.
-            candidate = p.parent.parent
-            if candidate.is_dir():
-                path = candidate
-        if path is None:
-            url = self._links_by_id.get(file_id)
-            if url is None:
-                log.warning("Delete folder: file_id=%d non trovato", file_id)
-                return
-            path = job_output_dir(url, file_id, self._active_output_root)
-        if not path.exists():
-            self._set_status_t(
-                "main_window.delete_missing", file=file_id + 1
-            )
-            return
-        try:
-            parts = list(path.rglob("*.part"))
-            shutil.rmtree(path)
-            for part in parts:
-                forget_source(part)
-            log.info("Cartella eliminata: %s", path)
-            self._set_status_t(
-                "main_window.delete_done", file=file_id + 1, name=path.name
-            )
-        except OSError as exc:
-            log.exception("Impossibile eliminare %s", path)
-            QMessageBox.warning(
-                self,
-                t("main_window.delete_failed_title"),
-                t("main_window.delete_failed_body", path=path, error=exc),
-            )
-
-    def _delete_folder_job_file(self, file_id: int, url: str) -> None:
-        """Elimina il singolo file di un job-cartella (mai l'albero condiviso).
-
-        Rimuove il file finale, il `.part` e i sidecar di resume, poi pota le
-        cartelle rimaste vuote risalendo fino alla radice dei download
-        (esclusa): se altri file dell'albero esistono ancora, la potatura si
-        ferma da sola alla prima cartella non vuota.
-        """
-        job = parse_folder_job_url(url)
-        if job is None:
-            return
-        root = self._active_output_root or OUTPUT_DIR
-        directory = folder_job_output_dir(job.rel_path, self._active_output_root)
-        name = sanitize_file_name(job.file_name, fallback=f"mega_{job.node_handle}")
-        targets = [
-            directory / name,
-            directory / f"{name}.part",
-            directory / f"{name}.part.progress.json",
-            directory / f"{name}.progress.json",   # sidecar del vecchio schema
-        ]
-        removed = 0
-        for target in targets:
-            try:
-                if target.is_file():
-                    target.unlink()
-                    if target.name.endswith(".part"):
-                        forget_source(target)
-                    removed += 1
-            except OSError as exc:
-                log.warning("Impossibile eliminare %s: %s", target, exc)
-        if removed == 0:
-            self._set_status_t(
-                "main_window.delete_nothing", file=file_id + 1
-            )
-            return
-        # Potatura delle cartelle rimaste vuote (mai la radice dei download).
-        current = directory
-        try:
-            root_resolved = root.resolve()
-            while current.resolve() != root_resolved and current.is_dir():
-                if any(current.iterdir()):
-                    break
-                parent = current.parent
-                current.rmdir()
-                log.info("Cartella vuota rimossa: %s", current)
-                current = parent
-        except OSError as exc:
-            log.debug("Potatura cartelle interrotta su %s: %s", current, exc)
-        log.info("File del job-cartella eliminato: %s", directory / name)
-        self._set_status_t(
-            "main_window.delete_file_done", file=file_id + 1, name=name
-        )
+        else:
+            self._set_status_t("main_window.delete_nothing", file=file_id + 1)
 
     # ---- tema chiaro/scuro ----------------------------------------------
 

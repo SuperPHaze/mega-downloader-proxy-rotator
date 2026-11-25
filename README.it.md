@@ -54,7 +54,7 @@ App **desktop per Windows e macOS** (Python + PyQt6) che scarica file **e intere
 - **Recupera download** è disponibile anche con la coda vuota. Seleziona un file interrotto nella cartella di destinazione per vedere i byte salvati e riprendere i blocchi mancanti. Se manca il registro dei blocchi, puoi confermare **Ricomincia da zero**. A coda aperta, trovi lo stesso elenco in **Parziali**.
 - **Storico** mostra i download completati nelle sessioni precedenti e in quella corrente. Cerca un file per nome, controlla data e dimensione o apri la cartella in cui è stato salvato.
 - **Aggiunta di link a sessione in corso**: i nuovi link entrano in coda senza fermare i download né rifare la raccolta dei proxy; si sceglie se metterli in fondo o subito dopo il file in corso, e i link già presenti nella sessione vengono segnalati prima di aggiungerli.
-- **Link a cartella Mega** (`/folder/`): la cartella viene espansa nei singoli file, salvati ad albero sotto un'unica cartella col nome originale (vedi la guida).
+- Un **link a file** salva il file nella destinazione scelta. Un **link a cartella** conserva il nome e le sottocartelle originali. Se il nome di un file è occupato, la nuova copia diventa `Film (2).mkv`, poi `Film (3).mkv`.
 - **Watchdog per chunk**: scarta i proxy troppo lenti o che non finiscono in tempo.
 - **Pannello "Funzioni sperimentali"** con connessioni per file, budget per pezzo e selezione per velocità con soglia configurabile (test di velocità reale + selezione proxy per throughput).
 - **Diagnostica crash passiva** sempre attiva (heartbeat di memoria, traceback multi-thread), log strutturato universale (`logs/events.jsonl`) e un generatore di report HTML (`tools/report.py`).

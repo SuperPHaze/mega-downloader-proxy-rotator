@@ -11,6 +11,7 @@ from pathlib import Path
 
 from src.core.config import OUTPUT_DIR
 from src.downloader.mega_client import MegaClient, MegaCryptoDependencyError
+from src.downloader.target_file import JobFiles
 from src.proxy.scraper import ProxyScraper
 from src.proxy.validator import ProxyValidator
 
@@ -26,7 +27,7 @@ def main() -> int:
         print("uso: python -m scripts.download_once <mega_url> [output_dir]", file=sys.stderr)
         return 2
     url = sys.argv[1]
-    out_dir = Path(sys.argv[2]) if len(sys.argv) >= 3 else OUTPUT_DIR / "oneshot"
+    out_dir = Path(sys.argv[2]) if len(sys.argv) >= 3 else OUTPUT_DIR
     out_dir.mkdir(parents=True, exist_ok=True)
 
     log.info("Scrape proxy...")
@@ -47,6 +48,7 @@ def main() -> int:
         log.error("Nessun proxy valido")
         return 1
 
+    files = JobFiles(out_dir)
     for i, proxy in enumerate(alive, 1):
         log.info("[%d/%d] tento con %s:%s", i, len(alive), proxy["host"], proxy["port"])
         client = MegaClient(proxy)
@@ -57,7 +59,7 @@ def main() -> int:
             log.warning("  IP check ko: %s", exc)
             continue
         try:
-            result = client.download(url, out_dir)
+            result = client.download(url, files.root, files=files)
             log.info("OK: file salvato in %s", result)
             return 0
         except MegaCryptoDependencyError as exc:

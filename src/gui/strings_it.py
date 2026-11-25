@@ -530,7 +530,7 @@ STRINGS: dict[str, str | dict[str, str]] = {
     "link_panel.allow_duplicates": "Consenti duplicati",
     "link_panel.allow_duplicates_tooltip": (
         "Se attivo, lo stesso link puo' essere aggiunto piu' volte. "
-        "Ogni copia viene scaricata in una cartella separata."
+        "Le copie successive hanno un numero nel nome, come Film (2).mkv."
     ),
     # Contatore: gia' oggi il codice sceglieva la forma con un `if`, qui la
     # scelta passa a `tn()`.
@@ -751,22 +751,12 @@ STRINGS: dict[str, str | dict[str, str]] = {
     "main_window.job_cancelled": "File {file} annullato ({done}/{total}).",
 
     # ---- finestra principale: eliminazione dal disco ------------------------
-    # Le due frasi erano concatenate a pezzi attorno al numero del file: ora
-    # sono due chiavi intere, scelte in base al tipo di job.
     "main_window.delete_title": "Eliminare dal disco?",
-    "main_window.delete_folder_job_body": (
-        "Eliminare il file {file} dalla cartella scaricata?\n"
-        "Gli altri file della stessa cartella Mega restano al loro posto.\n"
-        "L'operazione è irreversibile."
+    "main_window.delete_job_files_body": (
+        "Eliminare dal disco i file di questo download (n. {file})?\n"
+        "L’operazione è irreversibile."
     ),
-    "main_window.delete_folder_body": (
-        "Eliminare la cartella su disco del file {file}?\n"
-        "L'operazione è irreversibile."
-    ),
-    "main_window.delete_missing": "File {file}: cartella non presente su disco.",
-    "main_window.delete_done": "File {file}: cartella eliminata ({name}).",
-    "main_window.delete_failed_title": "Eliminazione cartella fallita",
-    "main_window.delete_failed_body": "Impossibile eliminare {path}:\n{error}",
+    "main_window.delete_failed_title": "Impossibile eliminare il file",
     "main_window.delete_nothing": "File {file}: nessun file da eliminare su disco.",
     "main_window.delete_file_done": "File {file}: file eliminato ({name}).",
 

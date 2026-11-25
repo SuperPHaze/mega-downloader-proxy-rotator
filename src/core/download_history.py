@@ -75,6 +75,7 @@ def record_completed(
     file_name: str,
     file_size: int,
     path: str,
+    disk_signature: tuple[int, int, int, int] | None = None,
 ) -> None:
     logger = _setup_logger()
     payload = {
@@ -85,6 +86,8 @@ def record_completed(
         "completed_at": datetime.now().isoformat(timespec="seconds"),
         "path": path,
     }
+    if disk_signature is not None:
+        payload["disk_signature"] = disk_signature
     logger.info(json.dumps(payload, ensure_ascii=False))
 
 

@@ -222,9 +222,7 @@ class LinkPanel(QWidget):
         actions.addWidget(self.clear_btn)
         actions.addStretch()
 
-        # Permette di inserire piu' volte lo stesso URL: ogni copia diventa
-        # un worker con file_id diverso e va in una cartella separata
-        # (es. <hash>_0, <hash>_1).
+        # Ogni copia occupa una riga della coda e ha un nome disponibile su disco.
         self.allow_dups = QCheckBox()
         actions.addWidget(self.allow_dups)
 

@@ -1,17 +1,11 @@
-# Layout su disco dei job nati dall'espansione di una cartella Mega.
-#
-# Copre le due cose che il ramo "albero" cambia rispetto al job normale:
-#   1. il path di destinazione (albero, senza `_<file_id>` e senza `ciclo_N`);
-#   2. il check di resume, che deve guardare il NOME ESATTO del file e non
-#      "un file finale qualsiasi" — la cartella e' condivisa con gli altri
-#      file dello stesso albero.
+"""Destinazioni dei file singoli e delle cartelle condivise."""
 import pytest
 from PyQt6.QtWidgets import QApplication
 
 from src.core.file_naming import folder_job_output_dir
 from src.core.mega_links import build_folder_job_url
 from src.core.state import SessionState
-from src.downloader.worker import DownloadWorker, job_output_dir
+from src.downloader.worker import DownloadWorker
 from src.proxy.pool import ProxyPool
 
 
@@ -55,29 +49,18 @@ def test_output_dir_rejects_empty_rel_path():
 
 # ---- destinazione scelta dal worker ----------------------------------------
 
-def test_worker_uses_the_tree_path_not_the_hash_path(tmp_path):
-    w = _worker(("Cartella", "sub", "f.bin"), tmp_path)
-    base = folder_job_output_dir(w._folder_job.rel_path, tmp_path)
-    assert base == tmp_path / "Cartella" / "sub"
-    # ...e NON la cartella hash-based dei job normali.
-    assert base != job_output_dir(w.mega_url, 0, tmp_path)
+@pytest.mark.parametrize("rel_path", [("Cartella", "sub", "f.bin"), ("Cartella", "f.bin")])
+def test_worker_uses_original_tree(tmp_path, rel_path):
+    w = _worker(rel_path, tmp_path)
+    assert w._output_dir == tmp_path.joinpath(*rel_path[:-1])
+    assert list(tmp_path.iterdir()) == []
 
 
-def test_folder_job_has_no_cycle_subdirectory(tmp_path):
-    w = _worker(("Cartella", "f.bin"), tmp_path)
-    w._current_base_dir = folder_job_output_dir(w._folder_job.rel_path, tmp_path)
-    assert w._cycle_dir(1) == tmp_path / "Cartella"
-    assert w._cycle_dir(2) == tmp_path / "Cartella"   # nessun ciclo_N
-
-
-def test_normal_job_keeps_the_cycle_subdirectory(tmp_path):
-    w = DownloadWorker(
-        3, "https://mega.nz/file/ABC#KEY", ProxyPool(), SessionState(),
-        output_root=tmp_path,
-    )
-    assert w._folder_job is None
-    w._current_base_dir = job_output_dir(w.mega_url, 3, tmp_path)
-    assert w._cycle_dir(1).name == "ciclo_1"
+def test_single_file_goes_in_the_selected_directory(tmp_path):
+    w = DownloadWorker(3, "https://mega.nz/file/ABC#KEY", ProxyPool(), SessionState(),
+                       output_root=tmp_path)
+    assert w._output_dir == tmp_path
+    assert list(tmp_path.iterdir()) == []
 
 
 def test_file_name_is_sanitized_for_the_filesystem(tmp_path):
@@ -93,7 +76,8 @@ def _prepare(tmp_path, rel_path, existing_names=(), size=None):
     base.mkdir(parents=True, exist_ok=True)
     for name in existing_names:
         (base / name).write_bytes(b"x")
-    w._current_base_dir = base
+    w._get_proxy_blocking = lambda: None
+    w._sleep_interruptible = lambda _s: True
     return w, base
 
 
@@ -110,9 +94,10 @@ def test_resume_does_not_fire_because_a_sibling_file_is_complete(tmp_path):
 
 
 def test_resume_fires_when_our_exact_file_is_there(tmp_path):
-    w, _ = _prepare(
+    w, base = _prepare(
         tmp_path, ("Cartella", "mio.bin"), existing_names=("altro.bin", "mio.bin"),
     )
+    w.files.finished(base / "mio.bin")
     emitted = []
     w.cycle_completed.connect(lambda fid, c: emitted.append((fid, c)))
     assert w._run_cycle_until_success(1) is True
@@ -164,9 +149,12 @@ def test_a_same_named_file_of_another_share_does_not_count_as_complete(tmp_path)
     assert emitted == []
 
 
-def test_our_file_with_the_expected_size_counts_as_complete(tmp_path):
+def test_our_file_with_the_expected_size_counts_as_complete(tmp_path, monkeypatch):
     w, base = _prepare(tmp_path, ("Foto", "IMG_1.jpg"), size=5000)
-    (base / "IMG_1.jpg").write_bytes(b"z" * 5000)
+    target = base / "IMG_1.jpg"
+    target.write_bytes(b"z" * 5000)
+    monkeypatch.setattr("src.downloader.worker.completion_records",
+                        lambda: [dict(url=w.mega_url, path=str(target), disk_signature=list(w.files.signature(target)))])
     emitted = []
     w.cycle_completed.connect(lambda fid, c: emitted.append(c))
     assert w._run_cycle_until_success(1) is True
@@ -181,8 +169,18 @@ def test_truncated_file_is_redownloaded(tmp_path):
     assert w._run_cycle_until_success(1) is False
 
 
-def test_job_without_size_keeps_the_historical_behaviour(tmp_path):
-    # Forma vecchia del job (nessuna dimensione): vale la presenza del file.
+def test_job_without_size_recognizes_its_own_file(tmp_path):
     w, base = _prepare(tmp_path, ("Foto", "IMG_1.jpg"), size=None)
     (base / "IMG_1.jpg").write_bytes(b"z" * 7)
+    w.files.finished(base / "IMG_1.jpg")
     assert w._run_cycle_until_success(1) is True
+
+
+def test_same_size_and_name_without_provenance_are_insufficient(tmp_path, monkeypatch):
+    w, base = _prepare(tmp_path, ("Foto", "IMG_1.jpg"), size=7)
+    target = base / "IMG_1.jpg"
+    target.write_bytes(b"another")
+    monkeypatch.setattr("src.downloader.worker.completion_records",
+                        lambda: [dict(url="another folder", file_size=7, path=str(target))])
+    assert not w._run_cycle_until_success(1)
+    assert target.read_bytes() == b"another"

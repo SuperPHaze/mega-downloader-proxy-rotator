@@ -3,9 +3,7 @@
 # (o finche' la sessione viene annullata o l'utente preme Cancel).
 from __future__ import annotations
 
-import hashlib
 import logging
-import os
 import time
 from pathlib import Path
 
@@ -18,10 +16,10 @@ from src.core.config import (
     PARALLEL_CONNECTIONS_PER_FILE,
 )
 from src.core import telemetry
+from src.core.download_history import completion_records
 from src.core.disk import InsufficientDiskSpaceError
 from src.core.errors import error_payload, format_it
 from src.core.file_naming import (
-    final_output_dir,
     folder_job_output_dir,
     sanitize_file_name,
 )
@@ -30,20 +28,10 @@ from src.core.partial_downloads import PartialDownload, RecoveryChanged
 from src.core.state import SessionState
 from src.downloader.mega_client import MegaClient, MegaCryptoDependencyError
 from src.downloader.parallel_client import ParallelMegaDownloader
+from src.downloader.target_file import JobFiles
 from src.proxy.pool import ProxyPool
 
 log = logging.getLogger(__name__)
-
-
-def job_output_dir(
-    mega_url: str, file_id: int, output_root: Path | None = None
-) -> Path:
-    # Path temporaneo (pre-resolve): basato sull'hash dell'URL, usato prima
-    # che il nome file sia noto. Dopo il primo resolve viene rinominato in
-    # final_output_dir(). Mantenuto come fallback per GUI/orchestrator.
-    # `output_root` = cartella di download scelta dall'utente (None = default).
-    file_hash = hashlib.sha1(mega_url.encode("utf-8")).hexdigest()[:12]
-    return (output_root or OUTPUT_DIR) / f"{file_hash}_{file_id}"
 
 
 class _EffectiveSessionState:
@@ -112,14 +100,13 @@ class DownloadWorker(QThread):
         segment_max_duration_s: int | None = None,
         output_root: Path | None = None,
         recovery: PartialDownload | None = None,
+        files: JobFiles | None = None,
     ) -> None:
         super().__init__()
         self.file_id = file_id
         self.mega_url = mega_url
         self._recovery = recovery
-        # Job generato espandendo una cartella Mega: porta con se' il path
-        # relativo, quindi la destinazione su disco e' nota gia' ora (niente
-        # cartella hash-based, niente rinomina dopo il resolve).
+        # I link cartella portano il percorso originale di ciascun file.
         self._folder_job = parse_folder_job_url(mega_url)
         self._folder_file_name: str | None = (
             sanitize_file_name(
@@ -131,7 +118,11 @@ class DownloadWorker(QThread):
         self.proxy_pool = proxy_pool
         self.session_state = session_state
         # Cartella radice dei download scelta dall'utente (None = default config).
-        self._output_root: Path = output_root or OUTPUT_DIR
+        self.files = files or JobFiles(recovery.root if recovery else output_root or OUTPUT_DIR, recovery)
+        self._output_dir = (folder_job_output_dir(self._folder_job.rel_path, self.files.root)
+                            if self._folder_job else self.files.root)
+        if self._folder_job and recovery:
+            self._output_dir = recovery.target.parent
         self._local_cancelled = False
         self._effective_state = _EffectiveSessionState(session_state, self)
         # Ultimo errore osservato fra i tentativi: serve a dare un motivo
@@ -165,39 +156,26 @@ class DownloadWorker(QThread):
 
     def _folder_target_is_complete(self, target: Path) -> bool:
         """True se `target` e' davvero il NOSTRO file gia' completo."""
-        if not target.is_file():
+        if not target.is_file() or target.resolve() != target:
             return False
         if target.with_name(target.name + ".progress.json").exists():
-            return False   # residuo del vecchio schema: incompleto
-        expected = self._folder_job.size if self._folder_job else None
+            return False
+        expected = self._folder_job.size
         try:
-            actual = target.stat().st_size
+            signature = self.files.signature(target)
+            size = signature[2]
         except OSError:
             return False
-        if expected is None:
-            # Job senza dimensione (forma vecchia): comportamento storico.
-            return actual > 0
-        if actual != expected:
-            log.warning(
-                "[file %d] '%s' esiste ma pesa %d byte invece di %d: non e' il "
-                "nostro file (o e' troncato), lo riscarico",
-                self.file_id, target.name, actual, expected,
-            )
+        if expected is not None and size != expected:
             return False
-        return True
-
-    def _cycle_dir(self, cycle: int) -> Path:
-        """Cartella in cui scrivere il file di questo ciclo.
-
-        Job normale: `<base>/ciclo_<n>` (cicli multipli dello stesso link in
-        cartelle separate). Job-cartella: la destinazione e' l'albero ricostruito
-        dal path relativo, senza livello `ciclo_N` — l'utente deve ritrovare la
-        cartella Mega cosi' com'era. Con DOWNLOAD_CYCLES > 1 i cicli successivi
-        trovano il file gia' completo e vengono saltati dal check di resume.
-        """
-        if self._recovery is not None or self._folder_job is not None:
-            return self._current_base_dir
-        return self._current_base_dir / f"ciclo_{cycle}"
+        if self.files.completed.get(target) == signature:
+            return True
+        for record in completion_records():
+            if (record.get("url") == self.mega_url and record.get("path") == str(target)
+                    and record.get("disk_signature") == list(signature)):
+                self.files.completed[target] = signature
+                return True
+        return False
 
     def _is_deadline_expired(self) -> bool:
         """True solo se il deadline per-file è scaduto E non c'è una cancellazione
@@ -220,29 +198,12 @@ class DownloadWorker(QThread):
         return self._local_cancelled
 
     def run(self) -> None:
-        # Includo file_id nel path per consentire download duplicati dello
-        # stesso URL in cartelle distinte (utile per copie ridondanti / test
-        # di rotazione IP / verifica integrita'). Senza file_id, due worker
-        # con lo stesso URL condividerebbero il sidecar di resume e il
-        # secondo skippa tutto.
-        # _current_base_dir parte hash-based e viene rinominato in
-        # final_output_dir() al primo resolve riuscito.
-        if self._recovery is not None:
-            self._current_base_dir = self._recovery.target.parent
-        elif self._folder_job is not None:
-            self._current_base_dir = folder_job_output_dir(
-                self._folder_job.rel_path, self._output_root
-            )
-        else:
-            self._current_base_dir = job_output_dir(
-                self.mega_url, self.file_id, self._output_root
-            )
         # Calcola deadline wall-clock per-file (se limite configurato).
         if self._file_time_limit_s is not None:
             self._file_deadline = time.monotonic() + self._file_time_limit_s
             log.info("[file %d] deadline: %d s", self.file_id, self._file_time_limit_s)
-        log.info("[file %d] start url=%s base_dir=%s", self.file_id, self.mega_url, self._current_base_dir)
-        cycles = 1 if self._recovery else DOWNLOAD_CYCLES
+        log.info("[file %d] start base_dir=%s", self.file_id, self._output_dir)
+        cycles = 1 if self._recovery or self._folder_job else DOWNLOAD_CYCLES
         telemetry.event("file_started", file_id=self.file_id, cycles=cycles)
 
         try:
@@ -256,7 +217,7 @@ class DownloadWorker(QThread):
 
                 log.info(
                     "[file %d] tutti i %d cicli completati. Output: %s",
-                    self.file_id, cycles, self._current_base_dir.resolve(),
+                    self.file_id, cycles, self._output_dir,
                 )
                 self._emit_completed_info()
                 self.all_done.emit(self.file_id)
@@ -280,95 +241,18 @@ class DownloadWorker(QThread):
 
     def _run_cycle_until_success(self, cycle: int) -> bool:
         attempt = 0
-        # Flag per evitare re-emissioni di file_resolved a ogni retry/re-resolve.
-        _name_emitted = [False]
+        def _resolved_cb(name: str, size: int, path: Path) -> None:
+            self.file_resolved.emit(self.file_id, name, size, str(path))
 
-        def _resolved_cb(fn: str, fs: object, fp) -> Path | None:
-            if not _name_emitted[0]:
-                _name_emitted[0] = True
-                if self._recovery is not None or self._folder_job is not None:
-                    # Job-cartella: il path e' gia' quello definitivo (deciso
-                    # in fase di espansione), niente rinomina da fare.
-                    self.file_resolved.emit(self.file_id, fn, fs, str(fp))
-                    return
-                # Tenta rinomina cartella base da hash-based a nome-file.
-                new_base = final_output_dir(fn, self.file_id, self._output_root)
-                if new_base != self._current_base_dir:
-                    if new_base.exists():
-                        log.warning(
-                            "[file %d] cartella destinazione già esistente: %s. "
-                            "Mantengo il path corrente.",
-                            self.file_id, new_base,
-                        )
-                    else:
-                        try:
-                            os.rename(self._current_base_dir, new_base)
-                            self._current_base_dir = new_base
-                            updated_fp = self._current_base_dir / f"ciclo_{cycle}" / fn
-                            self.file_resolved.emit(self.file_id, fn, fs, str(updated_fp))
-                            return updated_fp
-                        except OSError as exc:
-                            log.warning(
-                                "[file %d] rinomina cartella fallita (%s → %s): %s",
-                                self.file_id, self._current_base_dir, new_base, exc,
-                            )
-                self.file_resolved.emit(self.file_id, fn, fs, str(fp))
-
-        # Resume: se il ciclo era gia' completato (run precedente / crash recovery)
-        # salta e segnala completato. Un ciclo e' completato SOLO se esiste il
-        # file finale prodotto dal rename atomico: non un temporaneo `megapy_*`,
-        # non un `.part` (download interrotto, serve al resume del parallel
-        # client), non un sidecar `.progress.json*`. Un file con un sidecar
-        # accanto e' un residuo del vecchio schema pre-.part: incompleto
-        # (la migrazione la fa ParallelMegaDownloader al prossimo download).
-        cycle_dir = self._cycle_dir(cycle)
-        if self._recovery is None and cycle_dir.is_dir():
-            def _is_final(p: Path) -> bool:
-                if not p.is_file():
-                    return False
-                if p.name.startswith("megapy_") or p.name.endswith((".part", ".part.lock")):
-                    return False
-                if ".progress.json" in p.name:
-                    return False
-                if p.with_name(p.name + ".progress.json").exists():
-                    return False
-                return p.stat().st_size > 0
-
-            if self._folder_job is not None:
-                # Cartella CONDIVISA con gli altri file dello stesso albero:
-                # "esiste un file finale qualsiasi qui dentro" non significa
-                # che il MIO file sia completo. Si controlla il nome esatto E
-                # la dimensione attesa: nell'albero il path e' stabile fra le
-                # sessioni, quindi un file omonimo lasciato da un'ALTRA
-                # cartella Mega (stesso nome di radice, stesso nome file)
-                # verrebbe altrimenti scambiato per il nostro, e il download
-                # risulterebbe "completato" senza aver scaricato nulla.
-                target = cycle_dir / (self._folder_file_name or "")
-                done = [target] if self._folder_target_is_complete(target) else []
-            else:
-                done = [p for p in cycle_dir.iterdir() if _is_final(p)]
-            if done:
-                log.info("[file %d] ciclo %d gia' completato (resume): %s",
-                         self.file_id, cycle, done[0].name)
-                self._last_final_path = done[0].resolve()
+        cycle_dir = self._output_dir
+        if self._folder_job is not None and self.files.partial is None:
+            target = cycle_dir / self._folder_file_name
+            if self._folder_target_is_complete(target):
+                self._last_final_path = target
+                _resolved_cb(target.name, target.stat().st_size, target)
                 self.progress.emit(self.file_id, cycle, 100)
                 self.cycle_completed.emit(self.file_id, cycle)
                 return True
-            # Cartella sporca con temp file di una run interrotta: ripulisci i
-            # `megapy_*` per evitare che il poller scambi vecchi byte per
-            # progresso nuovo. I `.part` e i sidecar NON si toccano: servono
-            # al resume del parallel client.
-            # Saltata per i job-cartella: la cartella e' condivisa con gli
-            # altri file dell'albero, non e' "nostra" da ripulire.
-            for p in (() if self._folder_job is not None else cycle_dir.iterdir()):
-                if p.is_file() and p.name.startswith("megapy_"):
-                    try:
-                        p.unlink()
-                        log.info("[file %d] ciclo %d: rimosso temp orfano %s",
-                                 self.file_id, cycle, p.name)
-                    except OSError as exc:
-                        log.warning("[file %d] ciclo %d: impossibile rimuovere %s: %s",
-                                    self.file_id, cycle, p.name, exc)
 
         while True:
             if self._effective_state.is_cancelled():
@@ -417,9 +301,6 @@ class DownloadWorker(QThread):
                     code, params,
                 )
                 return False
-            # Ricalcola cycle_dir: _current_base_dir potrebbe essere stato
-            # rinominato da _resolved_cb nell'iterazione precedente.
-            cycle_dir = self._cycle_dir(cycle)
             log.info("[file %d] ciclo %d tentativo %d: preleva proxy", self.file_id, cycle, attempt)
 
             proxy = self._get_proxy_blocking()
@@ -459,7 +340,8 @@ class DownloadWorker(QThread):
 
             # Download vero (parallelo se PARALLEL_CONNECTIONS_PER_FILE > 1).
             try:
-                initial = self._recovery.saved * 100 // self._recovery.size if self._recovery and self._recovery.size else 0
+                recovery = self.files.partial
+                initial = recovery.saved * 100 // recovery.size if recovery and recovery.size else 0
                 self.progress.emit(self.file_id, cycle, initial)
                 if self._effective_state.is_cancelled():
                     if self._is_deadline_expired():
@@ -484,12 +366,12 @@ class DownloadWorker(QThread):
                     "[file %d] ciclo %d tentativo %d: inizio download in %s (parallel=%d)",
                     self.file_id, cycle, attempt, cycle_dir, self._connections_per_file,
                 )
-                if self._recovery is not None or self._connections_per_file > 1:
+                if recovery is not None or self._connections_per_file > 1:
                     pd = ParallelMegaDownloader(
                         proxy_pool=self.proxy_pool,
                         n_connections=self._connections_per_file,
                         session_state=self._effective_state,
-                        chunk_size=(self._recovery.chunk_size if self._recovery else 0) or self._chunk_size_bytes,
+                        chunk_size=(recovery.chunk_size if recovery else 0) or self._chunk_size_bytes,
                         segment_max_duration_s=self._segment_max_duration_s,
                     )
                     final_path = pd.download(
@@ -503,7 +385,7 @@ class DownloadWorker(QThread):
                         ),
                         resolved_callback=_resolved_cb,
                         file_id=self.file_id,
-                        **({"recovery": self._recovery} if self._recovery else {}),
+                        files=self.files,
                     )
                 else:
                     final_path = client.download(
@@ -513,7 +395,7 @@ class DownloadWorker(QThread):
                         speed_callback=lambda bps, dl, tot: self.throughput.emit(
                             self.file_id, float(bps), dl, tot
                         ),
-                        resolved_callback=_resolved_cb,
+                        resolved_callback=_resolved_cb, files=self.files,
                     )
                 abs_path = final_path.resolve() if final_path is not None else cycle_dir.resolve()
                 if final_path is not None:

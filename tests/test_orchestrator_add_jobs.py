@@ -15,7 +15,6 @@ from PyQt6.QtCore import QObject, pyqtSignal  # noqa: E402
 from src.core.state import SessionState  # noqa: E402
 from src.downloader import orchestrator as orch_mod  # noqa: E402
 from src.downloader.orchestrator import DownloadOrchestrator  # noqa: E402
-from src.downloader.worker import job_output_dir  # noqa: E402
 
 
 class _FakeSetupThread(QObject):
@@ -211,15 +210,12 @@ def test_identificativi_partono_da_zero_a_ogni_sessione(qt_app, monkeypatch):
     assert orch.add_jobs(["v2"]) == [2]
 
 
-def test_cartelle_di_destinazione_distinte_per_id(qt_app, monkeypatch):
-    """L'identificativo entra nel nome della cartella: due job non devono mai
-    scrivere nello stesso posto, nemmeno con lo STESSO url."""
-    orch, _ = _make(monkeypatch, ["https://mega.nz/file/aaa#k"], concurrency=1)
+def test_lo_stesso_link_puo_avere_due_job_distinti(qt_app, monkeypatch):
+    link = "https://mega.nz/file/aaa#k"
+    orch, _ = _make(monkeypatch, [link], concurrency=1)
     orch._spawn_workers()
-    aggiunti = orch.add_jobs(["https://mega.nz/file/aaa#k"])
-    tutti = [0] + aggiunti
-    cartelle = {str(job_output_dir("https://mega.nz/file/aaa#k", fid)) for fid in tutti}
-    assert len(cartelle) == len(tutti)
+    assert orch.add_jobs([link]) == [1]
+    assert _queue_ids(orch) == [1]
 
 
 # ---- posizione ------------------------------------------------------------

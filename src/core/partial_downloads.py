@@ -54,7 +54,7 @@ def _read_json(path: Path) -> dict:
     return data if isinstance(data, dict) else {}
 
 
-def remember_source(part: Path, url: str, total: int) -> None:
+def remember_source(part: Path, url: str, total: int, source_name: str = "") -> None:
     """Il link con chiave resta nei dati locali dell'app, anche con destinazione condivisa."""
     if not link_handle(url):
         return
@@ -62,7 +62,7 @@ def remember_source(part: Path, url: str, total: int) -> None:
     tmp = None
     try:
         st = part.stat()
-        data = {"dev": st.st_dev, "ino": st.st_ino, "size": total, "url": url}
+        data = {"dev": st.st_dev, "ino": st.st_ino, "size": total, "url": url, "name": source_name}
         if _read_json(target) == data:
             return
         target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -119,6 +119,7 @@ class PartialDownload:
     url: str = field(default="", repr=False)
     in_history: bool = False
     expected_size: int | None = None
+    source_name: str = ""  # Il nome MEGA può differire dal nome locale in caso di omonimia.
 
     @property
     def part(self) -> Path:
@@ -165,7 +166,8 @@ def inspect_partial(root: Path, target: Path) -> tuple[PartialDownload, set[tupl
         raise RecoveryChanged()
     if os.path.lexists(target):
         old_map = target.with_name(target.name + ".progress.json")
-        if os.path.lexists(part) or old_map.is_symlink() or not old_map.is_file():
+        if (os.path.lexists(part) or old_map.is_symlink() or not old_map.is_file()
+                or os.path.lexists(str(part) + ".progress.json") or os.path.lexists(str(part) + ".progress.json.tmp")):
             raise RecoveryChanged()
         part = target
     st = part.lstat()
@@ -186,8 +188,10 @@ def inspect_partial(root: Path, target: Path) -> tuple[PartialDownload, set[tupl
             or not link_handle(url) or (handle and link_handle(url) != handle)):
         url = ""
     total = source["size"] if url else (st.st_size if chunk else None)
+    original = source.get("name") if url else None
     return PartialDownload(root, target, (st.st_dev, st.st_ino), st.st_size, handle, chunk,
-                           sum(end - start + 1 for start, end in ranges), url, expected_size=total), ranges
+                           sum(end - start + 1 for start, end in ranges), url, expected_size=total,
+                           source_name=original if isinstance(original, str) else ""), ranges
 
 
 def scan_partials(root: Path, session_links=(), *, stop: Event | None = None) -> list[PartialDownload]:

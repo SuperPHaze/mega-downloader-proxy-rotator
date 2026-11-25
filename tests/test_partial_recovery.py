@@ -82,13 +82,14 @@ def test_old_link_lookup_requires_unique_name_and_size(folder, monkeypatch):
 
 
 @pytest.mark.parametrize("legacy", [False, True])
-def test_recovery_downloads_only_missing_bytes_in_original_cycle(folder, monkeypatch, legacy):
+@pytest.mark.parametrize("occupied", [False, True])
+def test_legacy_recovery_fetches_only_missing_bytes_and_publishes_in_root(folder, monkeypatch, legacy, occupied):
     from Crypto.Cipher import AES
 
     plain = b"A" * BLOCK + b"B" * BLOCK + b"original ending"
     disk = plain[:BLOCK] + bytes(BLOCK) + plain[2 * BLOCK:]
     part = make_part(folder, disk, done={(0, BLOCK-1), (2*BLOCK, len(plain)-1)}, legacy=legacy)
-    unrelated = part.parent / "keep.txt"
+    unrelated = folder / "Film.mkv" if occupied else part.parent / "keep.txt"
     unrelated.write_text("keep")
     entry, = partials.scan_partials(folder, [URL])
     encrypted = AES.new(bytes(16), AES.MODE_CTR, nonce=b"", initial_value=0).encrypt(plain)
@@ -117,11 +118,16 @@ def test_recovery_downloads_only_missing_bytes_in_original_cycle(folder, monkeyp
     worker.run()
     assert completed == [0]
     assert requested == [(BLOCK, 2*BLOCK-1)]
-    assert entry.target.read_bytes() == plain
+    final = folder / ("Film (2).mkv" if occupied else "Film.mkv")
+    assert final.read_bytes() == plain
+    assert not entry.target.exists()
     assert unrelated.read_text() == "keep"
     assert not entry.part.exists() and not parallel._progress_path(entry.part).exists()
     assert partials.scan_partials(folder) == []
-    assert list(folder.iterdir()) == [part.parent.parent]
+    if occupied:
+        assert set(folder.iterdir()) == {unrelated, final}
+    else:
+        assert set(folder.iterdir()) == {part.parent.parent, final}
 
 
 @pytest.mark.parametrize("change", ["handle", "name", "size", "moved", "destination", "locked"])

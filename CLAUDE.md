@@ -44,7 +44,7 @@ src/
 │   │                     #   sola `addFile()` lascia al lettore ICO di Qt la scelta di quante dimensioni esporre
 │   │                     #   (con Qt 6.11 le espone tutte e 7 — misurato — ma non è un contratto). Il controllo
 │   │                     #   di riuscita è `availableSizes()`, non `isNull()`
-│   ├── file_naming.py     # sanitize_folder_name() + sanitize_file_name() (nome file sicuro per Windows: caratteri riservati + device name CON/NUL/…, estensione preservata; applicata alla SORGENTE in mega_api.resolve_public_url) + final_output_dir(file_name, file_id, output_root): path finale del download (output_root = cartella scelta dall'utente, None=default); rinomina la cartella hash-based al primo resolve riuscito; + folder_job_output_dir(rel_path, output_root): cartella di destinazione ad ALBERO per i job nati da un link cartella (ri-sanifica i segmenti: è il confine col filesystem)
+│   ├── file_naming.py     # Nomi compatibili con Windows, suffissi per gli omonimi e percorso originale dei link cartella
 │   ├── disk.py            # ensure_free_space()/free_space_bytes() + InsufficientDiskSpaceError (UserFacingError+OSError, codice `disk_full`): check spazio disco PRIMA del download (errore d'ambiente: il worker abbandona subito senza bruciare i tentativi). Solo stdlib
 │   ├── mega_links.py      # FONTE UNICA delle forme di URL Mega (stdlib puro, niente I/O né Crypto):
 │   │                     #   file singolo, legacy, cartella `/folder/#key`, cartella con nodo selezionato
@@ -83,10 +83,11 @@ src/
 │   │                     #   (loggato, mai silenzioso). `build_folder_expansion` è puro rispetto alla
 │   │                     #   rete (testabile con nodi fabbricati)
 │   ├── mega_client.py     # MegaClient seriale (single-stream via proxy); check spazio disco (ensure_free_space) prima del transfer
-│   ├── parallel_client.py # ParallelMegaDownloader (coda chunk a dimensione fissa, HTTP Range N parallele); check disco pre-allocazione; file da 0 byte gestito a parte; Retry-After onorato su 403/509/429; should_abort passato al re-resolve
-│   ├── worker.py          # DownloadWorker(QThread) — 1 link, N cicli; ramo job-cartella (_folder_job):
-│   │                     #   destinazione ad albero senza `ciclo_N` (_cycle_dir), niente rinomina,
-│   │                     #   resume sul NOME ESATTO del file (la cartella è condivisa con gli altri job); cartella base rinominata da hash a nome file al primo resolve (_current_base_dir aggiornato da _resolved_cb); riceve output_root (cartella download scelta dall'utente); InsufficientDiskSpaceError = abbandono immediato (non retry)
+│   ├── parallel_client.py # ParallelMegaDownloader (coda chunk a dimensione fissa, HTTP Range N parallele); check disco pre-allocazione; Retry-After onorato su 403/509/429; should_abort passato al re-resolve
+│   ├── target_file.py     # JobFiles riserva i nomi liberi e registra i file scritti da ciascun job
+│   ├── worker.py          # DownloadWorker(QThread) salva i file singoli nella destinazione scelta
+│   │                     #   I job di un link cartella conservano il loro percorso originale.
+│   │                     #   Lo storico registra il percorso del file effettivamente completato.
 │   └── orchestrator.py    # DownloadOrchestrator(QObject) — coordina tutto; `add_jobs(links, at_top)`
 │                          #   `has_active_workers()` dice se un thread di download è ancora VIVO (non è
 │                          #   lo stato dei job: dopo l'annullo globale sono già tutti annullati mentre i
@@ -95,8 +96,7 @@ src/
 │                          #   `restart_job` riavvia un job terminato: condividono `_reactivate_session()`,
 │                          #   che rimette in moto sessione/ricaricatore/timer (due copie divergerebbero).
 │                          #   Gli identificativi li assegna SOLO `_allocate_file_id()`, monotono per tutta
-│                          #   la sessione (azzerato da `start()`): entrano nel nome della cartella di
-│                          #   destinazione, riusarne uno farebbe scrivere due download nello stesso posto.
+│                          #   la sessione (azzerato da `start()`). La GUI usa gli ID per righe e comandi.
 │                          #   `_pending_jobs` porta il file_id definitivo gia' prima che i worker partano,
 │                          #   cosi' un'aggiunta arrivata durante la raccolta dei proxy sopravvive a
 │                          #   `_spawn_workers`, che COSTRUISCE la coda; segnale proxy_stats(discarded, refill_count, seconds_since_last_refill) emesso insieme a pool_size_changed nel poll periodico; propaga output_root ai worker (start(output_root=...)); relay dei canali TIPATI del worker (failed_detail/fatal_detail/abandoned_detail) accanto ai segnali-stringa; `SETUP_TEXTS_IT` + `setup_text_it()` = testo ITALIANO delle 6 righe di stato del setup (serve a log e CLI), emesse su due canali: `setup_status`/`pool_failed` (stringa italiana) e `setup_status_t`/`pool_failed_t` (codice + parametri, per la GUI)
@@ -265,7 +265,7 @@ uccida il processo: da lì in poi l'uscita è ESPLICITA e passa tutta da `MainWi
    raccogliendo i proxy) senza toccare i worker vivi. La GUI registra le righe con
    `_register_added_jobs`. Il numero di file in parallelo NON cambia: gli aggiunti aspettano
    il loro turno.
-8. Cancellazione per-job: utente clicca la X rossa in colonna 0 → `JobsPanel.cancel_job_requested` → `MainWindow` → `DownloadOrchestrator.cancel_job(file_id)`. Se in coda viene rimosso, se in corso `worker.request_cancel()` setta il flag locale e il worker esce al prossimo checkpoint emettendo `cancelled`. La cartella di lavoro (`downloads/<nome_file>_<file_id>/` dopo il rename, oppure `downloads/<sha1>_<file_id>/` se il rename non è ancora avvenuto) viene rimossa lato GUI dopo la terminazione del worker, leggendo `output_path` dal model.
+8. La cancellazione per-job passa da `JobsPanel.cancel_job_requested` a `DownloadOrchestrator.cancel_job(file_id)`. Se richiesto, la GUI elimina i parziali del job dopo l’arresto del worker. `JobFiles` verifica l’identità su disco prima di eliminarli e rimuove le eventuali sottocartelle vuote.
 
 ## Convenzioni
 - GUI bilingue IT/EN; codice (variabili/funzioni/classi) e commenti in inglese/italiano come già in uso.

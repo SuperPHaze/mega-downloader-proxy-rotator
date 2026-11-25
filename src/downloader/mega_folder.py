@@ -21,7 +21,7 @@ from typing import Callable
 
 from src.core.config import MEGA_FOLDER_LIST_TIMEOUT, MEGA_FOLDER_MAX_FILES
 from src.core.file_naming import (
-    MAX_FILE_NAME_LEN,
+    numbered_file_name,
     sanitize_file_name,
     sanitize_folder_name,
 )
@@ -265,12 +265,9 @@ def _dedup_paths(paths: list[tuple[str, ...]]) -> list[tuple[str, ...]]:
             out.append(path)
             continue
         head, name = path[:-1], path[-1]
-        stem, dot, ext = name.rpartition(".")
-        if not dot:
-            stem, ext = name, ""
         n = 2
         while True:
-            candidate = _suffixed_name(stem, dot, ext, n)
+            candidate = numbered_file_name(name, n)
             new_path = head + (candidate,)
             new_key = "/".join(new_path).lower()
             if new_key not in seen and new_key not in dir_keys:
@@ -283,24 +280,6 @@ def _dedup_paths(paths: list[tuple[str, ...]]) -> list[tuple[str, ...]]:
                 break
             n += 1
     return out
-
-
-def _suffixed_name(stem: str, dot: str, ext: str, n: int) -> str:
-    """Nome de-collisionato `<stem> (n).<ext>` STABILE alla ri-sanificazione.
-
-    Il gambo viene accorciato per fare posto al suffisso PRIMA di comporre il
-    nome: se ci si limitasse ad accodare ' (n)', su un nome gia' al limite di
-    lunghezza sarebbe `sanitize_file_name` a ritagliare via proprio il suffisso
-    (worker e `_resolve_folder_node` ri-sanificano prima di toccare il disco),
-    riportando il nome a collidere — e il ciclo di de-collisione non
-    terminerebbe mai, perche' ogni n produrrebbe lo stesso nome troncato.
-    """
-    suffix = f" ({n})"
-    budget = MAX_FILE_NAME_LEN - len(suffix) - len(dot) - len(ext)
-    trimmed = stem[:budget].rstrip() if budget > 0 else ""
-    return sanitize_file_name(
-        f"{trimmed}{suffix}{dot}{ext}", fallback=f"download{suffix}{dot}{ext}",
-    )
 
 
 def build_folder_expansion(
@@ -496,7 +475,7 @@ def _sanitize_path(chain: tuple[str, ...], node_handle: str) -> tuple[str, ...]:
 def _suffixed_folder_name(base: str, n: int) -> str:
     """`<base> (n)` per una cartella, STABILE alla troncatura di lunghezza.
 
-    Stessa trappola di _suffixed_name sui file: accodare ' (n)' a un nome gia'
+    Come in numbered_file_name per i file, accodare ' (n)' a un nome gia'
     al limite lo farebbe ritagliare via da sanitize_folder_name, che
     restituirebbe di nuovo `base` — e il ciclo di de-collisione girerebbe
     all'infinito bloccando il thread di espansione. Il gambo si accorcia PRIMA.

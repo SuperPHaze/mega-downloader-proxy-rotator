@@ -10,6 +10,7 @@ from pathlib import Path
 
 from src.core.config import OUTPUT_DIR
 from src.downloader.mega_client import MegaClient, MegaCryptoDependencyError
+from src.downloader.target_file import JobFiles
 from src.proxy.scraper import ProxyScraper
 from src.proxy.validator import ProxyValidator
 
@@ -75,7 +76,7 @@ def main() -> int:
         return 2
     url = sys.argv[1]
     cycles = int(sys.argv[2]) if len(sys.argv) >= 3 else 5
-    out_root = Path(sys.argv[3]) if len(sys.argv) >= 4 else OUTPUT_DIR / "multi"
+    out_root = Path(sys.argv[3]) if len(sys.argv) >= 4 else OUTPUT_DIR
     start_cycle = int(sys.argv[4]) if len(sys.argv) >= 5 else 1
     out_root.mkdir(parents=True, exist_ok=True)
 
@@ -89,8 +90,7 @@ def main() -> int:
     ok_count = 0
     for cycle in range(start_cycle, start_cycle + cycles):
         log.info("=== Ciclo %d (%d/%d in questo run) ===", cycle, cycle - start_cycle + 1, cycles)
-        dest = out_root / f"ciclo_{cycle}"
-        dest.mkdir(parents=True, exist_ok=True)
+        files = JobFiles(out_root)
         ok = False
         n = len(pool)
         tried = 0
@@ -110,7 +110,7 @@ def main() -> int:
                 log.info("    IP %s gia' usato in un ciclo precedente, salto", ip)
                 continue
             try:
-                result = client.download(url, dest)
+                result = client.download(url, files.root, files=files)
                 log.info("    OK ciclo %d: %s", cycle, result)
                 used_ips.add(ip)
                 ok = True
